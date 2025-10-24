@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/chendingplano/deepdoc/server/api/DataStructures"
-	"github.com/chendingplano/deepdoc/server/cmd/config"
+	"github.com/chendingplano/Shared/server/api/DataStructures"
+	"github.com/chendingplano/Shared/server/cmd/config"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 )
