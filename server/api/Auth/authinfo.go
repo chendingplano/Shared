@@ -1,4 +1,4 @@
-package Auth
+package auth
 
 type AuthInfoDef struct {
 	DBType 				string

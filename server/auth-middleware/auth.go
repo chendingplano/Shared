@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/chendingplano/Shared/server/api/Auth/tokens"
+	"github.com/chendingplano/Shared/server/api/auth/tokens"
 	"github.com/chendingplano/Shared/server/api/databaseutil"
 	"github.com/labstack/echo/v4"
 )

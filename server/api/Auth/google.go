@@ -1,5 +1,5 @@
 // server/api/Auth/google.go
-package Auth
+package auth
 
 // server/api/Auth/google.go
 import (
