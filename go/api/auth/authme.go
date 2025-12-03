@@ -16,7 +16,7 @@ func HandleAuthMe(c echo.Context) error {
 	if err != nil {
 		error_msg := fmt.Sprintf("auth failed, err:%v", err)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserNotAuthed,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_AuthMe,
@@ -30,7 +30,7 @@ func HandleAuthMe(c echo.Context) error {
 
 	msg := fmt.Sprintf("user is logged in:%s", user_name)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_UserIsLoggedIn,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_AuthMe,

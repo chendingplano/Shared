@@ -48,7 +48,7 @@ func HandleGoogleCallback(c echo.Context) error {
 				oauthStateString, req.FormValue("state"))
 		log.Printf("***** Alarm %s (MID_GGL_042)", error_msg)
 		var record = ApiTypes.ActivityLogDef{
-				ActivityName: 	ApiTypes.Activity_Auth,
+				ActivityName: 	ApiTypes.ActivityName_Auth,
 				ActivityType: 	ApiTypes.ActivityType_AuthFailure,
 				AppName: 		ApiTypes.AppName_Auth,
 				ModuleName: 	ApiTypes.ModuleName_GoogleAuth,
@@ -62,7 +62,7 @@ func HandleGoogleCallback(c echo.Context) error {
 	if code == "" {
 		error_msg := "code not found in request (SHD_GGL_060)"
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_AuthFailure,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -76,7 +76,7 @@ func HandleGoogleCallback(c echo.Context) error {
 		error_msg := fmt.Sprintf("failed to get user info: %v (MID_GGL_055)", err)
 		log.Printf("***** Alarm %s", error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_AuthFailure,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -104,7 +104,7 @@ func HandleGoogleCallback(c echo.Context) error {
 		error_msg := fmt.Sprintf("failed to save session: %s (MID_GGL_076)", err1)
 		log.Printf("***** Alarm %s", error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -129,7 +129,7 @@ func HandleGoogleCallback(c echo.Context) error {
 		error_msg := fmt.Sprintf("***** Alarm Unverified email login attempt, email:%s (MID_GGL_118)", userInfo.Email)
 		c.String(http.StatusUnauthorized, error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UnverifiedEmail,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -156,7 +156,7 @@ func HandleGoogleCallback(c echo.Context) error {
 		error_msg := fmt.Sprintf("***** Alarm Failed creating user, email:%s, err:%s (SHD_GGL_125)", userInfo.Email, err1)
 		log.Printf("***** Alarm %s", error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -171,7 +171,7 @@ func HandleGoogleCallback(c echo.Context) error {
 					userInfo.Picture,
 					userInfo.Locale)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserCreated,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -193,7 +193,7 @@ func HandleGoogleCallback(c echo.Context) error {
 	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true, Secure:%t", sessionID, is_secure)
 	log.Printf("%s (SHD_GGL_197)", msg1)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_SetCookie,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,
@@ -215,7 +215,7 @@ func HandleGoogleCallback(c echo.Context) error {
 	log.Printf("%s (SHD_GGL_217)", msg2)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_AuthSuccess,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GoogleAuth,

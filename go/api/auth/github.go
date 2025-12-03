@@ -34,7 +34,7 @@ func HandleGitHubLogin(c echo.Context) error {
 	log.Printf("%s (SHD_GHB_032)", msg)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_GitHubAuth,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -55,7 +55,7 @@ func HandleGitHubCallback(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -73,7 +73,7 @@ func HandleGitHubCallback(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -92,7 +92,7 @@ func HandleGitHubCallback(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -116,7 +116,7 @@ func HandleGitHubCallback(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -147,7 +147,7 @@ func HandleGitHubCallback(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -187,7 +187,7 @@ func HandleGitHubCallback(c echo.Context) error {
 		log.Printf("***** Alarm:%s (MID_GHB_104)", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_ConfigError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_GitHubAuth,
@@ -203,7 +203,7 @@ func HandleGitHubCallback(c echo.Context) error {
 	log.Printf("%s (SHD_GHB_129)", msg)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_AuthSuccess,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_GitHubAuth,

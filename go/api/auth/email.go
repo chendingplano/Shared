@@ -77,7 +77,7 @@ func HandleEmailLogin(c echo.Context) error {
 		error_msg := "invalid request body (SHD_EML_043)"
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -93,7 +93,7 @@ func HandleEmailLogin(c echo.Context) error {
 		log.Printf("+++++ Warning:%s, email:%s", error_msg, req.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadEmail,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -115,7 +115,7 @@ func HandleEmailLogin(c echo.Context) error {
 			log.Printf("+++++Warning:%s (SHD_EML_152)", error_msg)
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.Activity_Auth,
+				ActivityName: 		ApiTypes.ActivityName_Auth,
 				ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 				AppName: 			ApiTypes.AppName_Auth,
 				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -130,7 +130,7 @@ func HandleEmailLogin(c echo.Context) error {
 			log.Printf("+++++Warning:%s", error_msg)
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.Activity_Auth,
+				ActivityName: 		ApiTypes.ActivityName_Auth,
 				ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 				AppName: 			ApiTypes.AppName_Auth,
 				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -145,7 +145,7 @@ func HandleEmailLogin(c echo.Context) error {
 			log.Printf("+++++Warning:%s", error_msg)
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.Activity_Auth,
+				ActivityName: 		ApiTypes.ActivityName_Auth,
 				ActivityType: 		ApiTypes.ActivityType_UserPending,
 				AppName: 			ApiTypes.AppName_Auth,
 				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -168,7 +168,7 @@ func HandleEmailLogin(c echo.Context) error {
 				req.Email, token, url)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_SentEmail,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -198,7 +198,7 @@ func HandleEmailLogin(c echo.Context) error {
 		log.Printf("+++++ Warning:%s (SHD_EML_240)", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InvalidPassword,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -230,7 +230,7 @@ func HandleEmailLogin(c echo.Context) error {
 		log.Printf("***** Alarm:%s", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -272,7 +272,7 @@ func HandleEmailLogin(c echo.Context) error {
 		log.Printf("***** Alarm:%s (SHD_EML_301)", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_MissHomeURL,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -284,7 +284,7 @@ func HandleEmailLogin(c echo.Context) error {
 		log.Printf("%s (SHD_EML_316)", msg1)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserLoginSuccess,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -314,7 +314,7 @@ func sendVerificationEmail(to string, url string) error {
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		LogID:				log_id,
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_UserLoginSuccess,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -344,7 +344,7 @@ func HandleEmailVerify(c echo.Context) error {
 		
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -363,7 +363,7 @@ func HandleEmailVerify(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -390,7 +390,7 @@ func HandleEmailVerify(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InvalidToken,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -424,7 +424,7 @@ func HandleEmailVerify(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -454,7 +454,7 @@ func HandleEmailVerify(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -482,7 +482,7 @@ func HandleEmailVerify(c echo.Context) error {
 		log.Printf("***** Alarm:%s", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_ConfigError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -492,7 +492,7 @@ func HandleEmailVerify(c echo.Context) error {
 		msg := fmt.Sprintf("Email verify success: email:%s, session_id:%s, redirect:%s", 
 				user_info.Email, sessionID, redirect_url)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_VerifyEmailSuccess,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -534,7 +534,7 @@ func HandleEmailSignup(c echo.Context) error {
 		log.Printf("***** Alarm Handle Email Signup failed:%s", resp.Message)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -555,7 +555,7 @@ func HandleEmailSignup(c echo.Context) error {
 		log.Printf("+++++ Warning:%s", error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InvalidEmail,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -582,7 +582,7 @@ func HandleEmailSignup(c echo.Context) error {
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				LogID:				log_id,
-				ActivityName: 		ApiTypes.Activity_Auth,
+				ActivityName: 		ApiTypes.ActivityName_Auth,
 				ActivityType: 		ApiTypes.ActivityType_InternalError,
 				AppName: 			ApiTypes.AppName_Auth,
 				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -604,7 +604,7 @@ func HandleEmailSignup(c echo.Context) error {
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				LogID:				log_id,
-				ActivityName: 		ApiTypes.Activity_Auth,
+				ActivityName: 		ApiTypes.ActivityName_Auth,
 				ActivityType: 		ApiTypes.ActivityType_UserExist,
 				AppName: 			ApiTypes.AppName_Auth,
 				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -650,7 +650,7 @@ func HandleEmailSignup(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -678,7 +678,7 @@ func HandleEmailSignup(c echo.Context) error {
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		LogID:				log_id,
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_SignupSuccess,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -698,7 +698,7 @@ func HandleForgotPassword(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -715,7 +715,7 @@ func HandleForgotPassword(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InvalidEmail,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -735,7 +735,7 @@ func HandleForgotPassword(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -760,7 +760,7 @@ func HandleForgotPassword(c echo.Context) error {
 	msg := fmt.Sprintf("reset link sent to email:%s, log_id:%d (SHD_EML_765)", req.Email, log_id)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		LogID:				log_id,
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -781,7 +781,7 @@ func HandleResetLink(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -794,7 +794,7 @@ func HandleResetLink(c echo.Context) error {
 	redirect_url := fmt.Sprintf("http://localhost:5173/reset-password?token=%s", token)
 	msg := fmt.Sprintf("handle reset, redirect to:%s", redirect_url)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_Redirect,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -820,7 +820,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InternalError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -838,7 +838,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -860,7 +860,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -881,7 +881,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InternalError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -904,7 +904,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID: 				log_id,
-			ActivityName: 		ApiTypes.Activity_Auth,
+			ActivityName: 		ApiTypes.ActivityName_Auth,
 			ActivityType: 		ApiTypes.ActivityType_InternalError,
 			AppName: 			ApiTypes.AppName_Auth,
 			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
@@ -918,7 +918,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 	log_id := sysdatastores.NextActivityLogID()
 	msg := fmt.Sprintf("reset password success, user_name:%s, log_id:%d", user.UserName, log_id)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.Activity_Auth,
+		ActivityName: 		ApiTypes.ActivityName_Auth,
 		ActivityType: 		ApiTypes.ActivityType_InternalError,
 		AppName: 			ApiTypes.AppName_Auth,
 		ModuleName: 		ApiTypes.ModuleName_EmailAuth,

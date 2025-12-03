@@ -12,9 +12,10 @@ interface AuthStoreState {
 }
 
 export type LoginResults = {
-  status:       boolean;
-  error_msg:    string;
+  status:       boolean
+  error_msg:    string
   redirect_url: string
+  LOC:          string
 }
 
 interface AuthStore {
@@ -83,7 +84,8 @@ function createAuthStore(): AuthStore {
 
   async function login(email: string, password: string): Promise<LoginResults> {
     try {
-      const response = await fetch('/api/login', {
+      // const response = await fetch('/api/login', {
+      const response = await fetch('/auth/email/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
         headers: { 'Content-Type': 'application/json' },
@@ -101,7 +103,8 @@ function createAuthStore(): AuthStore {
           const result : LoginResults = {
             status: false,
             error_msg: error_msg,
-            redirect_url: ""
+            redirect_url: "",
+            LOC: ""
           }
           return result
       }
@@ -125,7 +128,8 @@ function createAuthStore(): AuthStore {
       return {
         status : true,
         error_msg: "",
-        redirect_url: redirect_url
+        redirect_url: redirect_url,
+        LOC: userData.LOC || ""
       }
     } catch (error) {
       const error_msg = error instanceof Error ? error.message : "Unknown error"
@@ -142,7 +146,8 @@ function createAuthStore(): AuthStore {
       return {
         status: false,
         error_msg: error_msg,
-        redirect_url: ""
+        redirect_url: "",
+        LOC: ""
       }
     }
   }

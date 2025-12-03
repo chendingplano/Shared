@@ -10,7 +10,6 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/stores"
 	middleware "github.com/chendingplano/shared/go/auth-middleware"
 	"github.com/labstack/echo/v4"
 )
@@ -19,12 +18,12 @@ const (
 	// prompt_store_selected_field_names = 
 	// 	"prompt_id, 	 prompt_name,   prompt_desc,     prompt_content, prompt_status, " +
     //     "prompt_purpose, prompt_source, prompt_keywords, prompt_tags,    creator," +
-	// 	"updater,        creator_loc,   updater_loc,     created_at,     updated_at"
+	// 	"updater,        created_at,     updated_at"
 
 	prompt_store_insert_field_names = 
 		"prompt_id, 	 prompt_name,   prompt_desc,     prompt_content, prompt_status, " +
         "prompt_purpose, prompt_source, prompt_keywords, prompt_tags,    creator," +
-		"updater,        creator_loc,   updater_loc"
+		"updater"
 
     PromptStoreTableDescSimple = `
         PromptID        int64     # A unique sequence number
@@ -38,8 +37,6 @@ const (
         PromptTags		string    # Tags for the prompt, used for searching
         Creator			string    # The user who created the prompt
         Updater			string    # The user who last updated the prompt
-        CreatorLoc      string    # The caller (program location) that inserts the record
-        UpdaterLoc      string    # The caller (program location) that last updates the record
         CreatedAt       *string   # The record creation time
         UpdatedAt       *string   # The record last update time
     `
@@ -56,21 +53,19 @@ This is a
 )
 
 type PromptRecordInfo struct {
-    PromptID        int64     `json:"prompt_id"`
-    PromptName 		string    `json:"prompt_name"`
-    PromptDesc		string    `json:"prompt_desc"`
-    PromptContent	string    `json:"prompt_content"`
-    Status          string    `json:"prompt_status"`
-    PromptPurpose	string    `json:"prompt_purpose"`
-    PromptSource 	string    `json:"prompt_source"`
-    PromptKeywords	string    `json:"prompt_keywords"`
-    PromptTags		string    `json:"prompt_tags"`
-    Creator			string    `json:"creator"`
-    Updater			string    `json:"updater"`
-    CreatorLoc      string    `json:"creator_loc"`
-    UpdaterLoc      string    `json:"updater_loc"`
-    CreatedAt       *string   `json:"created_at"`
-    UpdatedAt       *string   `json:"updated_at"`
+    PromptID            int64     `json:"prompt_id"`
+    PromptName 		    string    `json:"prompt_name"`
+    PromptDesc		    string    `json:"prompt_desc"`
+    PromptContent	    string    `json:"prompt_content"`
+    Status              string    `json:"prompt_status"`
+    PromptPurpose	    string    `json:"prompt_purpose"`
+    PromptSource 	   *string    `json:"prompt_source"`
+    PromptKeywords	   *string    `json:"prompt_keywords"`
+    PromptTags		   *string    `json:"prompt_tags"`
+    Creator			    string    `json:"creator"`
+    Updater			    string    `json:"updater"`
+    CreatedAt          *string    `json:"created_at"`
+    UpdatedAt          *string    `json:"updated_at"`
 }
 
 type AddPromptResponse struct {
@@ -84,17 +79,15 @@ func CreatePromptStoreTable(
             db_type string,
             table_name string) error {
     var stmt string
-    fields := fmt.Sprintf("prompt_id       	BIGINT          NOT NULL PRIMARY KEY, " + 
+    fields_1 := fmt.Sprintf(
                           "prompt_name 		VARCHAR(256)    NOT NULL, " + 
-                          "prompt_desc		VARCHAR(32)     NOT NULL, " + 
-                          "prompt_content	VARCHAR(32)     NOT NULL, " + 
+                          "prompt_desc		TEXT            DEFAULT NULL, " + 
+                          "prompt_content	TEXT            NOT NULL, " + 
                           "prompt_status	VARCHAR(128)    NOT NULL, " + 
-                          "prompt_purpose	VARCHAR(128)    NOT NULL, " + 
-                          "prompt_source	VARCHAR(32)     NOT NULL, " + 
-                          "prompt_keywords	VARCHAR(32)     NOT NULL, " + 
-                          "prompt_tags		VARCHAR(32)     NOT NULL, " + 
-                          "creator_loc		VARCHAR(32)     NOT NULL, " + 
-                          "updater_loc		VARCHAR(32)     NOT NULL, " + 
+                          "prompt_source	VARCHAR(32)     DEFAULT NULL, " + 
+                          "prompt_keywords	VARCHAR(32)     DEFAULT NULL, ")
+
+    fields_2 := fmt.Sprintf(
                           "creator			VARCHAR(32)     NOT NULL, " + 
                           "updater			VARCHAR(32)     NOT NULL, " + 
                           "updated_at     	TIMESTAMP       DEFAULT CURRENT_TIMESTAMP," + 
@@ -102,12 +95,18 @@ func CreatePromptStoreTable(
 
     switch db_type {
     case ApiTypes.MysqlName:
-         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + fields +
+         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + 
+            "prompt_id NOT NULL AUTO_INCREMENT PRIMARY KEY, " + fields_1 +
+            "prompt_purpose VARCHAR(256) DEFAULT NULL, " +
+            "prompt_tags VARCHAR(256) DEFAULT NULL, " + fields_2 +
             ", INDEX idx_created_at (created_at) " +
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
 
     case ApiTypes.PgName:
-         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + fields + ")"
+         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + 
+            "prompt_id BIGSERIAL PRIMARY KEY, " + fields_1 + 
+            "prompt_purpose VARCHAR(40)[] DEFAULT NULL, " +
+            "prompt_tags VARCHAR(50)[] DEFAULT NULL, " + fields_2 + ")"
 
     default:
         err := fmt.Errorf("database type not supported:%s (SHD_PST_117)", db_type)
@@ -169,8 +168,6 @@ func GetPromptInfoByName(prompt_name string) (PromptRecordInfo, error) {
             &prompt_info.PromptTags,
             &prompt_info.Creator,
             &prompt_info.Updater,
-            &prompt_info.CreatorLoc,
-            &prompt_info.UpdaterLoc,
             &prompt_info.CreatedAt,
             &prompt_info.UpdatedAt)
 
@@ -226,7 +223,7 @@ func AddPromptFromFrontend(c echo.Context) error {
 		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d (SHD_PST_224)", err, log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{
             LogID:              log_id,         
-			ActivityName: 		ApiTypes.Activity_AddRecord,
+			ActivityName: 		ApiTypes.ActivityName_AddRecord,
 			ActivityType: 		ApiTypes.ActivityType_AuthFailure,
 			AppName: 			ApiTypes.AppName_SysDataStore,
 			ModuleName: 		ApiTypes.ModuleName_PromptStore,
@@ -251,7 +248,7 @@ func AddPromptFromFrontend(c echo.Context) error {
 		error_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_PST_043)", log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{
             LogID:              log_id,         
-			ActivityName: 		ApiTypes.Activity_AddRecord,
+			ActivityName: 		ApiTypes.ActivityName_AddRecord,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_SysDataStore,
 			ModuleName: 		ApiTypes.ModuleName_PromptStore,
@@ -269,8 +266,8 @@ func AddPromptFromFrontend(c echo.Context) error {
 
     req.Creator = user_name
     req.Updater = user_name
-    log.Printf("Prompt to add, PromptName:%s, User:%s, creator_loc:%s (SHD_PST_239)", 
-        req.PromptName, user_name, req.CreatorLoc)
+    log.Printf("Prompt to add, PromptName:%s, User:%s (SHD_PST_239)", 
+        req.PromptName, user_name)
 
     prompt_id, err_str := AddPrompt(req)
     if prompt_id > 0 {
@@ -284,7 +281,7 @@ func AddPromptFromFrontend(c echo.Context) error {
         msg := fmt.Sprintf("Add prompt success, prompt_id:%d, log_id:%d", prompt_id, log_id)
         log.Printf("%s (SHD_PST_248)", msg)
 		AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.Activity_AddRecord,
+			ActivityName: 		ApiTypes.ActivityName_AddRecord,
 			ActivityType: 		ApiTypes.ActivityType_RequestSuccess,
 			AppName: 			ApiTypes.AppName_SysDataStore,
 			ModuleName: 		ApiTypes.ModuleName_PromptStore,
@@ -299,7 +296,7 @@ func AddPromptFromFrontend(c echo.Context) error {
     log.Printf("***** Alarm:%s (SHD_PST_261)", error_msg)
 	AddActivityLog(ApiTypes.ActivityLogDef{
         LogID:              log_id,
-		ActivityName: 		ApiTypes.Activity_AddRecord,
+		ActivityName: 		ApiTypes.ActivityName_AddRecord,
 		ActivityType: 		ApiTypes.ActivityType_DatabaseError,
 		AppName: 			ApiTypes.AppName_SysDataStore,
 		ModuleName: 		ApiTypes.ModuleName_PromptStore,
@@ -336,10 +333,8 @@ func AddPrompt(prompt_info PromptRecordInfo) (int64, string) {
          return -1, err.Error()
     }
 
-    prompt_info.PromptID = stores.NextManagedID("prompt_store_id")
     log.Printf("Prompt ID (SHD_PST_306):%d", prompt_info.PromptID)
     _, err := db.Exec(stmt, 
-            prompt_info.PromptID,
             prompt_info.PromptName,
             prompt_info.PromptDesc,
             prompt_info.PromptContent,
@@ -349,9 +344,7 @@ func AddPrompt(prompt_info PromptRecordInfo) (int64, string) {
             prompt_info.PromptKeywords,
             prompt_info.PromptTags,
             prompt_info.Creator,
-            prompt_info.Updater,
-            prompt_info.CreatorLoc,
-            prompt_info.UpdaterLoc)
+            prompt_info.Updater)
 
     if err != nil {
         if ApiUtils.IsDuplicateKeyError(err) {

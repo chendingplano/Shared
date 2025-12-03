@@ -1,4 +1,4 @@
-package requesthandlers
+package RequestHandlers
 
 import (
 	"database/sql"
@@ -37,15 +37,15 @@ const (
 )
 
 type AtomicCondition struct {
-    FieldName Field  `json:"field_name"`
-    Operator  Operator `json:"operator"`
-    Value1    string `json:"value_1"`
-    Value2    string `json:"value_2"`
+    FieldName 		Field  			`json:"field_name"`
+    Operator  		Operator 		`json:"operator"`
+    Value1    		string 			`json:"value_1"`
+    Value2    		string 			`json:"value_2"`
 }
 
 type ComplexCondition struct {
-    Operator   LogicalOperator     `json:"operator"`
-    Conditions []QueryCondition `json:"conditions"`
+    Operator   		LogicalOperator     `json:"operator"`
+    Conditions 		[]QueryCondition 	`json:"conditions"`
 }
 
 type QueryCondition interface{}
@@ -54,21 +54,21 @@ func HandleJimoRequest(c echo.Context) error {
 	user_name, err := middleware.IsAuthenticated(c, "SHD_RHD_008")
     if err != nil {
 	    log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d (SHD_RHD_057)", err, log_id)
+		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d", err, log_id)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef {
             LogID:              log_id,         
-			ActivityName: 		ApiTypes.Activity_JimoRequest,
+			ActivityName: 		ApiTypes.ActivityName_JimoRequest,
 			ActivityType: 		ApiTypes.ActivityType_AuthFailure,
 			AppName: 			ApiTypes.AppName_RequestHandler,
 			ModuleName: 		ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_RHD_024"})
+			CallerLoc: 			"SHD_RHD_065"})
 
-        log.Printf("%s", error_msg)
+        log.Printf("%s (SHD_RHD_067)", error_msg)
         resp := ApiTypes.JimoResponse {
             Status: false,
             ErrorMsg: error_msg,
-            Loc: "CWB_RHD_031",
+            Loc: "SHD_RHD_071",
         }
 		return c.JSON(http.StatusBadRequest, resp)
     }
@@ -78,21 +78,21 @@ func HandleJimoRequest(c echo.Context) error {
 	var req ApiTypes.JimoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 	    log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_RHD_043)", log_id)
+		error_msg := fmt.Sprintf("invalid request body, log_id:%d", log_id)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
             LogID:              log_id,         
-			ActivityName: 		ApiTypes.Activity_JimoRequest,
+			ActivityName: 		ApiTypes.ActivityName_JimoRequest,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_RequestHandler,
 			ModuleName: 		ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_RHD_051"})
+			CallerLoc: 			"SHD_RHD_089"})
 
-        log.Printf("***** Alarm:%s", error_msg)
+        log.Printf("***** Alarm:%s (SHD_RHD_091)", error_msg)
         resp := ApiTypes.JimoResponse {
             Status: false,
             ErrorMsg: error_msg,
-            Loc: "CWB_PST_239",
+            Loc: "SHD_PST_095",
         }
 		return c.JSON(http.StatusBadRequest, resp)
 	}
@@ -117,11 +117,11 @@ func HandleJimoRequest(c echo.Context) error {
 
 		 default:
 			  log_id := sysdatastores.NextActivityLogID()
-			  error_msg := fmt.Sprintf("invalid request opr:%s, log_id:%d (SHD_RHD_108)", req.Action, log_id)
-			  log.Printf("***** Alarm:%s", error_msg)
+			  error_msg := fmt.Sprintf("invalid request opr:%s, log_id:%d", req.Action, log_id)
+			  log.Printf("***** Alarm:%s (SHD_RHD_121)", error_msg)
 			  sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				LogID:              log_id,         
-				ActivityName: 		ApiTypes.Activity_JimoRequest,
+				ActivityName: 		ApiTypes.ActivityName_JimoRequest,
 				ActivityType: 		ApiTypes.ActivityType_BadRequest,
 				AppName: 			ApiTypes.AppName_RequestHandler,
 				ModuleName: 		ApiTypes.ModuleName_RequestHandler,
@@ -139,11 +139,11 @@ func HandleJimoRequest(c echo.Context) error {
 		
 	default:
 	    log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("invalid request type:%s, log_id:%d (SHD_RHD_068)", req.RequestType, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("invalid request type:%s, log_id:%d", req.RequestType, log_id)
+		log.Printf("***** Alarm:%s (SHD_RHD_143)", error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
             LogID:              log_id,         
-			ActivityName: 		ApiTypes.Activity_JimoRequest,
+			ActivityName: 		ApiTypes.ActivityName_JimoRequest,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_RequestHandler,
 			ModuleName: 		ApiTypes.ModuleName_RequestHandler,
@@ -187,10 +187,10 @@ func HandleDBQuery(c echo.Context,
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	if resource_def.ResourceType != ApiTypes.ResourceType_Table {
+	if resource_def.ResourceDef.ResourceType != ApiTypes.ResourceType_Table {
 		error_msg := fmt.Sprintf("incorrect resource type, expecting:%s, actual:%s", 
-				ApiTypes.ResourceType_Table, resource_def.ResourceType)
-		log.Printf("***** Alarm:%s", error_msg)
+				ApiTypes.ResourceType_Table, resource_def.ResourceDef.ResourceType)
+		log.Printf("***** Alarm:%s (SHD_RHD_193)", error_msg)
 
 		resp := ApiTypes.JimoResponse {
 			Status: false,	
@@ -201,52 +201,48 @@ func HandleDBQuery(c echo.Context,
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	resource_json := resource_def.ResourceDef
+	resource_json := resource_def.ResourceDef.ResourceJSON
 	if resource_json == nil {
-		error_msg := fmt.Sprintf("missing resource def, resource_name:%s", resource_name)
-		log.Printf("***** Alarm:%s", error_msg)
+	    log_id := sysdatastores.NextActivityLogID()
+		error_msg := fmt.Sprintf("missing resource def, resource_name:%s, log_id:%d", resource_name, log_id)
+		log.Printf("***** Alarm:%s (SHD_RHD_208)", error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+            LogID:              log_id,         
+			ActivityName: 		ApiTypes.ActivityName_JimoRequest,
+			ActivityType: 		ApiTypes.ActivityType_InternalError,
+			AppName: 			ApiTypes.AppName_RequestHandler,
+			ModuleName: 		ApiTypes.ModuleName_RequestHandler,
+			ActivityMsg: 		&error_msg,
+			CallerLoc: 			"SHD_RHD_217"})
 
 		resp := ApiTypes.JimoResponse {
 			Status: false,	
 			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_161",
+			Loc: "SHD_RHD_222",
 		}
 		c.JSON(http.StatusBadRequest, resp)
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	objMap, ok := resource_json.(map[string]interface{})
-	if !ok {
-		error_msg := fmt.Sprintf("invalid resource def (json), resource_name:%s", resource_name)
-		log.Printf("***** Alarm:%s", error_msg)
-
+	db_name := resource_def.ResourceDef.DBName
+	table_name := resource_def.ResourceDef.TableName
+	if db_name == "" || table_name == ""{
+		error_msg := fmt.Sprintf("missing db/table name. Resource name:%s", resource_name)
+		log.Printf("***** Alarm:%s (SHD_RHD_219)", error_msg)
 		resp := ApiTypes.JimoResponse {
 			Status: false,	
 			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_176",
+			Loc: "SHD_RHD_226",
 		}
-		c.JSON(http.StatusInternalServerError, resp)
+		c.JSON(http.StatusBadRequest, resp)
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	db_name, table_name, err1 := GetTableName(objMap, resource_name)
-	if err1 != nil {
-		error_msg := fmt.Sprintf("%v", err1)
-		log.Printf("***** Alarm:%s", error_msg)
-
-		resp := ApiTypes.JimoResponse {
-			Status: false,	
-			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_240",
-		}
-		c.JSON(http.StatusInternalServerError, resp)
-		return fmt.Errorf("%s", error_msg)
-	}
-
-	selected_fields, field_data_types, err1 := GetSelectedFields(objMap, resource_name)
-	if err1 != nil {
-		error_msg := fmt.Sprintf("%v", err1)
-		log.Printf("***** Alarm:%s", error_msg)
+	selected_fields := resource_def.SelectedFields
+	if selected_fields == nil {
+		error_msg := fmt.Sprintf("missing selected fields, resource name:%s", resource_name)
+		log.Printf("***** Alarm:%s (SHD_RHD_235)", error_msg)
 
 		resp := ApiTypes.JimoResponse {
 			Status: false,	
@@ -257,7 +253,7 @@ func HandleDBQuery(c echo.Context,
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	log.Printf("Table:%s.%s, selected fields:%s", db_name, table_name, selected_fields)
+	log.Printf("Table:%s.%s, selected fields:%d", db_name, table_name, len(selected_fields))
 	conditions := req.Conditions
 
 	db_type := ApiTypes.DatabaseInfo.DBType
@@ -270,8 +266,8 @@ func HandleDBQuery(c echo.Context,
 		 db = ApiTypes.DatabaseInfo.PGDBHandle
 
 	default:
-		 error_msg := fmt.Sprintf("invalid db type:%s", db_type)
-		 log.Printf("***** Alarm:%s", error_msg)
+		 error_msg := fmt.Sprintf("invalid db type:%s:%s:%s", db_type, ApiTypes.MysqlName, ApiTypes.PgName)
+		 log.Printf("***** Alarm:%s (SHD_RHD_260)", error_msg)
 		 resp := ApiTypes.JimoResponse {
 			Status: false,	
 			ErrorMsg: error_msg,
@@ -281,14 +277,29 @@ func HandleDBQuery(c echo.Context,
 		 return fmt.Errorf("%s", error_msg)
 	}
 
-    field_names := strings.Join(selected_fields, ",")
+	var field_names string
+	for _, field := range selected_fields {
+		if field.FieldName == "" {
+			error_msg := fmt.Sprintf("invalid selected field name, resource_name:%s", resource_name)
+			log.Printf("***** Alarm:%s (SHD_RHD_273)", error_msg)
+			resp := ApiTypes.JimoResponse {
+				Status: false,
+				ErrorMsg: error_msg,
+				Loc: "SHD_RHD_278",
+			}
+			c.JSON(http.StatusInternalServerError, resp)
+			return fmt.Errorf("%s", error_msg)
+		} else {
+			field_names = field_names + field.FieldName + ","
+		}
+	}
 	query := fmt.Sprintf("SELECT %s FROM %s", field_names, table_name)
 	if conditions != "" {
 		// There are no cnditions
 		where_clause, err := ConstructWhereClause(conditions)
 		if err != nil {
-			error_msg := fmt.Sprintf("failed constructing query, err:%v", err1)
-			log.Printf("***** Alarm:%s", error_msg)
+			error_msg := fmt.Sprintf("failed constructing query, err:%v", err)
+			log.Printf("***** Alarm:%s (SHD_RHD_227)", error_msg)
 
 			resp := ApiTypes.JimoResponse {
 				Status: false,	
@@ -305,15 +316,27 @@ func HandleDBQuery(c echo.Context,
 		}
 	}
 
-	json_data, err := runQuery(db, query, selected_fields, field_data_types)
+	json_data, err := RunQuery(db, query, selected_fields)
 	if err != nil {
-		error_msg := fmt.Sprintf("run query failed, err:%v", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		log_id := sysdatastores.NextActivityLogID()
+		error_msg := fmt.Sprintf("run query failed, err:%v, logid:%d", err, log_id)
+		error_msg1 := fmt.Sprintf("run query failed, err:%v, query:%s, " +
+				"resource_name:%s, resource_opr:%s", err, query, resource_name, resource_opr)
+		log.Printf("***** Alarm:%s (SHD_RHD_297)", error_msg)
+	
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			LogID:              log_id,
+			ActivityName: 		ApiTypes.ActivityName_Query,
+			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
+			AppName: 			ApiTypes.AppName_RequestHandler,
+			ModuleName: 		ApiTypes.ModuleName_RequestHandler,
+			ActivityMsg: 		&error_msg1,
+			CallerLoc: 			"SHD_RHD_307"})
 
 		resp := ApiTypes.JimoResponse {
 			Status: false,	
 			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_287",
+			Loc: "SHD_RHD_313",
 		}
 		c.JSON(http.StatusInternalServerError, resp)
 		return fmt.Errorf("%s", error_msg)
@@ -327,6 +350,15 @@ func HandleDBQuery(c echo.Context,
 		Loc: 		"SHD_RHD_296",
 	}
 
+	msg := fmt.Sprintf("query success, query:%s", query)
+	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+		ActivityName: 		ApiTypes.ActivityName_Query,
+		ActivityType: 		ApiTypes.ActivityType_RequestSuccess,
+		AppName: 			ApiTypes.AppName_RequestHandler,
+		ModuleName: 		ApiTypes.ModuleName_RequestHandler,
+		ActivityMsg: 		&msg,
+		CallerLoc: 			"SHD_RHD_333"})
+
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -339,8 +371,7 @@ func HandleDBInsert(c echo.Context,
 	resource_opr 		:= req.ResourceOpr
 	resource_def, err 	:= stores.GetResourceDef(resource_name, resource_opr)
 	if err != nil {
-		error_msg := fmt.Sprintf("resource not found, error:%v ,resource_name:%s, resource_opr:%s", 
-				err, resource_name, resource_opr)
+		error_msg := fmt.Sprintf("%v", err)
 		log.Printf("+++++ WARNING:%s (SHD_RHD_329)", error_msg)
 
 		resp := ApiTypes.JimoResponse {
@@ -352,9 +383,10 @@ func HandleDBInsert(c echo.Context,
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	if resource_def.ResourceType != ApiTypes.ResourceType_Table {
+	// The resource type must be 'table'
+	if resource_def.ResourceDef.ResourceType != ApiTypes.ResourceType_Table {
 		error_msg := fmt.Sprintf("incorrect resource type, expecting:%s, actual:%s", 
-				ApiTypes.ResourceType_Table, resource_def.ResourceType)
+				ApiTypes.ResourceType_Table, resource_def.ResourceDef.ResourceType)
 		log.Printf("***** Alarm:%s (SHD_RHD_343)", error_msg)
 
 		resp := ApiTypes.JimoResponse {
@@ -366,37 +398,10 @@ func HandleDBInsert(c echo.Context,
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	resource_def_str := resource_def.ResourceDef
-	if resource_def_str == nil {
-		error_msg := fmt.Sprintf("missing resource def, resource_name:%s", resource_name)
-		log.Printf("***** Alarm:%s (SHD_RHD_357)", error_msg)
-
-		resp := ApiTypes.JimoResponse {
-			Status: false,	
-			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_362",
-		}
-		c.JSON(http.StatusBadRequest, resp)
-		return fmt.Errorf("%s", error_msg)
-	}
-
-	resource_def_json, ok := resource_def_str.(map[string]interface{})
-	if !ok {
-		error_msg := fmt.Sprintf("invalid resource def (json), resource_name:%s", resource_name)
-		log.Printf("***** Alarm:%s (SHD_RHD_371)", error_msg)
-
-		resp := ApiTypes.JimoResponse {
-			Status: false,	
-			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_376",
-		}
-		c.JSON(http.StatusInternalServerError, resp)
-		return fmt.Errorf("%s", error_msg)
-	}
-
-	db_name, table_name, err1 := GetTableName(resource_def_json, resource_name)
-	if err1 != nil {
-		error_msg := fmt.Sprintf("%v", err1)
+	db_name := resource_def.ResourceDef.DBName
+	table_name := resource_def.ResourceDef.TableName
+	if table_name == "" {
+		error_msg := fmt.Sprintf("failed get table name. Resource name:%s", resource_name)
 		log.Printf("***** Alarm:%s (SHD_RHD_400)", error_msg)
 
 		resp := ApiTypes.JimoResponse {
@@ -410,28 +415,8 @@ func HandleDBInsert(c echo.Context,
 
 	log.Printf("Table:%s.%s (SHD_RHD_411)", db_name, table_name)
 
-	db_type := ApiTypes.DatabaseInfo.DBType
-	var db *sql.DB 
-	switch db_type {
-	case ApiTypes.MysqlName:
-		 db = ApiTypes.DatabaseInfo.MySQLDBHandle
-
-	case ApiTypes.PgName:
-		 db = ApiTypes.DatabaseInfo.PGDBHandle
-
-	default:
-		 error_msg := fmt.Sprintf("invalid db type:%s", db_type)
-		 log.Printf("***** Alarm:%s", error_msg)
-		 resp := ApiTypes.JimoResponse {
-			Status: false,	
-			ErrorMsg: error_msg,
-			Loc: "SHD_RHD_249",
-		 }
-		 c.JSON(http.StatusInternalServerError, resp)
-		 return fmt.Errorf("%s", error_msg)
-	}
-
-	records_str 	:= req.Records
+	// Unmarshal the records
+	records_str := req.Records
 	var records_json interface{}
     err = json.Unmarshal([]byte(records_str), &records_json)
     if err != nil {
@@ -453,17 +438,19 @@ func HandleDBInsert(c echo.Context,
 		Loc: 		"SHD_RHD_296",
 	}
 
-	err = insertIntoDB(db, table_name, insert_field_names, insert_data_types, records_json)
-	return c.JSON(http.StatusOK, resp)
-}
-
-func insertIntoDB(
-			db *sql.DB,
-			table_name string,
-			field_info[]ApiTypes.FieldInfo,
-			records_json interface{}) error {
-	// This function constructs an insert statement and runs the statement
-
+	// Get field defs
+	var field_defs = resource_def.FieldDefs
+	if field_defs == nil {
+		 error_msg := fmt.Sprintf("missing field_defs, resource_name:%s:%s", resource_name, resource_opr)
+		 log.Printf("***** Alarm:%s (SHD_RHD_400)", error_msg)
+		 resp := ApiTypes.JimoResponse {
+			Status: false,	
+			ErrorMsg: error_msg,
+			Loc: "SHD_RHD_404",
+		 }
+		 c.JSON(http.StatusInternalServerError, resp)
+		 return fmt.Errorf("%s", error_msg)
+	}
 
     // Convert records_json to array of maps
     var records []map[string]interface{}
@@ -487,66 +474,72 @@ func insertIntoDB(
          records = v
 
     default:
-         return fmt.Errorf("records_json must be a single record (object) or array of records")
+		 error_msg := fmt.Sprintf("invalid records format, err:%v", v)
+		 log.Printf("***** Alarm:%s (SHD_RHD_471)", error_msg)
+		 resp := ApiTypes.JimoResponse {
+			Status: false,	
+			ErrorMsg: error_msg,
+			Loc: "SHD_RHD_474",
+		 }
+		 c.JSON(http.StatusInternalServerError, resp)
+		 return fmt.Errorf("%s", error_msg)
     }
     
     if len(records) == 0 {
-        return nil
+		error_msg := "no records to insert"
+		log.Printf("***** Alarm:%s (SHD_RHD_483)", error_msg)
+		resp := ApiTypes.JimoResponse {
+			Status: false,	
+			ErrorMsg: error_msg,
+			Loc: "SHD_RHD_487",
+		}
+		c.JSON(http.StatusInternalServerError, resp)
+		return fmt.Errorf("%s", error_msg)
     }
-    
-    // Build field list and placeholders
-    fieldNames := make([]string, 0, len(field_info))
-    fieldMap := make(map[string]ApiTypes.FieldInfo)
-    
-    for _, fi := range field_info {
-        fieldNames = append(fieldNames, fi.FieldName)
-        fieldMap[fi.FieldName] = fi
-    }
-    
-    // Create INSERT statement
-    columns := make([]string, len(fieldNames))
-    placeholders := make([]string, len(fieldNames))
-    
-    for i, fieldName := range fieldNames {
-        columns[i] = fieldName
-        placeholders[i] = "?"
-    }
-    
-    insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-        table_name,
-        strings.Join(columns, ", "),
-        strings.Join(placeholders, ", "))
-    
-    // Insert each record
-    for _, record := range records {
-        // Validate required fields
-        for fieldName, fi := range fieldMap {
-            if fi.Required {
-                if _, exists := record[fieldName]; !exists {
-                    return fmt.Errorf("required field '%s' is missing", fieldName)
-                }
-            }
-        }
-        
-        // Build values slice in the same order as fieldNames
-        values := make([]interface{}, len(fieldNames))
-        for i, fieldName := range fieldNames {
-            values[i] = record[fieldName]
-        }
-        
-        _, err := db.Exec(insertSQL, values...)
-        if err != nil {
-            return fmt.Errorf("failed to insert record: %w", err)
-        }
-    }
-    
-    return nil
+
+	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB 
+	switch db_type {
+	case ApiTypes.MysqlName:
+		 db = ApiTypes.DatabaseInfo.MySQLDBHandle
+		 err = InsertBatch(user_name, db, table_name, resource_name, resource_def, field_defs, records, 30, db_type)
+
+	case ApiTypes.PgName:
+		 db = ApiTypes.DatabaseInfo.PGDBHandle
+		 err = InsertBatch(user_name, db, table_name, resource_name, resource_def, field_defs, records, 30, db_type)
+
+	default:
+		 error_msg := fmt.Sprintf("invalid db type:%s", db_type)
+		 log.Printf("***** Alarm:%s (SHD_RHD_465)", error_msg)
+		 resp := ApiTypes.JimoResponse {
+			Status: false,	
+			ErrorMsg: error_msg,
+			Loc: "SHD_RHD_469",
+		 }
+		 c.JSON(http.StatusInternalServerError, resp)
+		 return fmt.Errorf("%s", error_msg)
+	}
+
+	if err != nil {
+		 error_msg := fmt.Sprintf("failed insert to db:%v", err)
+		 log.Printf("***** Alarm:%s (SHD_RHD_477)", error_msg)
+		 resp := ApiTypes.JimoResponse {
+			Status: false,	
+			ErrorMsg: error_msg,
+			Loc: "SHD_RHD_481",
+		 }
+		 c.JSON(http.StatusInternalServerError, resp)
+		 return fmt.Errorf("%s", error_msg)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
-func runQuery(db *sql.DB, query string, selected_field_names []string, field_data_types []string) ([]byte, error) {
+// RunQuery executes the given query and returns the results as JSON string
+func RunQuery(db *sql.DB, query string, selected_fields []ApiTypes.FieldDef) ([]byte, error) {
+	log.Printf("RunQuery:%s (SHD_RHD_490)", query)
     rows, err := db.Query(query)
     if err != nil {
-        log.Printf("error:%v", err)
+        log.Printf("error:%v (SHD_RHD_493)", err)
         return nil, err
     }
     defer rows.Close()
@@ -555,8 +548,8 @@ func runQuery(db *sql.DB, query string, selected_field_names []string, field_dat
 
     for rows.Next() {
         // Create a slice of interface{} to hold the values
-        values := make([]interface{}, len(selected_field_names))
-        valuePtrs := make([]interface{}, len(selected_field_names))
+        values := make([]interface{}, len(selected_fields))
+        valuePtrs := make([]interface{}, len(selected_fields))
         
         for i := range values {
             valuePtrs[i] = &values[i]
@@ -564,34 +557,34 @@ func runQuery(db *sql.DB, query string, selected_field_names []string, field_dat
 
         // Scan the row into the value pointers
         if err := rows.Scan(valuePtrs...); err != nil {
-            log.Printf("scan error: %v", err)
+            log.Printf("scan error: %v (SHD_RHD_511)", err)
             return nil, err
         }
 
         // Create a map for this row
         rowMap := make(map[string]interface{})
         
-        for i, fieldName := range selected_field_names {
+        for i, item := range selected_fields {
+			fieldName := item.FieldName
             value := values[i]
             
             // Convert the value based on its data type
-            convertedValue := convertValueByType(value, field_data_types[i])
+            convertedValue := convertValueByType(value, selected_fields[i].DataType)
             rowMap[fieldName] = convertedValue
-			log.Printf("Read record, field_name:%s, field_value:%s", fieldName, value)
         }
         
         results = append(results, rowMap)
     }
 
     if err = rows.Err(); err != nil {
-        log.Printf("rows error: %v", err)
+        log.Printf("rows error: %v (SHD_RHD_530)", err)
         return nil, err
     }
 
     // Convert the results to JSON
     jsonData, err := json.Marshal(results)
     if err != nil {
-        log.Printf("JSON marshal error: %v", err)
+        log.Printf("JSON marshal error: %v (SHD_RHD_537)", err)
         return nil, err
     }
 
@@ -609,7 +602,7 @@ func convertValueByType(value interface{}, dataType string) interface{} {
         if val, ok := value.(string); ok {
             return val
         }
-        return fmt.Sprintf("%v", value)
+        return fmt.Sprintf("%v (SHD_RHD_555)", value)
         
     case "int", "integer", "bigint", "smallint", "tinyint":
         if val, ok := value.([]byte); ok {
@@ -680,30 +673,28 @@ func convertValueByType(value interface{}, dataType string) interface{} {
 
 func GetFieldStrValue(objMap map[string]interface{}, 
 			resource_name string,
-			field_name string,
-			loc string) (string, error) {
+			field_name string) (string, error) {
     if value_obj, ok := objMap[field_name]; ok {
 		if value_str, ok := value_obj.(string); ok {
 			return value_str, nil
 		}
 
-		error_msg := fmt.Sprintf("value is not a string, field_name:%s, resource_name:%s (%s)", 
-			field_name, resource_name, loc)
+		error_msg := fmt.Sprintf("value is not a string, field_name:%s, resource_name:%s (SHD_RHD_633)", 
+			field_name, resource_name)
 		log.Printf("***** Alarm:%s", error_msg)
 		err :=fmt.Errorf("%s", error_msg)
 		return "", err
 	}
 
-	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)", 
-			field_name, resource_name, loc)
+	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (SHD_RHD_640)", 
+			field_name, resource_name)
 	log.Printf("***** Alarm:%s", error_msg)
 	return "", fmt.Errorf("%s", error_msg)
 }
 
 func GetFieldStrArrayValue(objMap map[string]interface{}, 
 			resource_name string,
-			field_name string,
-			loc string) ([]string, error) {
+			field_name string) ([]string, error) {
 	if value_obj, ok := objMap[field_name]; ok {
         if value_slice, ok := value_obj.([]interface{}); ok {
             result := make([]string, len(value_slice))
@@ -719,21 +710,34 @@ func GetFieldStrArrayValue(objMap map[string]interface{},
         return nil, fmt.Errorf("field %s is not a []interface{} type, got %T", field_name, value_obj)
     }
 
-	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)", 
-			field_name, resource_name, loc)
-	log.Printf("***** Alarm:%s", error_msg)
+	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (665)", 
+			field_name, resource_name)
+	log.Printf("+++++ Warn:%s", error_msg)
+	return nil, nil
+}
+
+func GetFieldAnyArrayValue(objMap map[string]interface{}, 
+			resource_name string,
+			field_name string) ([]interface{}, error) {
+	if value_obj, ok := objMap[field_name]; ok {
+        if result, ok := value_obj.([]interface{}); ok {
+            return result, nil
+        }
+        return nil, fmt.Errorf("field %s is not a []interface{} type, got %T", field_name, value_obj)
+    }
+
+	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (665)", 
+			field_name, resource_name)
+	log.Printf("+++++ Warn:%s", error_msg)
 	return nil, fmt.Errorf("%s", error_msg)
 }
 
-func GetTableName(objMap map[string]interface{}, 
+func GetTableName(resource_def map[string]interface{}, 
 		resource_name string) (string, string, error) {
-	// It retrieves: db_name, table_name, selected_fields from objMap
-	db_name, err := GetFieldStrValue(objMap, resource_name, "db_name", "SHD_RHD_224")
-	if err != nil {
-		return "", "", err
-	}
+	// It retrieves: db_name and table_name. db_name is optional.
+	db_name, _ := GetFieldStrValue(resource_def, resource_name, "db_name")
 
-	table_name, err := GetFieldStrValue(objMap, resource_name, "table_name", "SHD_RHD_229")
+	table_name, err := GetFieldStrValue(resource_def, resource_name, "table_name")
 	if err != nil {
 		return "", "", err
 	}
@@ -742,21 +746,31 @@ func GetTableName(objMap map[string]interface{},
 	return db_name, table_name, nil
 }
 
-func GetSelectedFields(objMap map[string]interface{}, 
-		resource_name string) ([]string, []string, error) {
-	// It retrieves: db_name, table_name, selected_fields from objMap
-	selected_field_names, err := GetFieldStrArrayValue(objMap, resource_name, "selected_field_names", "SHD_RHD_515")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	field_data_types, err := GetFieldStrArrayValue(objMap, resource_name, "field_data_types", "SHD_RHD_520")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	log.Printf("selected fields:%s, types:%s (SHD_RHD_684)", selected_field_names, field_data_types)
-	return selected_field_names, field_data_types, nil
+func GetSelectedFields(json_array []map[string]interface{}, resource_name string) ([]ApiTypes.FieldDef, error) {
+    var fieldDefs []ApiTypes.FieldDef
+    
+    for i, item := range json_array {
+        // Marshal back to JSON, then unmarshal to struct
+        itemJSON, err := json.Marshal(item)
+        if err != nil {
+            return nil, fmt.Errorf("failed to marshal item at index %d in resource %s: %w", i, resource_name, err)
+        }
+        
+        var fieldDef ApiTypes.FieldDef
+        if err := json.Unmarshal(itemJSON, &fieldDef); err != nil {
+            return nil, fmt.Errorf("failed to unmarshal item at index %d in resource %s: %w", i, resource_name, err)
+        }
+        
+        converted := ApiTypes.FieldDef{
+            FieldName: fieldDef.FieldName,
+            DataType:  fieldDef.DataType,
+            Required:  fieldDef.Required,
+            Desc:      fieldDef.Desc,
+        }
+        fieldDefs = append(fieldDefs, converted)
+    }
+    
+    return fieldDefs, nil
 }
 
 func ConstructWhereClause(conditions QueryCondition) (string, error) {
@@ -765,7 +779,7 @@ func ConstructWhereClause(conditions QueryCondition) (string, error) {
 		log.Printf("***** Alarm: failed constructing query (SHD_RHD_281), err:%v", err)
         return "", err
     }
-	log.Printf("Where clause constructed:%s", sql)
+	log.Printf("Where clause constructed:%s (SHD_RHD_742)", sql)
     return sql, nil
 }
 

@@ -7,6 +7,7 @@ const (
 	ActivityType_ConfigError			string = "config_error"
 	ActivityType_BadEmail				string = "bad_email"
 	ActivityType_DatabaseError 			string = "db_error"
+	ActivityType_Failed 				string = "failed"
 	ActivityType_GitHubAuth				string = "github_auth"
 	ActivityType_InvalidPassword		string = "invalid_password"
 	ActivityType_InvalidToken			string = "invalid_token"
@@ -18,6 +19,7 @@ const (
 	ActivityType_SetCookie				string = "set_cookie"
 	ActivityType_SentEmail				string = "sent_email"
 	ActivityType_SignupSuccess			string = "signup_success"
+	ActivityType_Success 				string = "success"
 	ActivityType_UnverifiedEmail		string = "unverified_email"
 	ActivityType_UserCreated			string = "user_created"
 	ActivityType_UserLoginSuccess		string = "user_login_success"
@@ -31,15 +33,18 @@ const (
 )
 
 const (
-	Activity_Auth 						string = "oauth"
-	Activity_AddRecord			 		string = "add_record"
-	Activity_JimoRequest			 	string = "jimo_request"
+	ActivityName_Auth 					string = "oauth"
+	ActivityName_AddRecord			 	string = "add_record"
+	ActivityName_JimoRequest			string = "jimo_request"
+	ActivityName_Query 					string = "query"
+	ActivityName_LoadResourceStore 		string = "load_resource_store"
 )
 
 const (
 	AppName_Auth 						string = "auth"
 	AppName_SysDataStore				string = "sys_data_store"
 	AppName_RequestHandler				string = "request_handler"
+	AppName_Stores 						string = "stores"
 )
 
 const (

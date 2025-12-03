@@ -289,3 +289,44 @@ func CloseDatabase() {
         ApiTypes.MySql_DB_miner.Close()
     }
 }
+
+func CreateGenericTable(table_name string) error {
+    db_type := ApiTypes.DatabaseInfo.DBType
+    const common_fields = 
+        "record_type VARCHAR(255) NOT NULL, " +
+        "doc_type VARCHAR(255) NOT NULL, " +
+        "doc_name VARCHAR(255) NOT NULL, " +
+        "doc_desc TEXT NOT NULL, " +
+        "json_doc JSON NOT NULL, " +
+        "record_data TEXT NOT NULL, " +
+        "remarks TEXT DEFAULT NULL, " +
+        "del_flag TINYINT(1) DEFAULT 0, " +
+        "created_by VARCHAR(255) NOT NULL, " +
+        "updated_by VARCHAR(255) NOT NULL, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+        "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+
+    var stmt string
+    var db *sql.DB
+    switch db_type {
+    case ApiTypes.MysqlName:
+         db = ApiTypes.MySql_DB_miner
+         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + 
+            "doc_id BIGINT AUTO_INCREMENT PRIMARY KEY, " + common_fields +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+
+    case ApiTypes.PgName:
+         db = ApiTypes.PG_DB_miner
+         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + common_fields + ");"
+
+    default:
+        return fmt.Errorf("database type not supported:%s (SHD_DBS_315)", db_type)
+    }
+
+    _, err := db.Exec(stmt)
+    if err != nil {
+        return fmt.Errorf("failed to create table (SHD_DBS_320): %w", err)
+    }
+    log.Printf("Table created successfully (SHD_DBS_322), table_name:%s", table_name)
+    return nil
+}

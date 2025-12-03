@@ -88,11 +88,44 @@ func IsDuplicateKeyError(err error) bool {
     return false
 }
 
-func ConvertToJSON(json_str string) (interface{}, error) {
-    var jsonData interface{}
+func ConvertToJSON(json_str string) (map[string]interface{}, error) {
+    var jsonData map[string]interface{}
     err := json.Unmarshal([]byte(json_str), &jsonData)  // Deserialization: string -> Go object
     if err != nil {
         return nil, fmt.Errorf("deserialization error: %v", err)
     }
     return jsonData, nil
+}
+
+func ConvertToAny(str string) (interface{}, string, error) {
+	// This function converts 'json_str' to an object of type 'any' (or interface{})
+	// It returns the object, the type.
+    var generic_obj interface{}
+    err := json.Unmarshal([]byte(str), &generic_obj)  // Deserialization: string -> Go object
+    if err != nil {
+        return nil, "", fmt.Errorf("deserialization error: %v", err)
+    }
+
+	switch generic_obj.(type) {
+	case map[string]interface{}:
+		 return generic_obj, "map", nil
+
+	case []interface{}:
+		 return generic_obj, "array", nil
+
+	case nil:
+		 return generic_obj, "nil", nil
+
+	case bool:
+		 return generic_obj, "bool", nil
+
+	case float64:
+		 return generic_obj, "float64", nil
+
+	case string:
+		 return generic_obj, "string", nil
+
+	default:
+		 return generic_obj, "error", nil
+	}
 }

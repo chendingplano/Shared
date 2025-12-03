@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/stores"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 )
 
@@ -22,9 +21,9 @@ type ActivityLogCache struct {
     db          *sql.DB          // Database connection
     db_type     string
     table_name  string
+    id_name     string
     crt_log_id  int64
     num_log_ids int
-    id_name     string
     activity_log_insert_fieldnames string
     done        chan struct{}    // Signals shutdown
     wg          sync.WaitGroup   // Tracks background goroutine
@@ -107,8 +106,9 @@ func NextActivityLogID() int64 {
     return activity_log_singleton.nextLogID()
 }
 
-// Public API
-// AddActivityLog for applications to add logs to the cache
+// AddActivityLog adds an activity log record to the cache.
+// This is a non-blocking public API call. Records are added to the cache
+// and flushed to the database in the background.
 func AddActivityLog(record ApiTypes.ActivityLogDef) error {
     c := activity_log_singleton
     if c == nil {
@@ -152,7 +152,25 @@ func (c *ActivityLogCache) start() {
 }
 
 func (c *ActivityLogCache) nextLogID() int64 {
-    return stores.NextManagedID(c.id_name)
+    c.mu.Lock()
+    defer c.mu.Unlock()
+
+    if c.num_log_ids <= 0 {
+        // Need to fetch a new block of IDs
+        block_size := 1000
+        start_id, err := NextIDBlock(c.id_name, block_size)
+        if err != nil {
+            log.Printf("***** Alarm: failed to get next ID block for activity_log_id: %v (SHD_ALG_141)", err)
+            return -1
+        }
+        c.crt_log_id = start_id - 1
+        c.num_log_ids = block_size
+        log.Printf("Fetched new activity_log_id block: start_id:%d, size:%d (SHD_ALG_148)", start_id, block_size)
+    }
+    id := c.crt_log_id
+    c.crt_log_id++
+    c.num_log_ids--
+    return id
 }
 
 // flushLoop runs indefinitely, flushing cached records to DB every 10 seconds

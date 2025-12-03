@@ -41,7 +41,8 @@ function createAuthStore() {
     };
     async function login(email, password) {
         try {
-            const response = await fetch('/api/login', {
+            // const response = await fetch('/api/login', {
+            const response = await fetch('/auth/email/login', {
                 method: 'POST',
                 body: JSON.stringify({ email, password }),
                 headers: { 'Content-Type': 'application/json' },

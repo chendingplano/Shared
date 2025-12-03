@@ -108,11 +108,19 @@ type ActivityLogDef struct {
     CreatedAt 	   *string    	`json:"created_at"`
 }
 
-type FieldInfo struct {
+type FieldDef struct {
     FieldName       string      `json:"field_name"`
     DataType        string      `json:"data_type"`
     Required        bool        `json:"required"`
+    ElementType     string      `json:"element_type,omitempty"`
     Desc            string      `json:"desc,omitempty"`
+}
+
+type FieldDefJson struct {
+    field_name      string;
+    data_type       string;
+    required        bool;
+    desc            string;
 }
 
 type JimoRequest struct {
@@ -144,14 +152,29 @@ type JimoResponse struct {
 }
 
 type ResourceDef struct {
-    ResourceID      string      `json:"resource_id"`
-    ResourceName    string      `json:"resource_name"`
-    ResourceOpr     string      `json:"resource_opr"`
-    ResourceType    string      `json:"resource_type"`
-    ResourceDef     interface{} `json:"resource_def"`
-    QueryConditions interface{} `json:"query_conditions"`
-    ErrorMsg        string      `json:"error_msg"`
-    LOC             string      `json:"loc"`
+    ResourceID      int64                   `json:"resource_id"`
+    ResourceName    string                  `json:"resource_name"`
+    ResourceOpr     string                  `json:"resource_opr"`
+    ResourceDesc    string                  `json:"resource_desc"`
+    ResourceType    string                  `json:"resource_type"`
+    DBName          string                  `json:"db_name"`
+    TableName       string                  `json:"table_name"`
+    ResourceStatus  string                  `json:"resource_status"`
+    ResourceRemarks string                  `json:"resource_remarks"`
+    ResourceJSON    map[string]interface{}  `json:"resource_def"`
+    QueryCondsJSON  map[string]interface{}  `json:"query_conds"`
+    ErrorMsg        string                  `json:"error_msg"`
+    Creator         string                  `json:"creator"`
+    Updater         string                  `json:"updater"`
+    CreatedAt       string                  `json:"created_at"`
+    UpdatedAt       string                  `json:"updated_at"`
+    LOC             string                  `json:"loc"`
+}
+
+type ResourceStoreDef struct {
+    ResourceDef     ResourceDef
+    FieldDefs       []FieldDef
+    SelectedFields  []FieldDef
 }
 
 // Event Related types
