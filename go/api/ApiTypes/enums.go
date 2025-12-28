@@ -65,6 +65,8 @@ const (
 const (
 	ReqAction_Query						string = "query"
 	ReqAction_Insert					string = "insert"
+	ReqAction_Update					string = "update"
+	ReqAction_Delete					string = "delete"
 )
 
 const (
@@ -74,4 +76,16 @@ const (
 
 const (
 	ResourceType_Table 					string = "table"
+)
+
+// Make sure sync the changes to src/lib/types/CommonTypes.ts
+const (
+	CustomHttpStatus_Success 				int = 550;
+	CustomHttpStatus_ResourceNotFound		int = 551;
+	CustomHttpStatus_BadRequest 			int = 552;
+	CustomHttpStatus_NotImplementedYet 		int = 553;
+	CustomHttpStatus_InternalError 			int = 554;
+	CustomHttpStatus_ServerException		int = 555;
+	CustomHttpStatus_KeyNotUnique 			int = 556;
+	CustomHttpStatus_NotLoggedIn			int = 557;
 )

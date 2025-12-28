@@ -36,14 +36,9 @@ func CreateValueGroupsMySQL(
 	return valueGroups, args, nil
 }
 
-func CreateOnConflictMySQL(
-	resource_store ApiTypes.ResourceStoreDef,
-	resource_name string) (string, error) {
+func CreateOnConflictMySQL(resource_request ApiTypes.InsertRequest) (string, error) {
 
-	updateCols, err := GetFieldStrArrayValue(resource_store.ResourceDef.ResourceJSON, resource_name, "on_conflict_update_cols")
-	if err != nil {
-		return "", err
-	}
+	updateCols := resource_request.OnConflictUpdateCols
 
 	if len(updateCols) == 0 {
 		return "", nil

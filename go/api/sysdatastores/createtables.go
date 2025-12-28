@@ -24,16 +24,17 @@ func CreateTables() error {
          return fmt.Errorf("***** Unrecognized database type (MID_DBS_124): %s", database_type)
     }
 
-    log.Printf("Sessions:%s", ApiTypes.LibConfig.SystemTableNames.TableName_Sessions)
-    log.Printf("EmailStore:%s", ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore)
+    log.Printf("LoginSessions:%s", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
+    log.Printf("EmailStore:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
 
-    CreateLoginSessionsTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_Sessions)
-    CreateUsersTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_Users)
-    CreateIDMgrTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_IDMgr)
-    CreateActivityLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_ActivityLog)
-    CreateSessionLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_SessionLog)
-    CreateEmailStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore)
-    CreatePromptStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_PromptStore)
-    CreateResourcesTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableName_Resources)
+    CreateLoginSessionsTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
+    CreateUsersTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameUsers)
+    CreateIDMgrTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr)
+    CreateActivityLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog)
+    CreateSessionLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog)
+    CreateEmailStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
+    CreatePromptStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore)
+    CreateResourcesTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
+    CreateTableManagerTable()
     return nil
 }

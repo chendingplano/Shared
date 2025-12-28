@@ -47,6 +47,8 @@ func InitResourceStore(db_type string,
 }
 
 // Public API
+// GetResourceDef retrieves the resource def by resource_name and resource_opr.
+// If not found, it returns error.
 func GetResourceDef(resource_name string, resource_opr string) (ApiTypes.ResourceStoreDef, error) {
     key := resource_name + "_" + resource_opr
     resource_def, exists := resource_store_singleton.resource_map[key]
@@ -94,7 +96,7 @@ func (c *ResourceStore) start() {
 func (c *ResourceStore) LoadResourcesFromDB() {
 	// 2. Insert a record to id_mgr for activity_log id.
     log.Printf("Load Resources from DB (SHD_RST_091)")
-	field_names := "resource_id, resource_name, resource_opr, resource_desc,  resource_type, " +
+	field_names := "resource_id, resource_name, resource_action, resource_desc,  resource_type, " +
                    "db_name, table_name, resource_status, resource_def, query_conds"
 	var query string
     db_type := c.db_type
@@ -124,11 +126,12 @@ func (c *ResourceStore) LoadResourcesFromDB() {
 
     var resource_def_sql, resource_cond_sql sql.NullString 
     var num_resources = 0
+    var resource_name, resource_action string
 	for rows.Next() {
 		var row ApiTypes.ResourceDef
 		if err := rows.Scan(&row.ResourceID, 
-						&row.ResourceName, 
-						&row.ResourceOpr, 
+						&resource_name, 
+						&resource_action, 
 						&row.ResourceDesc,
 						&row.ResourceType,
 						&row.DBName,
@@ -144,9 +147,8 @@ func (c *ResourceStore) LoadResourcesFromDB() {
             resource_cond_str := resource_cond_sql.String
             def_obj, err1 := ApiUtils.ConvertToJSON(resource_cond_str)
             if err1 != nil {
-                row.ErrorMsg = fmt.Sprintf("incorrect resource_cond JSON string:%s", resource_cond_str)
+                row.ErrorMsg = fmt.Sprintf("incorrect resource_cond JSON string:%s (SHD_RST_131)", resource_cond_str)
                 row.ResourceJSON = nil
-                row.LOC = "SHD_RST_131"
                 log.Printf("***** Alarm:%s (SHD_RST_156)", row.ErrorMsg)
                 continue
             } else {
@@ -154,9 +156,7 @@ func (c *ResourceStore) LoadResourcesFromDB() {
             }
         }
 
-        row.LOC = "SHD_RST_135"
-
-        key := row.ResourceName + "_" + row.ResourceOpr
+        key := resource_name + "_" +resource_action
         var c_row ApiTypes.ResourceStoreDef
         c_row.ResourceDef = row
 
@@ -164,7 +164,6 @@ func (c *ResourceStore) LoadResourcesFromDB() {
             err := parseResourceDef(&row, resource_def_sql)
             if err != nil {
                 row.ErrorMsg = fmt.Sprintf("Failed parsing resource_def json, err:%v, json_str:%s", err, resource_def_sql.String)
-                row.LOC = "SHD_RST_146"
                 log.Printf("***** Alarm:%s (SHD_RST_151)", row.ErrorMsg)
 		        sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			        ActivityName: 		ApiTypes.ActivityName_LoadResourceStore,
@@ -177,7 +176,8 @@ func (c *ResourceStore) LoadResourcesFromDB() {
                 // It successfully parsed resource_def into JSON object
                 // and sets it to row.ResourceJSON.
                 // Now construct structs from it.
-                msg := fmt.Sprintf("Parsed resource_def JSON, resource:%s:%s", row.ResourceName, row.ResourceOpr)
+                msg := fmt.Sprintf("Parsed resource_def JSON, resource:%s:%s", 
+                    resource_name, resource_action)
                 log.Printf("%s (SHD_RST_153)", msg)
 
 		        sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -188,9 +188,10 @@ func (c *ResourceStore) LoadResourcesFromDB() {
 			        ActivityMsg: 		&msg,
 			        CallerLoc: 			"SHD_RST_188"})
 
-                field_defs, err := ConstructFieldDefs(row.ResourceJSON, row.ResourceName)
+                field_defs, err := ConstructFieldDefs(row.ResourceJSON, resource_name)
                 if err == nil {
-                    msg := fmt.Sprintf("Constructed FieldDefs, resource:%s:%s", row.ResourceName, row.ResourceOpr)
+                    msg := fmt.Sprintf("Constructed FieldDefs, resource:%s:%s", 
+                        resource_name, resource_action)
                     log.Printf("%s (SHD_RST_153)", msg)
 
 		            sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -204,9 +205,10 @@ func (c *ResourceStore) LoadResourcesFromDB() {
                     c_row.FieldDefs = field_defs
                 }
 
-                selected_defs, err := ConstructSelectedFields(row.ResourceJSON, row.ResourceName)
+                selected_defs, err := ConstructSelectedFields(row.ResourceJSON, resource_name)
                 if err == nil {
-                    msg := fmt.Sprintf("Constructed SelectedFields, resource:%s:%s", row.ResourceName, row.ResourceOpr)
+                    msg := fmt.Sprintf("Constructed SelectedFields, resource:%s:%s", 
+                        resource_name, resource_action)
                     log.Printf("%s (SHD_RST_210)", msg)
 
 		            sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -222,8 +224,8 @@ func (c *ResourceStore) LoadResourcesFromDB() {
             }
         } 
 
-        log.Printf("Add resource, resource_name:%s, resource_opr:%s (SHD_RST_136)", 
-                row.ResourceName, row.ResourceOpr)
+        log.Printf("Add resource, resource_name:%s, resource_action:%s (SHD_RST_136)", 
+                resource_name, resource_action)
 
         c.resource_map[key] = c_row
         num_resources += 1
@@ -296,8 +298,7 @@ func parseResourceDef(row *ApiTypes.ResourceDef, resource_def_sql sql.NullString
     }
 
     row.ResourceJSON = def_obj.(map[string]interface{})
-    log.Printf("Load Resource, resource_name:%s, resource_opr:%s (SHD_RST_250)",
-                row.ResourceName, row.ResourceOpr)
+    log.Printf("Load Resource, resource_name:%s (SHD_RST_250)", row.ResourceName)
     return nil
 }
 

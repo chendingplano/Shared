@@ -1,6 +1,7 @@
 # config.toml
 id_start_value              = 10000
 id_inc_value                = 1000
+allow_dynamic_tables        = true
 
 [system_table_names]
 table_name_test             = "test"
@@ -12,6 +13,7 @@ table_name_id_mgr           = "id_mgr"
 table_name_email_store      = "email_store"
 table_name_prompt_store     = "prompt_store"
 table_name_resources        = "resources"
+table_name_table_manager    = "table_manager"
 
 [system_ids]
 activity_log_id             = "IDs for activity log"

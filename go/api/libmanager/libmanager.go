@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-func InitLib() {
+func InitLib(config_path string) {
+	// config_path should be "~/Workspace/Shared/libconfig.toml"
 	// 1. DB Must be initialized properly
-	config_path := "/Users/cding/Workspace/Shared/libconfig.toml"
 	log.Printf("Loading config from %s (SHD_LMG_047)", config_path)
 	viper.SetConfigFile(config_path)
 	viper.SetConfigType("toml")
@@ -43,40 +43,46 @@ func InitLib() {
 		os.Exit(1)
 	}
 
-	log.Printf("Lib Config, sessions:%s", ApiTypes.LibConfig.SystemTableNames.TableName_Sessions)
-	log.Printf("Lib Config, email_store:%s", ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore)
-	log.Printf("Lib Config, test:%s", ApiTypes.LibConfig.SystemTableNames.TableName_Test)
-	
+	log.Printf("Lib Config, sessions:%s", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
+	log.Printf("Lib Config, email_store:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
+	log.Printf("Lib Config, test:%s", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
+
 	auth.SetAuthInfo(ApiTypes.GetDBType(),
 		ApiTypes.DatabaseInfo.HomeURL,
-		ApiTypes.LibConfig.SystemTableNames.TableName_Sessions,
-		ApiTypes.LibConfig.SystemTableNames.TableName_Users)
+		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions,
+		ApiTypes.LibConfig.SystemTableNames.TableNameUsers)
 
 	var db *sql.DB
-    db_type := ApiTypes.DatabaseInfo.DBType
-    switch db_type {
-    case ApiTypes.MysqlName:
-         db = ApiTypes.MySql_DB_miner
+	db_type := ApiTypes.DatabaseInfo.DBType
+	switch db_type {
+	case ApiTypes.MysqlName:
+		db = ApiTypes.MySql_DB_miner
 
-    case ApiTypes.PgName:
-         db = ApiTypes.PG_DB_miner
+	case ApiTypes.PgName:
+		db = ApiTypes.PG_DB_miner
 
-    default:
-         error_msg := fmt.Sprintf("Unrecognized database type (SHD_LMG_026):%s", db_type)
-		 log.Printf("***** Alarm:%s", error_msg)
-		 os.Exit(1)
-    }
+	default:
+		error_msg := fmt.Sprintf("Unrecognized database type (SHD_LMG_026):%s", db_type)
+		log.Printf("***** Alarm:%s", error_msg)
+		os.Exit(1)
+	}
+
+	if db == nil {
+		error_msg := "'db' is nil (SHD_LMG_071)"
+		log.Printf("***** Alarm:%s", error_msg)
+		os.Exit(1)
+	}
 
 	stores.InitSharedStores(db_type, db)
-	sysdatastores.InitActivityLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableName_ActivityLog, db)
+	sysdatastores.InitActivityLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog, db)
 	err := sysdatastores.UpsertActivityLogIDDef()
 	if err != nil {
 		log.Printf("Failed upsert the system id record (SHD_LMG_021), err:%v", err)
 		os.Exit(1)
 	}
-	
+
 	// 2. Init SessionLog
-	sysdatastores.InitSessionLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableName_SessionLog, db)
+	sysdatastores.InitSessionLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
 }
 
 func ExitLib() {

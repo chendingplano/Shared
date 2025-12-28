@@ -100,7 +100,7 @@ func UpsertActivityLogIDDef() error {
 	field_names := "id_name, crt_value, id_desc, caller_loc"
 	var stmt string
     db_type := ApiTypes.DatabaseInfo.DBType
-    table_name := ApiTypes.LibConfig.SystemTableNames.TableName_IDMgr
+    table_name := ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr
     var db *sql.DB
 	switch db_type {
     case ApiTypes.MysqlName:

@@ -5,30 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	middleware "github.com/chendingplano/shared/go/auth-middleware"
-	"github.com/labstack/echo/v4"
 )
 
 const (
-	resource_store_selected_field_names = 
-		"resource_id, 	 	resource_name,  resource_opr,    resource_desc,    resource_type, " +
-        "db_name,           table_name,     resource_status, resource_remarks, resource_def, " +
-        "query_conds,       error_msg,      creator,         updater,          created_at, " +
-        "updated_at,        loc"
+	resource_store_selected_field_names = "resource_id, 	 	resource_desc,    resource_type, " +
+		"db_name,           table_name,     resource_status, resource_remarks, resource_def, " +
+		"query_conds,       error_msg"
 
-	resource_store_insert_field_names = 
-		"resource_id, 	 	resource_name,  resource_opr,    resource_desc,    resource_type, " +
-        "query_conds,       error_msg,      creator,         updater,          loc"
+	// resource_store_insert_field_names = "resource_name, resource_action, resource_desc,    resource_type, db_name" +
+	// 	"table_name,    resource_status, resource_remarks, resource_def,  query_conds, " +
+	// 	"error_msg,     creator,         updater,          loc"
 
-    ResourceStoreTableDescSimple = `
+	ResourceStoreTableDescSimple = `
         ResourceID        	int64     # A unique sequence number
         ResourceName 		string    # Resource name, identify the resource
-        ResourceOpr         string    # Resource opr, identify the operation on the resource
+        ResourceAction      string    # Resource action, identify the operation on the resource
         ResourceDesc		string    # Resource description
         ResourceType		string    # Resource type
         DBName              string    # Its db name, if the resource type is 'table'
@@ -45,116 +39,109 @@ const (
 )
 
 func CreateResourcesTable(
-            db *sql.DB, 
-            db_type string,
-            table_name string) error {
-    log.Printf("To create resource table")
-    var stmt string
-    fields_1 := "resource_name 		VARCHAR(128)    NOT NULL, " + 
-                "resource_opr 		VARCHAR(32)     NOT NULL, " + 
-                "resource_desc		TEXT		    NOT NULL, " + 
-                "resource_type		VARCHAR(32)     NOT NULL, " + 
-                "db_name            VARCHAR(64)     DEFAULT NULL, " + 
-                "table_name         VARCHAR(64)     DEFAULT NULL, " + 
-                "resource_status	VARCHAR(32)     NOT NULL, " +
-                "resource_remarks   TEXT            DEFAULT NULL, " +
-                "error_msg          TEXT            DEFAULT NULL, " +
-                "loc                VARCHAR(32)     NOT NULL, "
-	fields_2 := "creator			VARCHAR(64)     NOT NULL, " + 
-                "updater			VARCHAR(64)     NOT NULL, " + 
-                "updated_at    		TIMESTAMP       DEFAULT CURRENT_TIMESTAMP," + 
-                "created_at    		TIMESTAMP       DEFAULT CURRENT_TIMESTAMP)"
+	db *sql.DB,
+	db_type string,
+	table_name string) error {
+	log.Printf("To create resource table")
+	var stmt string
+	fields_1 := "resource_name 		VARCHAR(128)    NOT NULL, " +
+		"resource_action 	VARCHAR(32)     NOT NULL, " +
+		"resource_desc		TEXT		    NOT NULL, " +
+		"resource_type		VARCHAR(32)     NOT NULL, " +
+		"db_name            VARCHAR(64)     DEFAULT NULL, " +
+		"table_name         VARCHAR(64)     DEFAULT NULL, " +
+		"resource_status	VARCHAR(32)     NOT NULL, " +
+		"resource_remarks   TEXT            DEFAULT NULL, " +
+		"error_msg          TEXT            DEFAULT NULL, " +
+		"loc                VARCHAR(32)     NOT NULL, "
+	fields_2 := "creator			VARCHAR(64)     NOT NULL, " +
+		"updater			VARCHAR(64)     NOT NULL, " +
+		"updated_at    		TIMESTAMP       DEFAULT CURRENT_TIMESTAMP," +
+		"created_at    		TIMESTAMP       DEFAULT CURRENT_TIMESTAMP)"
 
-    switch db_type {
-    case ApiTypes.MysqlName:
-         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + 
-                "resource_id  NOT NULL AUTO_INCREMENT PRIMARY KEY, " + fields_1 +
-				"resource_def 		JSON     	 	NOT NULL, " +
-				"query_conds        JSON     	 	DEFAULT NULL, " + fields_2 +
-            	"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+	switch db_type {
+	case ApiTypes.MysqlName:
+		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" +
+			"resource_id  NOT NULL AUTO_INCREMENT PRIMARY KEY, " + fields_1 +
+			"resource_def 		JSON     	 	NOT NULL, " +
+			"query_conds        JSON     	 	DEFAULT NULL, " + fields_2 +
+			"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
 
-    case ApiTypes.PgName:
-         stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + 
-                "resource_id BIGSERIAL PRIMARY KEY," + fields_1 + 
-				"resource_def 		JSONB     	 	NOT NULL, " +
-				"query_conds        JSONB     	 	DEFAULT NULL, " + fields_2
+	case ApiTypes.PgName:
+		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" +
+			"resource_id BIGSERIAL PRIMARY KEY," + fields_1 +
+			"resource_def 		JSONB     	 	NOT NULL, " +
+			"query_conds        JSONB     	 	DEFAULT NULL, " + fields_2
 
-    default:
-        err := fmt.Errorf("database type not supported:%s (SHD_RSC_117)", db_type)
-        log.Printf("***** Alarm:%s", err.Error())
-        return err
-    }
+	default:
+		err := fmt.Errorf("database type not supported:%s (SHD_RSC_117)", db_type)
+		log.Printf("***** Alarm:%s", err.Error())
+		return err
+	}
 
-    err := databaseutil.ExecuteStatement(db, stmt)
-    if err != nil {
-        error_msg := fmt.Errorf("failed creating table (SHD_RSC_045), err: %w, stmt:%s", err, stmt)
-        log.Printf("***** Alarm: %s", error_msg.Error())
-        return error_msg
-    }
+	err := databaseutil.ExecuteStatement(db, stmt)
+	if err != nil {
+		error_msg := fmt.Errorf("failed creating table (SHD_RSC_045), err: %w, stmt:%s", err, stmt)
+		log.Printf("***** Alarm: %s", error_msg.Error())
+		return error_msg
+	}
 
-    if db_type == ApiTypes.PgName{
-        idx1 := `CREATE INDEX IF NOT EXISTS idx_created_at ON ` + table_name + ` (created_at);`
-        databaseutil.ExecuteStatement(db, idx1)
-    }
+	if db_type == ApiTypes.PgName {
+		idx1 := `CREATE INDEX IF NOT EXISTS idx_created_at ON ` + table_name + ` (created_at);`
+		databaseutil.ExecuteStatement(db, idx1)
+	}
 
-    log.Printf("Create table '%s' success (SHD_RSC_188)", table_name)
+	log.Printf("Create table '%s' success (SHD_RSC_188)", table_name)
 
-    return nil
+	return nil
 }
 
 func GetResourceStoreTableDesc() string {
-    return ResourceStoreTableDescSimple
+	return ResourceStoreTableDescSimple
 }
 
 // GetResourceByName retrieves a resource record by resource_name.
 // Resources are identified by resource_name and resource_opr.
 // Returns error if not found or other errors.
 // Otherwise returns the resource record.
-func GetResourceByName(resource_name string, resource_opr string) (ApiTypes.ResourceDef, error) {
-    // This function retrieves a prompt record by prompt_name.
-    var query string
-    var db *sql.DB
+func GetResourceByName(resource_name string, resource_action string) (ApiTypes.ResourceDef, error) {
+	// This function retrieves a prompt record by prompt_name.
+	var query string
+	var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_Resources
-    var resource_info ApiTypes.ResourceDef
-    switch db_type {
-    case ApiTypes.MysqlName:
-         query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = ? AND resource_opr = ? LIMIT 1", 
-                    resource_store_selected_field_names, table_name)
-         db = ApiTypes.MySql_DB_miner
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameResources
+	var resource_info ApiTypes.ResourceDef
+	switch db_type {
+	case ApiTypes.MysqlName:
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = ? AND resource_action = ? LIMIT 1",
+			resource_store_selected_field_names, table_name)
+		db = ApiTypes.MySql_DB_miner
 
-    case ApiTypes.PgName:
-         query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = $1 AND resource_opr = $2 LIMIT 1", 
-                    resource_store_selected_field_names, table_name)
-         db = ApiTypes.PG_DB_miner
+	case ApiTypes.PgName:
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = $1 AND resource_action = $2 LIMIT 1",
+			resource_store_selected_field_names, table_name)
+		db = ApiTypes.PG_DB_miner
 
-    default:
-         err := fmt.Errorf("unsupported database type (SHD_RSC_326): %s", db_type)
-         log.Printf("***** Alarm: %s", err.Error())
-         return resource_info, err
-    }
+	default:
+		err := fmt.Errorf("unsupported database type (SHD_RSC_326): %s", db_type)
+		log.Printf("***** Alarm: %s", err.Error())
+		return resource_info, err
+	}
 
 	// Query the database for dashboard data
-    resource_json_str := sql.NullString{}
-    query_conds_json_str := sql.NullString{}
-	err := db.QueryRow(query, resource_name).Scan(
-        &resource_info.ResourceID,
-        &resource_info.ResourceName,
-        &resource_info.ResourceOpr,
-        &resource_info.ResourceDesc,
-        &resource_info.ResourceType,
-        &resource_info.DBName,
-        &resource_info.TableName,
-        &resource_info.ResourceStatus,
-        &resource_info.ResourceRemarks,
-        &resource_json_str,
-        &query_conds_json_str,
-        &resource_info.ErrorMsg,
-        &resource_info.Creator,
-        &resource_info.Updater,
-        &resource_info.CreatedAt,
-        &resource_info.UpdatedAt,
-        &resource_info.LOC)
+	resource_json_str := sql.NullString{}
+	query_conds_json_str := sql.NullString{}
+	err := db.QueryRow(query, resource_name, resource_action).Scan(
+		&resource_info.ResourceID,
+		&resource_info.ResourceDesc,
+		&resource_info.ResourceType,
+		&resource_info.DBName,
+		&resource_info.TableName,
+		&resource_info.ResourceStatus,
+		&resource_info.ResourceRemarks,
+		&resource_json_str,
+		&query_conds_json_str,
+		&resource_info.ErrorMsg)
 
 	if err != nil {
 		error_msg := fmt.Sprintf("database error:%v (SHD_RSC_133)", err)
@@ -162,32 +149,33 @@ func GetResourceByName(resource_name string, resource_opr string) (ApiTypes.Reso
 		return resource_info, err
 	}
 
-    if resource_json_str.Valid {
-        err = json.Unmarshal([]byte(resource_json_str.String), &resource_info.ResourceJSON)
-        if err != nil {
-            error_msg := fmt.Errorf("invalid resource JSON (SHD_RSC_130): %v", err)
-            log.Printf("***** Alarm:%s", error_msg)
-        }
-    }
-        
-    if query_conds_json_str.Valid {
-        err = json.Unmarshal([]byte(query_conds_json_str.String), &resource_info.QueryCondsJSON)
-        if err != nil {
-            error_msg := fmt.Errorf("invalid query conditions JSON (SHD_RSC_131): %v", err)
-            log.Printf("***** Alarm:%s", error_msg)
-        }
-    }
+	if resource_json_str.Valid {
+		err = json.Unmarshal([]byte(resource_json_str.String), &resource_info.ResourceJSON)
+		if err != nil {
+			error_msg := fmt.Errorf("invalid resource JSON (SHD_RSC_130): %v", err)
+			log.Printf("***** Alarm:%s", error_msg)
+		}
+	}
 
-    return resource_info, nil
+	if query_conds_json_str.Valid {
+		err = json.Unmarshal([]byte(query_conds_json_str.String), &resource_info.QueryCondsJSON)
+		if err != nil {
+			error_msg := fmt.Errorf("invalid query conditions JSON (SHD_RSC_131): %v", err)
+			log.Printf("***** Alarm:%s", error_msg)
+		}
+	}
+
+	return resource_info, nil
 }
 
+/*
 func AddResourceFromFrontend(c echo.Context) error {
-    user_name, err := middleware.IsAuthenticated(c, "SHD_PSC_221")
+    user_info, err := middleware.IsAuthenticated(c, "SHD_PSC_221")
     if err != nil {
 	    log_id := NextActivityLogID()
 		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d (SHD_RSC_224)", err, log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{
-            LogID:              log_id,         
+            LogID:              log_id,
 			ActivityName: 		ApiTypes.ActivityName_AddRecord,
 			ActivityType: 		ApiTypes.ActivityType_AuthFailure,
 			AppName: 			ApiTypes.AppName_SysDataStore,
@@ -212,7 +200,7 @@ func AddResourceFromFrontend(c echo.Context) error {
 	    log_id := NextActivityLogID()
 		error_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_RSC_043)", log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{
-            LogID:              log_id,         
+            LogID:              log_id,
 			ActivityName: 		ApiTypes.ActivityName_AddRecord,
 			ActivityType: 		ApiTypes.ActivityType_BadRequest,
 			AppName: 			ApiTypes.AppName_SysDataStore,
@@ -229,12 +217,11 @@ func AddResourceFromFrontend(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, resp)
 	}
 
-    req.Creator = user_name
-    req.Updater = user_name
-    log.Printf("Prompt to add, PromptName:%s, User:%s (SHD_RSC_239)", 
-        req.ResourceName, user_name)
+    log.Printf("Prompt to add, PromptName:%s, User:%s (SHD_RSC_239)",
+        req.ResourceName, user_info.UserName)
 
-    prompt_id, err_str := AddResource(req)
+    prompt_id, err_str := AddResource(req, user_info.UserName,
+            user_info.UserName, "SHD_RSC_231")
     if prompt_id > 0 {
         resp := AddPromptResponse {
             Status: true,
@@ -276,20 +263,24 @@ func AddResourceFromFrontend(c echo.Context) error {
     return c.JSON(http.StatusInternalServerError, resp)
 }
 
-func AddResource(resource_info ApiTypes.ResourceDef) (int64, string) {
+func AddResource(
+        resource_info ApiTypes.ResourceDef,
+        creator string,
+        updater string,
+        loc string) (int64, string) {
     var db *sql.DB
     var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_Resources
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameResources
     switch db_type {
     case ApiTypes.MysqlName:
          db = ApiTypes.MySql_DB_miner
-         stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     table_name, resource_store_insert_field_names)
 
     case ApiTypes.PgName:
          db = ApiTypes.PG_DB_miner
-         stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", 
+         stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
                     table_name, resource_store_insert_field_names)
 
     default:
@@ -301,9 +292,9 @@ func AddResource(resource_info ApiTypes.ResourceDef) (int64, string) {
     log.Printf("Resource ID (SHD_RSC_306):%d", resource_info.ResourceID)
     resource_json, _ := json.Marshal(resource_info.ResourceJSON)
     query_conds_json, _ := json.Marshal(resource_info.QueryCondsJSON)
-    _, err := db.Exec(stmt, 
+    _, err := db.Exec(stmt,
             resource_info.ResourceName,
-            resource_info.ResourceOpr,
+            resource_info.ResourceAction,
             resource_info.ResourceDesc,
             resource_info.ResourceType,
             resource_info.DBName,
@@ -313,9 +304,9 @@ func AddResource(resource_info ApiTypes.ResourceDef) (int64, string) {
             string(resource_json),
             string(query_conds_json),
             resource_info.ErrorMsg,
-            resource_info.Creator,
-            resource_info.Updater,
-            resource_info.LOC)
+            creator,
+            updater,
+            loc)
 
     if err != nil {
         if ApiUtils.IsDuplicateKeyError(err) {
@@ -332,3 +323,4 @@ func AddResource(resource_info ApiTypes.ResourceDef) (int64, string) {
 	log.Printf("Resource added, resource_name:%s (SHD_RSC_228)", resource_info.ResourceName)
     return resource_info.ResourceID, ""
 }
+*/

@@ -24,8 +24,8 @@ func InitSharedStores(db_type string, db *sql.DB) {
 	var id_start_value = viper.GetInt("id_start_value")
 	var id_inc_value = viper.GetInt("id_inc_value")
 	id_config := GetGroupEntries("system_ids")
-	InitInMemStore(db_type, ApiTypes.LibConfig.SystemTableNames.TableName_IDMgr, db, 
+	InitInMemStore(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr, db, 
 		id_start_value, id_inc_value, id_config)
 
-	InitResourceStore(db_type, ApiTypes.LibConfig.SystemTableNames.TableName_Resources, db) 
+	InitResourceStore(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources, db) 
 }

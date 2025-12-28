@@ -108,7 +108,7 @@ func GetEmailStoreTableDesc() string {
 func CheckEmailExists(email string) bool {
     // This function checks whether 'user_name' is used in the users table.
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
     var query string
     var db *sql.DB
     switch db_type {
@@ -142,7 +142,7 @@ func GetEmailInfoByEmail(email string) (EmailInfo, error) {
     var query string
     var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
     var email_info EmailInfo
     switch db_type {
     case ApiTypes.MysqlName:
@@ -185,7 +185,7 @@ func GetEmailStatus(email string) string {
     var query string
     var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
     switch db_type {
     case ApiTypes.MysqlName:
          query = fmt.Sprintf("SELECT user_status FROM %s WHERE full_email = ? LIMIT 1", table_name)
@@ -225,7 +225,7 @@ func AddEmail(email_info EmailInfo) (bool, error) {
     var db *sql.DB
     var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableName_EmailStore
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
     switch db_type {
     case ApiTypes.MysqlName:
          db = ApiTypes.MySql_DB_miner

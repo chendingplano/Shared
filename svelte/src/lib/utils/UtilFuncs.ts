@@ -32,3 +32,38 @@ export function ParseObjectOrArray(input: string): JsonObjectOrArray | null {
 export function GetAllKeys(generic_map: { [key: string]: unknown }): string[] {
   return Object.keys(generic_map);
 }
+
+export function IsValidNonEmptyString(str: unknown): str is string {
+    return typeof str === 'string' && str.length > 0;
+}
+
+export async function ParseConfigFile(tomlContent: string): Promise<[Record<string, unknown>, string]> {
+    try {
+        const TOML = await import('@iarna/toml')
+        const parsed = TOML.parse(tomlContent) as Record<string, unknown>;
+        
+        // Validate required fields
+        if (!parsed.app_name || !parsed.home_url || !parsed.server) {
+            const error_msg = 'Missing required configuration fields';
+            return [{}, error_msg]
+        }
+        
+        if (typeof parsed.debug !== 'boolean') {
+            parsed.debug = Boolean(parsed.debug);
+        }
+        
+        return [parsed, ""];
+    } catch (error) {
+            const error_msg = `Failed to parse config file: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            return [{}, error_msg]
+    }
+}
+
+// Example usage:
+// const configFileContent = await Deno.readTextFile('./config.toml'); // For Deno
+// Or for Node.js:
+// const fs = require('fs');
+// const configFileContent = fs.readFileSync('./config.toml', 'utf-8');
+
+// const config = parseConfigFile(configFileContent);
+// console.log(config.app_name); // "Mirai"

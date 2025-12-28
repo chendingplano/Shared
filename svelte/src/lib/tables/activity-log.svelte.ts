@@ -1,4 +1,4 @@
-import type { UserInfo } from '../types/userinfo';
+import type { UserInfo } from '../db-scripts/userinfo';
 
 /*
 How to use the register function:

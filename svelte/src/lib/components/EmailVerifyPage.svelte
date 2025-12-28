@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { appAuthStore} from '@chendingplano/shared';
 
   export let url: URL; // passed from the host app
   export let onNavigate = (path: string) => {}; // passed from the host app

@@ -3,20 +3,20 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/mail"
-	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
+	"github.com/chendingplano/shared/go/api/RequestHandlers"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/datastructures"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
-	authmiddleware "github.com/chendingplano/shared/go/auth-middleware"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,16 +26,16 @@ type User struct {
 	Password string `json:"password"`
 }
 
-type EmailSignupRequest struct {
-	FirstName     	string `json:"first_name"`
-	LastName     	string `json:"last_name"`
-	Email    		string `json:"email"`
-	Password 		string `json:"password"`
+type EmailSignupResponse struct {
+	Message string `json:"message"`
+	LOC     string `json:"loc"`
 }
 
-type EmailSignupResponse struct {
-	Message 		string `json:"message"`
-	LOC 			string `json:"loc"`
+type EmailSignupRequest struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
 }
 
 type EmailLoginRequest struct {
@@ -53,10 +53,10 @@ type EmailVerifyRequest struct {
 }
 
 type VerifyResponse struct {
-	Name         string `json:"name"`
-	Email        string `json:"email"`
-	RedirectURL  string `json:"redirect_url"`
-	Loc          string `json:"loc,omitempty"`
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	RedirectURL string `json:"redirect_url"`
+	Loc         string `json:"loc,omitempty"`
 }
 
 const (
@@ -69,153 +69,121 @@ func isValidEmail(email string) bool {
 }
 
 func HandleEmailLogin(c echo.Context) error {
-	r := c.Request()
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
+	body, _ := io.ReadAll(c.Request().Body)
+	status_code, msg := HandleEmailLoginBase(rc, reqID, body)
+	c.String(status_code, msg)
+	return nil
+}
 
-	log.Printf("HandleEmailLogin called (SHD_EML_076)")
+func HandleEmailLoginPocket(e *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(e)
+	reqID := rc.ReqID()
+	body, _ := io.ReadAll(rc.GetBody())
+	status_code, msg := HandleEmailLoginBase(rc, reqID, body)
+	e.String(status_code, msg)
+	return nil
+}
+
+func HandleEmailLoginBase(
+	rc RequestHandlers.RequestContext,
+	reqID string,
+	body []byte) (int, string) {
+	log.Printf("[req=%s] HandleEmailLogin called (SHD_EML_076)", reqID)
 	var req EmailLoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		error_msg := "invalid request body (SHD_EML_043)"
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_119"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_119"})
 
-		log.Printf("***** Alarm:%s", error_msg)
-		return c.String(http.StatusBadRequest, error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return http.StatusBadRequest, error_msg
 	}
 
 	if !isValidEmail(req.Email) {
 		error_msg := "invalid email format (SHD_EML_081)"
-		log.Printf("+++++ Warning:%s, email:%s", error_msg, req.Email)
+		log.Printf("[req=%s] +++++ Warning:%s, email:%s", reqID, error_msg, req.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadEmail,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_136"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_136"})
 
-		return c.String(http.StatusBadRequest, error_msg)
+		return http.StatusBadRequest, error_msg
 	}
 
-	user_name, stored_password, err_msg := sysdatastores.GetUserNameAndPasswordByEmail(req.Email)
-	if err_msg != "" {
-		// Possible reasons:
-		// 1. user not found: user not found
-		// 2. user pending verify: 
-		// 3. database error: error: xxx
-		// 4. invalid user: (status not active)
-		if strings.HasPrefix(err_msg, "user not found:") {	
-			error_msg := fmt.Sprintf("user not found, email:%s", req.Email)
-			log.Printf("+++++Warning:%s (SHD_EML_152)", error_msg)
-
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.ActivityName_Auth,
-				ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-				AppName: 			ApiTypes.AppName_Auth,
-				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg: 		&error_msg,
-				CallerLoc: 			"SHD_EML_160"})
-
-			return c.String(http.StatusNotFound, error_msg)
-		}
-
-		if strings.HasPrefix(err_msg, "error:") {	
-			error_msg := fmt.Sprintf("user not found, email:%s", req.Email)
-			log.Printf("+++++Warning:%s", error_msg)
-
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.ActivityName_Auth,
-				ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-				AppName: 			ApiTypes.AppName_Auth,
-				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg: 		&error_msg,
-				CallerLoc: 			"SHD_EML_176"})
-
-			return c.String(http.StatusInternalServerError, error_msg)
-		}
-
-		if strings.HasPrefix(err_msg, "user pending verify:") {	
-			error_msg := fmt.Sprintf("user pending verify, email:%s", req.Email)
-			log.Printf("+++++Warning:%s", error_msg)
-
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: 		ApiTypes.ActivityName_Auth,
-				ActivityType: 		ApiTypes.ActivityType_UserPending,
-				AppName: 			ApiTypes.AppName_Auth,
-				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg: 		&error_msg,
-				CallerLoc: 			"SHD_EML_192"})
-
-			return c.String(http.StatusMethodNotAllowed, 
-				"user pending verify (SHD_EML_185). Click 'Forgot Password' to re-reset your password!")
-		}
-
-		error_msg := fmt.Sprintf("failed to get user info: %s (SHD_EML_058)", err_msg)
-		log.Printf("Warning %s", error_msg)
-		return c.String(http.StatusForbidden, "invalid user (SHD_EML_099). Sign up with your email!")
+	user_info, exist := rc.GetUserInfoByEmail(reqID, req.Email)
+	if !exist {
+		// The user (email) already exists.
+		return http.StatusNotFound, "email not found (SHD_EML_131)"
 	}
 
-	if stored_password == nil {
+	if user_info.Password == "" {
 		token := uuid.NewString()
 		url := fmt.Sprintf("http://localhost:5173/auth/email/reset?token=%s", token)
-		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, email:%s, token:%s", 
-				req.Email, token, url)
+		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, email:%s, token:%s",
+			req.Email, token, url)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_SentEmail,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_216"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_SentEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_216"})
 
-		databaseutil.UpdateVTokenByEmail(ApiTypes.DatabaseInfo.DBType, 
-				ApiTypes.LibConfig.SystemTableNames.TableName_Users, req.Email, token)
+		databaseutil.UpdateVTokenByEmail(ApiTypes.DatabaseInfo.DBType,
+			ApiTypes.LibConfig.SystemTableNames.TableNameUsers, req.Email, token)
 
 		subject := "Reset your password"
 		body := fmt.Sprintf(`
         	<p>Please click the link below to reset your password:</p>
         	<p><a href="%s">%s</a></p>`, url, url)
 
-		log.Printf("%s (SHD_EML_227)", error_msg)
-		ApiUtils.SendMail(req.Email, subject, body)
+		log.Printf("[req=%s] %s (SHD_EML_227)", reqID, error_msg)
+		ApiUtils.SendMail(reqID, req.Email, subject, body, "SHD_EML_154")
 
-		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email:%s. " +
-				"Please check your email and click the link to set your password (SHD_EML_135)", req.Email)
-		return c.JSON(http.StatusUnauthorized, map[string]string{"message": msg})
+		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email:%s. "+
+			"Please check your email and click the link to set your password (SHD_EML_135)", req.Email)
+		return http.StatusUnauthorized, msg
 	}
 
 	// Hash password
-	err := bcrypt.CompareHashAndPassword([]byte(*stored_password), []byte(req.Password))
+	err := bcrypt.CompareHashAndPassword([]byte(user_info.Password), []byte(req.Password))
 	if err != nil {
 		error_msg := fmt.Sprintf("invalid password, email:%s", req.Email)
-		log.Printf("+++++ Warning:%s (SHD_EML_240)", error_msg)
+		log.Printf("[req=%s] +++++ Warning:%s (SHD_EML_240)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InvalidPassword,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_248"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidPassword,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_248"})
 
-		return c.String(http.StatusUnauthorized, error_msg)
+		return http.StatusUnauthorized, error_msg
 	}
 
 	// Generate a secure random session ID
-	sessionID := generateSecureToken(32) // e.g., 256-bit random string
+	sessionID := ApiUtils.GenerateSecureToken(32) // e.g., 256-bit random string
 
 	// Save session in DB/cache: map sessionID → user_email (or user_id)
-	expired_time := time.Now().Add(cookie_timeout_hours*time.Hour)
+	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
-	err1 := sysdatastores.SaveSession(
+	err1 := rc.SaveSession(
+		reqID,
 		"email_login",
 		sessionID,
 		req.Email,
@@ -225,84 +193,76 @@ func HandleEmailLogin(c echo.Context) error {
 		expired_time)
 
 	if err1 != nil {
-		error_msg := fmt.Sprintf("failed saving session:%v, email:%s, session_id:%s (SHD_EML_272)", 
-				err1, req.Email, sessionID)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("failed saving session:%v, email:%s, session_id:%s (SHD_EML_272)",
+			err1, req.Email, sessionID)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_282"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_DatabaseError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_282"})
 
-		return c.String(http.StatusInternalServerError, error_msg)
+		return http.StatusInternalServerError, error_msg
 	}
 
 	sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
-		LoginMethod:	"email_login",
-    	SessionID:		sessionID,
-		Status:			"active",
-    	UserName:		req.Email,
-    	UserNameType:	"email",
-    	UserRegID:		req.Email,
-    	UserEmail:		&req.Email,
-		CallerLoc:		"SHD_EML_267",
-    	ExpiresAt:		&expired_time_str,
+		LoginMethod:  "email_login",
+		SessionID:    sessionID,
+		Status:       "active",
+		UserName:     req.Email,
+		UserNameType: "email",
+		UserRegID:    req.Email,
+		UserEmail:    &req.Email,
+		CallerLoc:    "SHD_EML_267",
+		ExpiresAt:    &expired_time_str,
 	})
 
-	is_secure := authmiddleware.IsSecure()
-	cookie := new(http.Cookie)
-	cookie.Name = "session_id"
-	cookie.Value = sessionID 
-	cookie.Path  = "/" 
-	cookie.HttpOnly = true 
-	cookie.Secure = is_secure
-	cookie.SameSite = http.SameSiteStrictMode
-	c.SetCookie(cookie)
+	rc.SetCookie(sessionID)
 
 	// Construct redirect URL
 	redirect_url := ApiTypes.DatabaseInfo.HomeURL
 	if redirect_url == "" {
 		redirect_url = "localhost:5173"
 
-		error_msg := fmt.Sprintf("missing home_url in config, email:%s, session_id:%s, redirect to:%s", 
-				req.Email, sessionID, redirect_url)
-		log.Printf("***** Alarm:%s (SHD_EML_301)", error_msg)
+		error_msg := fmt.Sprintf("missing home_url in config, email:%s, session_id:%s, redirect to:%s",
+			req.Email, sessionID, redirect_url)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_301)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_MissHomeURL,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_312"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_MissHomeURL,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_312"})
 	} else {
 		msg1 := fmt.Sprintf("email login success, email:%s, session_id:%s, redirect_url:%s",
-				req.Email, sessionID, redirect_url)
-		log.Printf("%s (SHD_EML_316)", msg1)
+			req.Email, sessionID, redirect_url)
+		log.Printf("[req=%s] %s (SHD_EML_316)", reqID, msg1)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_UserLoginSuccess,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&msg1,
-			CallerLoc: 			"SHD_EML_324"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserLoginSuccess,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &msg1,
+			CallerLoc:    "SHD_EML_324"})
 	}
 
-	response := VerifyResponse {
-		Name:         user_name,
-		Email:        req.Email,
-		RedirectURL:  redirect_url,
-		Loc:          "SHD_EML_190",
-	}
-	c.JSON(http.StatusOK, response)
-	return nil
+	// response := VerifyResponse{
+	// 	Name:        user_name,
+	// 	Email:       req.Email,
+	// 	RedirectURL: redirect_url,
+	// 	Loc:         "SHD_EML_190",
+	msg := fmt.Sprintf("email login success, email:%s, redirectURL:%s, loc:(SHD_EML_190)",
+		req.Email, redirect_url)
+	return http.StatusOK, msg
 }
 
-func sendVerificationEmail(to string, url string) error {
+func sendVerificationEmail(reqID string, to string, url string) error {
 	log_id := sysdatastores.NextActivityLogID()
 	subject := "Verify your email address"
 	body := fmt.Sprintf(`
@@ -310,102 +270,134 @@ func sendVerificationEmail(to string, url string) error {
         <p><a href="%s">%s</a></p>`, log_id, url, url)
 
 	msg := fmt.Sprintf("Sending verification email to %s with URL: %s, logid:%d", to, url, log_id)
-	log.Printf("%s (SHD_EML_345)", msg)
+	log.Printf("[req=%s] %s (SHD_EML_345)", reqID, msg)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		LogID:				log_id,
-		ActivityName: 		ApiTypes.ActivityName_Auth,
-		ActivityType: 		ApiTypes.ActivityType_UserLoginSuccess,
-		AppName: 			ApiTypes.AppName_Auth,
-		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg: 		&msg,
-		CallerLoc: 			"SHD_EML_351"})
+		LogID:        log_id,
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_UserLoginSuccess,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  &msg,
+		CallerLoc:    "SHD_EML_351"})
 
-	return ApiUtils.SendMail(to, subject, body) // implement this using smtp.SendMail or a library
+	return ApiUtils.SendMail(reqID, to, subject, body, "SHD_EML_284") // implement this using smtp.SendMail or a library
 }
 
 func HandleEmailVerify(c echo.Context) error {
-	log.Printf("Handle email verify request (SHD_EML_192)")
-	reqCtx := c.Request().Context()
-	user_name, ok := reqCtx.Value(ApiTypes.UserContextKey).(string)
-    if !ok {
-        // Handle case where "user_name" is not set (e.g., log an error)
-        error_msg := "user_name not found in context (SHD_EML_363)"
-        log.Printf("+++++ WARNING:%s", error_msg)
-		user_name = "no-user-name-found"
-    }
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
 
+	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID)
+	if msg == "" {
+		c.JSON(status_code, resp)
+	} else {
+		c.String(status_code, msg)
+	}
+	return nil
+}
+
+func HandleEmailVerifyPocket(e *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(e)
+	reqID := rc.ReqID()
+
+	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID)
+	if msg == "" {
+		e.JSON(status_code, resp)
+	} else {
+		e.String(status_code, msg)
+	}
+	return nil
+}
+
+func HandleEmailVerifyBase(
+	rc RequestHandlers.RequestContext,
+	reqID string) (int, string, map[string]string) {
+	log.Printf("[req=%s] Handle email verify request (SHD_EML_192)", reqID)
+	reqCtx := rc.Context()
+	user_name, ok := reqCtx.Value(ApiTypes.UserContextKey).(string)
+	if !ok {
+		// Handle case where "user_name" is not set (e.g., log an error)
+		error_msg := "user_name not found in context (SHD_EML_363)"
+		log.Printf("[req=%s] +++++ WARNING:%s", reqID, error_msg)
+		user_name = "no-user-name-found"
+	}
+
+	/* The following code is for POST.
 	var req EmailVerifyRequest
-	if err := c.Bind(&req); err != nil {
+	if err := rc.Bind(reqID, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("Failed to bind request body: %v, log_id:%d, user_name:%s", 
-				err, log_id, user_name)
-		log.Printf("%s (SHD_EML_361)", error_msg)
-		
+		error_msg := fmt.Sprintf("Failed to bind request body: %v, log_id:%d, user_name:%s",
+			err, log_id, user_name)
+		log.Printf("[req=%s] %s (SHD_EML_361)", reqID, error_msg)
+
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_369"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_369"})
 
 		e_msg := fmt.Sprintf("invalid request body, log_id:%d, user_name:%s (SHD_EML_361)", log_id, user_name)
-		return c.String(http.StatusBadRequest, e_msg)
+		return http.StatusBadRequest, e_msg, nil
 	}
 
 	token := req.Token
+	*/
+	// We assume the link uses GET!!!
+	token := rc.QueryParam("token")
 	if token == "" {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("Failed retrieving token, user_name:%s, log_id:%d", user_name, log_id)
-		log.Printf("***** Alarm:%s (SHD_EML_205)", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_205)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_400"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_400"})
 
 		e_msg := fmt.Sprintf("failed retrieving token, log_id:%d (SHD_EML_393)", log_id)
-		return c.String(http.StatusBadRequest, e_msg)
+		return http.StatusBadRequest, e_msg, nil
 	}
 
-	log.Printf("Handle email verify (SHD_EML_193), token:%s, dbtype:%s, tablename:%s",
-		token, ApiTypes.DatabaseInfo.DBType, ApiTypes.LibConfig.SystemTableNames.TableName_Sessions)
+	log.Printf("[req=%s] Handle email verify (SHD_EML_193), token:%s, dbtype:%s, tablename:%s",
+		reqID, token, ApiTypes.DatabaseInfo.DBType, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 
 	// TODO (Chen Ding, 2025/11/03)
 	// Add timeout or rate-limiting to prevent abuse of this endpoint.
 	// Validate token format early (e.g., check length, character set).
 	// Use HTTPS in production — tokens in request bodies are still sensitive.
 
-	user_info, err := sysdatastores.LookupUserByToken(token)
-	if err != nil {
+	user_info, exist := rc.GetUserInfoByToken(reqID, token)
+	if !exist {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed retrieving user by token:%s, error_msg:%v, log_id:%d", token, err, log_id)
-		log.Printf("***** Alarm:%s (SHD_EML_420)", error_msg)
+		error_msg := fmt.Sprintf("failed retrieving user by token:%s, log_id:%d", token, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_420)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InvalidToken,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_429"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidToken,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_429"})
 
 		e_msg := fmt.Sprintf("invalid or expired email verification, log_id:%d (SHD_EML_431)", log_id)
-		return c.String(http.StatusBadRequest, e_msg)
+		return http.StatusBadRequest, e_msg, nil
 	}
 
 	// Generate a secure random session ID
-	sessionID := generateSecureToken(32) // e.g., 256-bit random string
+	sessionID := ApiUtils.GenerateSecureToken(32) // e.g., 256-bit random string
 
 	// Save session in DB/cache: map sessionID → user_email (or user_id)
-	expired_time := time.Now().Add(cookie_timeout_hours*time.Hour)
+	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
 	err1 := sysdatastores.SaveSession(
@@ -420,100 +412,111 @@ func HandleEmailVerify(c echo.Context) error {
 	if err1 != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed to save session, err:%s, log_id:%d", err1.Error(), log_id)
-		log.Printf("***** Alarm:%s (SHD_EML_429)", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_429)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_438"})
-		return c.String(http.StatusInternalServerError, error_msg)
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_DatabaseError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_438"})
+		return http.StatusInternalServerError, error_msg, nil
 	}
 
 	sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
-		LoginMethod:	"email_signup",
-    	SessionID:		sessionID,
-		Status:			"active",
-    	UserName:		user_info.UserName,
-    	UserNameType:	"email",
-    	UserRegID:		user_info.Email,
-    	UserEmail:		&user_info.Email,
-		CallerLoc:		"SHD_EML_435",
-    	ExpiresAt:		&expired_time_str,
+		LoginMethod:  "email_signup",
+		SessionID:    sessionID,
+		Status:       "active",
+		UserName:     user_info.UserName,
+		UserNameType: "email",
+		UserRegID:    user_info.Email,
+		UserEmail:    &user_info.Email,
+		CallerLoc:    "SHD_EML_435",
+		ExpiresAt:    &expired_time_str,
 	})
 
-	err1 = sysdatastores.MarkUserVerified(user_info.UserName)
+	err1 = sysdatastores.MarkUserVerified(reqID, user_info.UserName)
 	if err1 != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("mark user failed, error:%v, user_name:%s, log_id:%d", 
-				err1, user_info.UserName, log_id)
-		log.Printf("***** Alarm:%s (SHD_EML_460)", error_msg)
+		error_msg := fmt.Sprintf("mark user failed, error:%v, user_name:%s, log_id:%d",
+			err1, user_info.UserName, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_460)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_468"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_DatabaseError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_468"})
 	} else {
-		log.Printf("Email signup success (SHD_EML_253): email:%s, session_id:%s", user_info.Email, sessionID)
+		log.Printf("[req=%s] Email signup success (SHD_EML_253): email:%s, session_id:%s", reqID, user_info.Email, sessionID)
 	}
 
-	is_secure := authmiddleware.IsSecure()
-	cookie := new(http.Cookie)
-	cookie.Name = "session_id"
-	cookie.Value = sessionID 
-	cookie.Path  = "/" 
-	cookie.HttpOnly = true 
-	cookie.Secure = is_secure
-	cookie.SameSite = http.SameSiteStrictMode
-	c.SetCookie(cookie)
+	rc.SetCookie(sessionID)
 
 	redirect_url := ApiTypes.DatabaseInfo.HomeURL
 	if redirect_url == "" {
 		redirect_url = "localhost:5173"
-		error_msg := fmt.Sprintf("missing home_url config, email:%s, session_id:%s, default to:%s", 
-				user_info.Email, sessionID, redirect_url)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("missing home_url config, email:%s, session_id:%s, default to:%s",
+			user_info.Email, sessionID, redirect_url)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_ConfigError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_481"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_ConfigError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_481"})
 	} else {
-		msg := fmt.Sprintf("Email verify success: email:%s, session_id:%s, redirect:%s", 
-				user_info.Email, sessionID, redirect_url)
+		msg := fmt.Sprintf("Email verify success: email:%s, session_id:%s, redirect:%s",
+			user_info.Email, sessionID, redirect_url)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_VerifyEmailSuccess,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&msg,
-			CallerLoc: 			"SHD_EML_505"})
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_VerifyEmailSuccess,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &msg,
+			CallerLoc:    "SHD_EML_505"})
 	}
 
 	response := map[string]string{
-   		"name": user_info.UserName, // or user.Email if that's what you use
-   		"email": user_info.Email,
+		"name":         user_info.UserName, // or user.Email if that's what you use
+		"email":        user_info.Email,
 		"redirect_url": redirect_url,
-		"loc": "SHD_EML_210",
+		"loc":          "SHD_EML_210",
 	}
-	w := c.Response()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-	return nil
+	return http.StatusOK, "", response
+	// w := c.Response()
+	// w.Header().Set("Content-Type", "application/json")
+	// w.WriteHeader(http.StatusOK)
+	// json.NewEncoder(w).Encode(response)
+	// return nil
 }
 
 func HandleEmailSignup(c echo.Context) error {
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
+	status_code, resp := HandleEmailSignupBase(rc, reqID)
+	c.JSON(status_code, resp)
+	return nil
+}
+
+func HandleEmailSignupPocket(e *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(e)
+	reqID := rc.ReqID()
+	status_code, resp := HandleEmailSignupBase(rc, reqID)
+	e.JSON(status_code, resp)
+	return nil
+}
+
+func HandleEmailSignupBase(
+	rc RequestHandlers.RequestContext,
+	reqID string) (int, EmailSignupResponse) {
 	// The request body:
 	// {
 	//   "first_name": "John",		// Optional
@@ -521,27 +524,43 @@ func HandleEmailSignup(c echo.Context) error {
 	//   "email": "xxx",
 	//   "password": "yyy"
 	// }
-	log.Printf("Handle email signup request (SHD_EML_300)")
+	log.Printf("[req=%s] Handle email signup request (SHD_EML_300)", reqID)
+
+	// Read body once
+	body, err := io.ReadAll(rc.GetBody())
+	if err != nil {
+		// handle read error
+	}
+
+	// Log it (temporarily)
+	log.Printf("REQUEST BODY: %s", string(body))
+
+	// Restore body
+	// rc.Request().Body = io.NopCloser(bytes.NewReader(body))
+
 	var req EmailSignupRequest
-	if err := c.Bind(&req); err != nil {
+	// req := map[string]interface{}{}
+	if err := rc.Bind(reqID, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_EML_534)", log_id)
+		error_msg := fmt.Sprintf("invalid request body (SHD_EML_534), log_id:%d, err:%v", log_id, err)
 		resp := EmailSignupResponse{
 			Message: error_msg,
 			LOC:     "SHD_EML_311",
 		}
 
-		log.Printf("***** Alarm Handle Email Signup failed:%s", resp.Message)
+		log.Printf("[req=%s] ***** Alarm Handle Email Signup failed:%s", reqID, resp.Message)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_548"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_548"})
 
-		return c.JSON(http.StatusBadRequest, resp)
+		return http.StatusBadRequest, resp
+	} else {
+		log.Printf("[req=%s] Parsing request success (SHD_EML_627), req:%v", reqID, req)
 	}
 
 	if !isValidEmail(req.Email) {
@@ -552,255 +571,233 @@ func HandleEmailSignup(c echo.Context) error {
 			LOC:     "SHD_EML_547",
 		}
 
-		log.Printf("+++++ Warning:%s", error_msg)
+		log.Printf("[req=%s] +++++ Warning:%s", reqID, error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InvalidEmail,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_548"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_548"})
 
-		return c.JSON(http.StatusBadRequest, resp)
+		return http.StatusBadRequest, resp
 	}
 
 	// 1. Check if email already exists
 	// if databaseutil.UserExists(req.Email) {
-	user_status := sysdatastores.GetUserStatus(req.Email)
-	log.Printf("user status (SHD_EML_218), email:%s, status:%s", req.Email, user_status)
-	if user_status != "" {
-		if strings.HasPrefix(user_status, "error:") {
-			log_id := sysdatastores.NextActivityLogID()
-			error_msg := fmt.Sprintf("check user failed, status:%s, " +
-						"email:%s, log_id%d (SHD_EML_565)", user_status, req.Email, log_id)
-			log.Printf("***** Alarm:%s (SHD_EML_565)", error_msg)
-			resp := EmailSignupResponse{
-				Message: error_msg,
-				LOC:     "SHD_EML_347",
-			}
+	_, exist := rc.GetUserInfoByEmail(reqID, req.Email)
+	if exist {
+		error_msg := fmt.Sprintf("email already exist (SHD_EML_588), email:%s", req.Email)
+		log.Printf("[req=%s] +++++ WARN %s", reqID, error_msg)
 
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				LogID:				log_id,
-				ActivityName: 		ApiTypes.ActivityName_Auth,
-				ActivityType: 		ApiTypes.ActivityType_InternalError,
-				AppName: 			ApiTypes.AppName_Auth,
-				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg: 		&error_msg,
-				CallerLoc: 			"SHD_EML_596"})
-
-			return c.JSON(http.StatusInternalServerError, resp)
+		resp := EmailSignupResponse{
+			Message: error_msg,
+			LOC:     "SHD_EML_588",
 		}
-
-		if user_status == "user not found" {
-			log_id := sysdatastores.NextActivityLogID()
-			error_msg := fmt.Sprintf("user already exists, status:%s, email:%s, log_id:%d (SHD_EML_357)",
-						user_status, req.Email, log_id)
-			log.Printf("***** Alarm:%s", error_msg)
-			resp := EmailSignupResponse{
-				Message: error_msg,
-				LOC:     "SHD_EML_357",
-			}
-
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				LogID:				log_id,
-				ActivityName: 		ApiTypes.ActivityName_Auth,
-				ActivityType: 		ApiTypes.ActivityType_UserExist,
-				AppName: 			ApiTypes.AppName_Auth,
-				ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg: 		&error_msg,
-				CallerLoc: 			"SHD_EML_618"})
-
-			return c.JSON(http.StatusOK, resp)
-		}	
+		return http.StatusConflict, resp
 	}
 
 	// 2. Hash password
 	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 
-	// 3. Create a user record with "verified = false"
-	var user_name = req.Email
-	var user_type string = "email"
-	var user_id_type = "email"
-
-	// 4. Generate a verification token (e.g., UUID)
+	// 3. Generate a verification token and Create a user record with "verified = false"
 	token := uuid.NewString()
+	var user_name = req.Email
+	err1 := rc.UpsertUser(reqID,
+		"email", user_name, string(hashedPwd), req.Email, "email", "pending_verify",
+		req.FirstName, req.LastName, token, "")
 
-	user_info := datastructures.UserInfo{
-		UserName:    user_name,
-		Password:    databaseutil.StrPtr(string(hashedPwd)),
-		UserIdType:  user_id_type,
-		Email:       req.Email,
-		FirstName:   databaseutil.StrPtr(req.FirstName),
-		LastName:    databaseutil.StrPtr(req.LastName),
-		UserType:    user_type,
-		VToken:      databaseutil.StrPtr(token),
-		Status:      "pending_verify",
-	}
-	status, err1 := sysdatastores.AddUserNew(user_info)
-	if !status {
-		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("Failed creating user, user_name:%s, email:%s, err:%s, log_id:%d", 
-						user_name, req.Email, err1, log_id)
-		log.Printf("***** Alarm %s (SHD_EML_393)", error_msg)
+	if err1 != nil {
+		error_msg := fmt.Sprintf("failed creating user (SHD_EML_710), error:%v", err1)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+
 		resp := EmailSignupResponse{
 			Message: error_msg,
-			LOC:     "SHD_EML_393",
+			LOC:     "SHD_EML_715",
 		}
-
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_DatabaseError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_664"})
-
-		return c.JSON(http.StatusConflict, resp)
+		return http.StatusInternalServerError, resp
 	}
 
-	// 5. Send verification email
-	verificationURL := fmt.Sprintf("http://localhost:5173/verifyemail?token=%s", token)
-	go sendVerificationEmail(req.Email, verificationURL)
+	// 4. Send verification email
+	verificationURL := fmt.Sprintf("http://localhost:5173/auth/email/verify?token=%s", token)
+	go sendVerificationEmail(reqID, req.Email, verificationURL)
 
 	log_id := sysdatastores.NextActivityLogID()
-	resp_msg := fmt.Sprintf("Signup successful! Please check your email:%s to verify your account, log_id:%d.", 
-				req.Email, log_id)
-	log.Printf("%s (SHD_EML_399)", resp_msg)
+	resp_msg := fmt.Sprintf("Signup successful! Please check your email:%s to verify your account, log_id:%d.",
+		req.Email, log_id)
+	log.Printf("[req=%s] %s (SHD_EML_399)", reqID, resp_msg)
 	resp := EmailSignupResponse{
 		Message: resp_msg,
 		LOC:     "SHD_EML_399",
 	}
 
 	msg := fmt.Sprintf("user signup success, user_name:%s, password_hash:%s, email:%s",
-			user_name, hashedPwd, req.Email)
+		user_name, hashedPwd, req.Email)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		LogID:				log_id,
-		ActivityName: 		ApiTypes.ActivityName_Auth,
-		ActivityType: 		ApiTypes.ActivityType_SignupSuccess,
-		AppName: 			ApiTypes.AppName_Auth,
-		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg: 		&msg,
-		CallerLoc: 			"SHD_EML_689"})
-	return c.JSON(http.StatusOK, resp)
+		LogID:        log_id,
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_SignupSuccess,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  &msg,
+		CallerLoc:    "SHD_EML_689"})
+	return http.StatusOK, resp
 }
 
 func HandleForgotPassword(c echo.Context) error {
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
+
+	status_code, resp := HandleForgotPasswordBase(rc, reqID)
+	c.JSON(status_code, resp)
+	return nil
+}
+
+func HandleForgotPasswordPocket(p *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(p)
+	reqID := rc.ReqID()
+
+	status_code, resp := HandleForgotPasswordBase(rc, reqID)
+	p.JSON(status_code, resp)
+	return nil
+}
+
+func HandleForgotPasswordBase(
+	rc RequestHandlers.RequestContext,
+	reqID string) (int, map[string]string) {
 	var req struct {
 		Email string `json:"email"`
 	}
-	if err := c.Bind(&req); err != nil {
+	if err := rc.Bind(reqID, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed retrieve email, log_id:%d (SHD_EML_702)", log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_712"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_712"})
 
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": error_msg})
+		return http.StatusBadRequest, map[string]string{"error": error_msg}
 	}
 
 	if !isValidEmail(req.Email) {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("invalid email:%s, log_id:%d (SHD_EML_710)", req.Email, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InvalidEmail,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_720"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_720"})
 
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": error_msg})
+		return http.StatusBadRequest, map[string]string{"error": error_msg}
 	}
 
 	// 1. Check if email already exists
-	user, err := sysdatastores.GetUserInfoByEmail(req.Email)
+	user, err := sysdatastores.GetUserInfoByEmail(reqID, req.Email)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed retrieving user, error:%v, email:%s, log_id:%d (SHD_EML_710)", 
-				err, req.Email, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("failed retrieving user, error:%v, email:%s, log_id:%d (SHD_EML_710)",
+			err, req.Email, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_731"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserNotFound,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_731"})
 
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found (SHD_EML_179)"})
+		return http.StatusNotFound, map[string]string{"error": "user not found (SHD_EML_179)"}
 	}
 
 	token := uuid.NewString()
-	databaseutil.UpdateVTokenByEmail(ApiTypes.DatabaseInfo.DBType, 
-					ApiTypes.LibConfig.SystemTableNames.TableName_Users, req.Email, token)
+	databaseutil.UpdateVTokenByEmail(ApiTypes.DatabaseInfo.DBType,
+		ApiTypes.LibConfig.SystemTableNames.TableNameUsers, req.Email, token)
 
 	resetURL := fmt.Sprintf("http://localhost:8080/auth/email/reset?token=%s", token)
-	go ApiUtils.SendMail(req.Email, "Password Reset", fmt.Sprintf(`
+	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", fmt.Sprintf(`
         <p>Hi %s,</p>
         <p>Click the link below to reset your password:</p>
         <p><a href="%s">%s</a></p>
-    `, user.UserName, resetURL, resetURL))
+    `, user.UserName, resetURL, resetURL), "SHD_EML_732")
 
 	log_id := sysdatastores.NextActivityLogID()
 	msg := fmt.Sprintf("reset link sent to email:%s, log_id:%d (SHD_EML_765)", req.Email, log_id)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		LogID:				log_id,
-		ActivityName: 		ApiTypes.ActivityName_Auth,
-		ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-		AppName: 			ApiTypes.AppName_Auth,
-		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg: 		&msg,
-		CallerLoc: 			"SHD_EML_775"})
+		LogID:        log_id,
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_UserNotFound,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  &msg,
+		CallerLoc:    "SHD_EML_775"})
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "reset link sent to email (SHD_EML_193)"})
+	return http.StatusOK, map[string]string{"message": "reset link sent to email (SHD_EML_193)"}
 }
 
 func HandleResetLink(c echo.Context) error {
-	token := c.QueryParam("token")
-	log.Printf("Handle reset link (SHD_EML_257), token:%s", token)
-	_, err := sysdatastores.LookupUserByToken(token)
-	if err != nil {
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
+	status_code, msg := HandleResetLinkBase(rc, reqID)
+	c.String(status_code, msg)
+	return nil
+}
+
+func HandleResetLinkPocket(e *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(e)
+	reqID := rc.ReqID()
+	status_code, msg := HandleResetLinkBase(rc, reqID)
+	e.String(status_code, msg)
+	return nil
+}
+
+func HandleResetLinkBase(
+	rc RequestHandlers.RequestContext,
+	reqID string) (int, string) {
+	token := rc.QueryParam("token")
+	log.Printf("[req=%s] Handle reset link (SHD_EML_257), token:%s", reqID, token)
+	_, exist := rc.GetUserInfoByToken(reqID, token)
+	if !exist {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed retrieving user by token:%s (SHD_EML_201).", token)
-		log.Printf("***** Alarm:%s", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_795"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserNotFound,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_795"})
 
-		return c.String(http.StatusBadRequest, "Invalid or expired reset link (SHD_EML_201).")
+		return http.StatusBadRequest, "Invalid or expired reset link (SHD_EML_201)."
 	}
 	// Redirect to frontend reset form
 	redirect_url := fmt.Sprintf("http://localhost:5173/reset-password?token=%s", token)
 	msg := fmt.Sprintf("handle reset, redirect to:%s", redirect_url)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.ActivityName_Auth,
-		ActivityType: 		ApiTypes.ActivityType_Redirect,
-		AppName: 			ApiTypes.AppName_Auth,
-		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg: 		&msg,
-		CallerLoc: 			"SHD_EML_808"})
-	return c.Redirect(http.StatusSeeOther, redirect_url)
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_Redirect,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  &msg,
+		CallerLoc:    "SHD_EML_808"})
+	return http.StatusSeeOther, redirect_url
 }
 
 type ResetConfirmRequest struct {
@@ -809,120 +806,139 @@ type ResetConfirmRequest struct {
 }
 
 func HandleResetPasswordConfirm(c echo.Context) error {
+	rc := RequestHandlers.NewFromEcho(c)
+	reqID := rc.ReqID()
+	status_code, msg := HandleResetPasswordConfirmBase(rc, reqID)
+	c.String(status_code, msg)
+	return nil
+}
+
+func HandleResetPasswordConfirmPocket(e *core.RequestEvent) error {
+	rc := RequestHandlers.NewFromPocket(e)
+	reqID := rc.ReqID()
+	status_code, msg := HandleResetPasswordConfirmBase(rc, reqID)
+	e.String(status_code, msg)
+	return nil
+}
+
+func HandleResetPasswordConfirmBase(
+	rc RequestHandlers.RequestContext,
+	reqID string) (int, string) {
+
 	// The frontend (routes/reset-password/+page.svelte)
 	// fetches (POST) this endpoint with Token and Password.
 	// It retrieves the Token and Password.
-	user_name, ok := c.Request().Context().Value(ApiTypes.UserContextKey).(string)
+	user_name, ok := rc.Context().Value(ApiTypes.UserContextKey).(string)
 	if !ok {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("internal error (SHD_EML_693), log_id:%d", log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InternalError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_703"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InternalError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_703"})
 
-		return c.String(http.StatusBadRequest, error_msg)
+		return http.StatusBadRequest, error_msg
 	}
 
 	var req ResetConfirmRequest
-	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(rc.GetBody()).Decode(&req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("invalid request payload, log_id:%d, user_name:%s (SHD_EML_693)", 
-				log_id, user_name)
+		error_msg := fmt.Sprintf("invalid request payload, log_id:%d, user_name:%s (SHD_EML_693)",
+			log_id, user_name)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_BadRequest,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_701"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_701"})
 
-		log.Printf("***** Alarm:%s", error_msg)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
-		return c.String(http.StatusBadRequest, error_msg)
+		return http.StatusBadRequest, error_msg
 	}
 
 	// Validate token and get user
-	user, err := sysdatastores.LookupUserByToken(req.Token)
+	user, err := sysdatastores.LookupUserByToken(reqID, req.Token)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("user not found, user_name:%s, token:%s, log_id:%d",
-		 	user_name, req.Token, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+			user_name, req.Token, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_UserNotFound,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_723"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserNotFound,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_723"})
 
 		e_msg := fmt.Sprintf("user not found, user_name:%s, log_id:%d (SHD_EML_704)", user_name, log_id)
-		return c.String(http.StatusBadRequest, e_msg)
+		return http.StatusBadRequest, e_msg
 	}
 
 	// Hash new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed to hash password, user_name:%s, password:%s, log_id:%d", 
-				user_name, req.Password, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("failed to hash password, user_name:%s, password:%s, log_id:%d",
+			user_name, req.Password, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InternalError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_743"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InternalError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_743"})
 
 		e_msg := fmt.Sprintf("internal error, user_name:%s, log_id:%d (SHD_EML_715)", user_name, log_id)
-		return c.String(http.StatusInternalServerError, e_msg)
+		return http.StatusInternalServerError, e_msg
 	}
 
-	log.Printf("Update password (SHD_EML_259), username:%s", user.UserName)
+	log.Printf("[req=%s] Update password (SHD_EML_259), username:%s", reqID, user.UserName)
 
 	// Update user password
-	err = sysdatastores.UpdatePasswordByUserName(user.UserName, string(hashedPassword))
+	err = sysdatastores.UpdatePasswordByUserName(reqID, user.UserName, string(hashedPassword))
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed updating database, user_name:%s, error:%v, log_id:%d", 
-				user_name, err, log_id)
-		log.Printf("***** Alarm:%s", error_msg)
+		error_msg := fmt.Sprintf("failed updating database, user_name:%s, error:%v, log_id:%d",
+			user_name, err, log_id)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID: 				log_id,
-			ActivityName: 		ApiTypes.ActivityName_Auth,
-			ActivityType: 		ApiTypes.ActivityType_InternalError,
-			AppName: 			ApiTypes.AppName_Auth,
-			ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: 		&error_msg,
-			CallerLoc: 			"SHD_EML_736"})
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InternalError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_736"})
 
 		e_msg := fmt.Sprintf("internal error, user_name:%s, log_id:%d (SHD_EML_728)", user_name, log_id)
-		return c.String(http.StatusInternalServerError, e_msg)
+		return http.StatusInternalServerError, e_msg
 	}
 
 	log_id := sysdatastores.NextActivityLogID()
 	msg := fmt.Sprintf("reset password success, user_name:%s, log_id:%d", user.UserName, log_id)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: 		ApiTypes.ActivityName_Auth,
-		ActivityType: 		ApiTypes.ActivityType_InternalError,
-		AppName: 			ApiTypes.AppName_Auth,
-		ModuleName: 		ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg: 		&msg,
-		CallerLoc: 			"SHD_EML_779"})
-	return c.String(http.StatusOK, "Password has been reset successfully (SHD_EML_263).")
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_InternalError,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  &msg,
+		CallerLoc:    "SHD_EML_779"})
+	return http.StatusOK, "Password has been reset successfully (SHD_EML_263)."
 }

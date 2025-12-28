@@ -18,8 +18,7 @@ func InsertBatch(
 	user_name string,
 	db *sql.DB,
 	tableName string,
-	resource_name string,
-	resource_store ApiTypes.ResourceStoreDef,
+	resource_request ApiTypes.InsertRequest,
 	fieldDefs []ApiTypes.FieldDef,
 	records []map[string]interface{},
 	batchSize int,
@@ -73,7 +72,7 @@ func InsertBatch(
 				return err1
 			 }
 
-			 conflict_suffix, _ = CreateOnConflictMySQL(resource_store, resource_name)
+			 conflict_suffix, _ = CreateOnConflictMySQL(resource_request)
 
 		case ApiTypes.PgName:
 			 var err1 error
@@ -83,7 +82,7 @@ func InsertBatch(
 				return err1
 			 }
 
-			 conflict_suffix, _ = CreateOnConflictPG(resource_store, resource_name)
+			 conflict_suffix, _ = CreateOnConflictPG(resource_request)
 
 		default:
 		 	 error_msg := fmt.Sprintf("invalid db type:%s", db_type)

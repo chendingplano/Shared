@@ -757,22 +757,14 @@ func handleInt64Array(
     return nil
 }
 
-func CreateOnConflictPG(
-			resource_store ApiTypes.ResourceStoreDef,
-			resource_name string) (string, error) {
-	conflictCols, err := GetFieldStrArrayValue(resource_store.ResourceDef.ResourceJSON, resource_name, "on_conflict_cols")
-	if err != nil {
-		return "", err
-	}
+func CreateOnConflictPG(resource_request ApiTypes.InsertRequest) (string, error) {
+	conflictCols := resource_request.OnConflictCols
 
 	if len(conflictCols) == 0 {
 		return "", nil
 	}
 
-	updateCols, err := GetFieldStrArrayValue(resource_store.ResourceDef.ResourceJSON, resource_name, "on_conflict_update_cols")
-	if err != nil {
-		return "", err
-	}
+	updateCols := resource_request.OnConflictUpdateCols
 
 	if len(updateCols) == 0 {
 		return "", fmt.Errorf("updateCols cannot be empty (SHD_DUP_049)")
