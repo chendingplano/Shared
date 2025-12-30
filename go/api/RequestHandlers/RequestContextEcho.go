@@ -18,6 +18,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
+	"github.com/chendingplano/shared/go/api/databaseutil"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	middleware "github.com/chendingplano/shared/go/auth-middleware"
 	"github.com/labstack/echo/v4"
@@ -143,6 +144,15 @@ func (e *echoContext) SaveSession(
 	return sysdatastores.SaveSession(login_method, session_id,
 		user_name, user_name_type, user_reg_id,
 		user_email, expiry)
+}
+
+func (e *echoContext) MarkUserVerified(reqID string, email string) error {
+	return sysdatastores.MarkUserVerified(reqID, email)
+}
+
+func (e *echoContext) UpdateTokenByEmail(reqID string, email string, token string) error {
+	return databaseutil.UpdateVTokenByEmail(ApiTypes.DatabaseInfo.DBType,
+		ApiTypes.LibConfig.SystemTableNames.TableNameUsers, email, token)
 }
 
 func (e *echoContext) UpsertUser(reqID string,

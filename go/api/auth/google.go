@@ -315,7 +315,7 @@ func HandleGoogleCallbackBase(
 
 	// Construct redirect URL
 	// redirect_url := ApiTypes.DatabaseInfo.HomeURL
-	redirect_url := "http://localhost:8090/dashboard"
+	redirect_url := "http://localhost:8090/admin"
 	if redirect_url == "" {
 		log.Printf("***** Alarm missing home_url config (MID_GGL_094)")
 		redirect_url = "localhost:8090"

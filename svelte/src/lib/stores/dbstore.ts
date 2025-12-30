@@ -1,3 +1,7 @@
+import (
+    "os"
+)
+
 import { z, ZodType, ZodObject, type ZodRawShape } from "zod"
 import type {
             JimoRequest, 
@@ -16,8 +20,6 @@ import type {
 import {ParseObjectOrArray} from '$lib/utils/UtilFuncs'
 import {CustomHttpStatus, RequestType} from '$lib/types/CommonTypes';
 import { StatusCodes } from 'http-status-codes';
-
-// type AnyZodObject = ZodObject<ZodRawShape, any>;
 
 export type QueryResult = {
     valid:          boolean,
@@ -202,6 +204,7 @@ class DBStore {
         // 'http://<domain_name>:<port>/<data_dir>/<username>/<filename>
         // TBD: will use config!!!
         if (typeof filename === "string" && filename.length > 0) {
+            const frontendURLEnv = process.env.FRONTEND_URL
             return `http://localhost:5173/data/custom_files/${user_name}/${filename}`
         }
         return ""

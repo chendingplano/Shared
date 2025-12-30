@@ -52,7 +52,8 @@ type SystemIDs struct {
 }
 
 const (
-	UserContextKey ContextKey = "user_name"
+	UserContextKey  ContextKey = "user_name"
+	TokenContextKey ContextKey = "token"
 )
 
 type DBConfig struct {

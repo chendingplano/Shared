@@ -93,6 +93,75 @@ func (p *pbContext) GetRedirectURL(
 	return redirectURL
 }
 
+func (p *pbContext) UpdateTokenByEmail(
+	reqID string,
+	email string,
+	token string) error {
+	// Get the collection
+	collection, err := p.e.App.FindCollectionByNameOrId("users")
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find users collection (SHD_RCP_104), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	record, err := p.e.App.FindFirstRecordByFilter(
+		collection.Id,
+		"email = {:email}",
+		dbx.Params{
+			"email": email,
+		},
+	)
+
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find user (SHD_RCP_118), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	record.Set("tokenKey1", token)
+	if err := p.e.App.Save(record); err != nil {
+		error_msg := fmt.Sprintf("failed to update user (SHD_RCP_125), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	return nil
+}
+
+func (p *pbContext) MarkUserVerified(reqID string, email string) error {
+	// Get the collection
+	collection, err := p.e.App.FindCollectionByNameOrId("users")
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find users collection (SHD_RCP_421), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	record, err := p.e.App.FindFirstRecordByFilter(
+		collection.Id,
+		"email = {:email}",
+		dbx.Params{
+			"email": email,
+		},
+	)
+
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find user (SHD_RCP_115), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	record.Set("verified", true)
+	if err := p.e.App.Save(record); err != nil {
+		error_msg := fmt.Sprintf("failed to update user (SHD_RCP_122), err:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
+	return nil
+}
+
 // CreateUser adds a user if the user does not exist.
 // Otherwise, it updates the record.
 // Users are identified by user_email.
@@ -107,6 +176,8 @@ func (p *pbContext) UpsertUser(reqID string,
 	last_name string,
 	token string,
 	avatar string) error {
+
+	log.Printf("[req=%s] UpsertUser called (SHD_RCP_130), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
 
 	// Get the collection
 	collection, err := p.e.App.FindCollectionByNameOrId("users")
@@ -134,12 +205,13 @@ func (p *pbContext) UpsertUser(reqID string,
 		record.Set("password", hashed_password)
 		record.Set("firstName", first_name)
 		record.Set("lastName", last_name)
-		record.Set("tokenKey", token)
+		record.Set("tokenKey1", token)
+		log.Printf("[req=%s] ============ UpsertUser called (SHD_RCP_141), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
 
-		if avatar != "" {
+		if strings.TrimSpace(avatar) != "" {
 			file, err := p.UploadImageFromURL(reqID, avatar, "users")
 			if err != nil {
-				error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_117), filename:%s, err:%v", avatar, err)
+				error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_146), filename:%s, err:%v", avatar, err)
 				log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 			} else {
 				if record.GetString("avatar") == "" {
@@ -165,14 +237,22 @@ func (p *pbContext) UpsertUser(reqID string,
 			is_dirty = true
 		}
 
-		file, err := p.UploadImageFromURL(reqID, avatar, "users")
-		if err != nil {
-			error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_117), filename:%s, err:%v", avatar, err)
-			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
-		} else {
-			if record.GetString("avatar") == "" {
-				// Note that it does not update unless it is empty
-				record.Set("avatar", file)
+		if token != "" {
+			record.Set("tokenKey1", token)
+			log.Printf("[req=%s] ========== UpsertUser called (SHD_RCP_174), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
+			is_dirty = true
+		}
+
+		if strings.TrimSpace(avatar) != "" {
+			file, err := p.UploadImageFromURL(reqID, avatar, "users")
+			if err != nil {
+				error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_175), avatar:%s, err:%v", avatar, err)
+				log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+			} else {
+				if record.GetString("avatar") == "" {
+					// Note that it does not update unless it is empty
+					record.Set("avatar", file)
+				}
 			}
 		}
 	}
@@ -189,6 +269,8 @@ func (p *pbContext) UpsertUser(reqID string,
 
 	if is_dirty {
 		// Save the record
+		log.Printf("[req=%s] ========== Saving user record (SHD_RCP_196), email:%s, token:%s", reqID, user_email, token)
+		log.Printf("[req=%s] ========== (SHD_RCP_196), token in record:%s", reqID, record.GetString("tokenKey1"))
 		if err := p.e.App.Save(record); err != nil {
 			error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", user_email, err)
 			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
@@ -321,7 +403,7 @@ func (p *pbContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.Use
 	users_table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	records, err := p.e.App.FindRecordsByFilter(
 		users_table_name,
-		`email = {:email} && verified = true`,
+		`email = {:email}`,
 		"created",
 		10, // limit
 		0,  // offset
@@ -348,10 +430,12 @@ func (p *pbContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.Use
 	user_info.FirstName = records[0].GetString("firstName")
 	user_info.LastName = records[0].GetString("lastName")
 	user_info.Password = records[0].GetString("password")
-	user_info.VToken = records[0].GetString("tokenKey")
+	user_info.VToken = records[0].GetString("tokenKey1")
 	user_info.Verified = records[0].GetBool("verified")
 	user_info.Avatar = records[0].GetString("avatar")
-	return user_info, false
+	log.Printf("[req=%s] Retrieved user info (SHD_RCP_355), email:%s", reqID, user_info.Email)
+	log.Printf("[req=%s] ========= Retrieved user info (SHD_RCP_355), password:%s", reqID, user_info.Password)
+	return user_info, true
 }
 
 func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool) {
@@ -359,12 +443,12 @@ func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.Use
 	users_table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	records, err := p.e.App.FindRecordsByFilter(
 		users_table_name,
-		`tokenKey = {:tokenKey} && verified = true`,
+		`tokenKey1 = {:tokenKey1}`,
 		"created",
 		10, // limit
 		0,  // offset
 		map[string]interface{}{
-			"tokenKey": token,
+			"tokenKey1": token,
 		})
 
 	if err != nil || len(records) > 1 {
@@ -386,11 +470,10 @@ func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.Use
 	user_info.FirstName = records[0].GetString("firstName")
 	user_info.LastName = records[0].GetString("lastName")
 	user_info.Password = records[0].GetString("password")
-	user_info.VToken = records[0].GetString("tokenKey")
+	user_info.VToken = records[0].GetString("tokenKey1")
 	user_info.Verified = records[0].GetBool("verified")
 	user_info.Avatar = records[0].GetString("avatar")
-	return user_info, false
-
+	return user_info, true
 }
 
 func (p *pbContext) IsValidSessionPocket(reqID string, session_id string) (ApiTypes.UserInfo, bool, error) {

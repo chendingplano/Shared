@@ -40,6 +40,8 @@ type RequestContext interface {
 	QueryParam(key string) string
 	GetUserInfoByEmail(reqID string, email string) (ApiTypes.UserInfo, bool)
 	GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool)
+	MarkUserVerified(reqID string, email string) error
+	UpdateTokenByEmail(reqID string, email string, token string) error
 	GetRedirectURL(
 		reqID string,
 		token string,
