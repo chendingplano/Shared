@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"scripts": {
 		"dev": "echo 'Libraries do not support dev mode' && exit 1",
-		"build": "svelte-kit sync && svelte-package",
+		"build": "svelte-package",
 		"preview": "echo 'Libraries do not support preview' && exit 1",
 		"prepare": "echo 'No sync needed for libraries'",
 		"prepack": "svelte-package && publint",
