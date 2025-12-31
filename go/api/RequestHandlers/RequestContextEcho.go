@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -21,7 +22,9 @@ import (
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	middleware "github.com/chendingplano/shared/go/auth-middleware"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type echoContext struct {
@@ -60,19 +63,6 @@ func (e *echoContext) QueryParam(key string) string {
 	return e.c.QueryParam(key)
 }
 
-func (e *echoContext) GetRedirectURL(
-	reqID string,
-	token string,
-	username string) string {
-	redirect_url := ApiTypes.DatabaseInfo.HomeURL
-	if redirect_url == "" {
-		log.Printf("[req=%s] ***** Alarm missing home_url config (MID_GGL_094), user:%s",
-			reqID, username)
-		redirect_url = "localhost:5173"
-	}
-	return redirect_url
-}
-
 // func (e *echoContext) SetCookie(cookie *http.Cookie) {
 func (e *echoContext) SetCookie(session_id string) {
 	is_secure := ApiUtils.IsSecure()
@@ -102,6 +92,114 @@ func (e *echoContext) SetReqID(reqID string) {
 
 func (e *echoContext) Bind(reqID string, v interface{}) error {
 	return e.c.Bind(v)
+}
+
+func (e *echoContext) GenerateAuthToken(reqID string, email string) (string, error) {
+	// For Echo/PostgreSQL/MySQL, we don't use Pocketbase auth tokens
+	// Instead, we return a session-based token or JWT
+	// This is a placeholder - implement based on your auth strategy
+	token := ApiUtils.GenerateSecureToken(32)
+	log.Printf("[req=%s] Generated session token for user %s (SHD_RCE_109)", reqID, email)
+	return token, nil
+}
+
+func (e *echoContext) UpdatePassword(reqID string, email string, plaintextPassword string) (bool, int, string) {
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), bcrypt.DefaultCost)
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to hash password, email:%s, err:%v", email, err)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_RCP_210)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_RCP_218"})
+
+		return false, http.StatusInternalServerError, error_msg
+	}
+
+	err = sysdatastores.UpdatePasswordByEmail(reqID, email, string(hashedPassword))
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to update password in database, email:%s, err:%v", email, err)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_RCP_230)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_RCP_238"})
+
+		return false, http.StatusInternalServerError, error_msg
+	}
+
+	return true, 0, ""
+}
+
+func (e *echoContext) VerifyUserPassword(reqID string, email, password string) (bool, int, string) {
+	user_info, found := e.GetUserInfoByEmail(reqID, email)
+	if !found {
+		log.Printf("[req=%s] No user found for email (SHD_RCP_110): %s", reqID, email)
+		return false, http.StatusNotFound, "email not found (SHD_RCE_131)"
+	}
+
+	if user_info.Password == "" {
+		home_domain := os.Getenv("APP_DOMAIN_NAME")
+		if home_domain == "" {
+			error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_RCP_092)"
+			home_domain = "http://localhost:5173"
+			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		}
+		token := uuid.NewString()
+		url := fmt.Sprintf("%s/auth/email/reset?token=%s", home_domain, token)
+		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, email:%s, token:%s",
+			email, token, url)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_SentEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_RCE_216"})
+
+		e.UpdateTokenByEmail(reqID, email, token)
+
+		subject := "Reset your password"
+		body := fmt.Sprintf(`
+        	<p>Please click the link below to reset your password:</p>
+        	<p><a href="%s">%s</a></p>`, url, url)
+
+		log.Printf("[req=%s] %s (SHD_EML_227)", reqID, error_msg)
+		ApiUtils.SendMail(reqID, email, subject, body, "SHD_RCE_154")
+
+		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email:%s. "+
+			"Please check your email and click the link to set your password (SHD_EML_135)", email)
+		return false, http.StatusUnauthorized, msg
+	}
+
+	// Hash password
+	err := bcrypt.CompareHashAndPassword([]byte(user_info.Password), []byte(password))
+	if err != nil {
+		error_msg := fmt.Sprintf("invalid password, email:%s", email)
+		log.Printf("[req=%s] +++++ Warning:%s (SHD_EML_240)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidPassword,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_248"})
+
+		return false, http.StatusUnauthorized, error_msg
+	}
+
+	return true, 0, ""
 }
 
 func (e *echoContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool) {
@@ -158,7 +256,7 @@ func (e *echoContext) UpdateTokenByEmail(reqID string, email string, token strin
 func (e *echoContext) UpsertUser(reqID string,
 	user_id_type string,
 	user_name string,
-	hashed_password string,
+	plain_password string,
 	user_email string,
 	auth_type string,
 	status string,
@@ -167,6 +265,7 @@ func (e *echoContext) UpsertUser(reqID string,
 	token string,
 	avatar string) error {
 	// Set the user
+	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(plain_password), bcrypt.DefaultCost)
 	user_info := ApiTypes.UserInfo{}
 	user_info.UserName = user_name
 	user_info.UserIdType = user_id_type
@@ -175,7 +274,7 @@ func (e *echoContext) UpsertUser(reqID string,
 	user_info.LastName = last_name
 	user_info.AuthType = auth_type
 	user_info.UserStatus = status
-	user_info.Password = hashed_password
+	user_info.Password = string(hashedPwd)
 	user_info.VToken = token
 
 	ok, err := sysdatastores.AddUserNew(reqID, user_info)

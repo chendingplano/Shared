@@ -16,13 +16,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
+	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -77,20 +77,6 @@ func (p *pbContext) GetBody() io.ReadCloser {
 
 func (p *pbContext) QueryParam(key string) string {
 	return p.e.Request.URL.Query().Get(key)
-}
-
-func (p *pbContext) GetRedirectURL(
-	reqID string,
-	token string,
-	user_name string) string {
-	// Redirect to port 8090 (backend) instead of 5173 (vite dev server)
-	// This ensures the pb_auth cookie is set on the correct domain
-	redirect_url := "http://localhost:8090/oauth/callback"
-	redirectURL := fmt.Sprintf("%s?token=%s&name=%s",
-		redirect_url,
-		url.QueryEscape(token),
-		url.QueryEscape(user_name))
-	return redirectURL
 }
 
 func (p *pbContext) UpdateTokenByEmail(
@@ -162,13 +148,87 @@ func (p *pbContext) MarkUserVerified(reqID string, email string) error {
 	return nil
 }
 
+func (p *pbContext) GenerateAuthToken(reqID string, email string) (string, error) {
+	// Find the auth record by email
+	userRecord, err := p.e.App.FindAuthRecordByEmail("users", email)
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find user (SHD_RCP_165), email:%s, err:%v", email, err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return "", fmt.Errorf("%s", error_msg)
+	}
+
+	// Generate Pocketbase auth token
+	token, tokenErr := userRecord.NewAuthToken()
+	if tokenErr != nil {
+		error_msg := fmt.Sprintf("failed to generate auth token (SHD_RCP_166), email:%s, err:%v", email, tokenErr)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return "", fmt.Errorf("%s", error_msg)
+	}
+
+	log.Printf("[req=%s] Successfully generated auth token for user %s (SHD_RCP_167)", reqID, email)
+	return token, nil
+}
+
+func (p *pbContext) UpdatePassword(reqID string, email, password string) (bool, int, string) {
+	// Get the collection
+	log.Printf("[req=%s] Update user password (SHD_RCP_167), email:%s", reqID, email)
+
+	// Get the collection
+	collection, err := p.e.App.FindCollectionByNameOrId("users")
+	if err != nil {
+		error_msg := fmt.Sprintf("Collection not exist (SHD_RCP_173), err:%v", err)
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_RCE_180"})
+
+		return false, http.StatusInternalServerError, error_msg
+	}
+
+	record, err := p.e.App.FindFirstRecordByFilter(
+		collection.Id,
+		"email = {:email}",
+		dbx.Params{
+			"email": email,
+		},
+	)
+
+	if err != nil {
+		error_msg := fmt.Sprintf("failed to find user (SHD_RCP_173), err:%v", err)
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_RCE_216"})
+
+		return false, http.StatusInternalServerError, error_msg
+	}
+
+	record.SetPassword(password)
+
+	// Save the record
+	log.Printf("[req=%s] ========== (SHD_RCP_188), update password:%s", reqID, email)
+	if err := p.e.App.Save(record); err != nil {
+		error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", email, err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return false, http.StatusInternalServerError, error_msg
+	}
+
+	return true, 0, ""
+}
+
 // CreateUser adds a user if the user does not exist.
 // Otherwise, it updates the record.
 // Users are identified by user_email.
 func (p *pbContext) UpsertUser(reqID string,
 	user_id_type string,
 	user_name string,
-	hashed_password string,
+	plain_password string,
 	user_email string,
 	auth_type string,
 	status string,
@@ -177,7 +237,7 @@ func (p *pbContext) UpsertUser(reqID string,
 	token string,
 	avatar string) error {
 
-	log.Printf("[req=%s] UpsertUser called (SHD_RCP_130), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
+	log.Printf("[req=%s] UpsertUser (SHD_RCP_130), email:%s, password:%s, token:%s", reqID, user_email, plain_password, token)
 
 	// Get the collection
 	collection, err := p.e.App.FindCollectionByNameOrId("users")
@@ -202,11 +262,11 @@ func (p *pbContext) UpsertUser(reqID string,
 		// Record not found. Create it
 		record = core.NewRecord(collection)
 		record.Set("email", user_email)
-		record.Set("password", hashed_password)
+		record.SetPassword(plain_password)
 		record.Set("firstName", first_name)
 		record.Set("lastName", last_name)
 		record.Set("tokenKey1", token)
-		log.Printf("[req=%s] ============ UpsertUser called (SHD_RCP_141), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
+		log.Printf("[req=%s] ============ UpsertUser (SHD_RCP_141), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
 
 		if strings.TrimSpace(avatar) != "" {
 			file, err := p.UploadImageFromURL(reqID, avatar, "users")
@@ -232,8 +292,8 @@ func (p *pbContext) UpsertUser(reqID string,
 			is_dirty = true
 		}
 
-		if record.GetString("password") == "" {
-			record.Set("password", hashed_password)
+		if plain_password != "" {
+			record.SetPassword(plain_password)
 			is_dirty = true
 		}
 
@@ -257,20 +317,9 @@ func (p *pbContext) UpsertUser(reqID string,
 		}
 	}
 
-	if record.GetString("password") == "" {
-		record.Set("password", "no-password-yet")
-		is_dirty = true
-	}
-
-	if record.Get("avatar") == "" {
-		record.Set("password", "no-password-yet")
-		is_dirty = true
-	}
-
 	if is_dirty {
 		// Save the record
-		log.Printf("[req=%s] ========== Saving user record (SHD_RCP_196), email:%s, token:%s", reqID, user_email, token)
-		log.Printf("[req=%s] ========== (SHD_RCP_196), token in record:%s", reqID, record.GetString("tokenKey1"))
+		log.Printf("[req=%s] (SHD_RCP_196), save users record:%s", reqID, user_email)
 		if err := p.e.App.Save(record); err != nil {
 			error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", user_email, err)
 			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
@@ -331,6 +380,9 @@ func (p *pbContext) Bind(reqID string, v interface{}) error {
 		return fmt.Errorf("%s", error_msg)
 	}
 
+	// For some unknown reason, we need to read the body first and then decode it.
+	io.ReadAll(p.e.Request.Body)
+
 	// Use strict decoding (reject trailing garbage)
 	dec := json.NewDecoder(p.e.Request.Body)
 	dec.DisallowUnknownFields() // optional: reject unknown fields
@@ -346,8 +398,8 @@ func (p *pbContext) Bind(reqID string, v interface{}) error {
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	// Optional: enforce single JSON object (reject trailing data)
-	if _, err := dec.Token(); err != io.EOF {
+	// Enforce single JSON object (reject trailing data)
+	if dec.More() {
 		error_msg := "extra data after JSON object (SHD_RCP_090)"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return fmt.Errorf("%s", error_msg)
@@ -434,8 +486,47 @@ func (p *pbContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.Use
 	user_info.Verified = records[0].GetBool("verified")
 	user_info.Avatar = records[0].GetString("avatar")
 	log.Printf("[req=%s] Retrieved user info (SHD_RCP_355), email:%s", reqID, user_info.Email)
-	log.Printf("[req=%s] ========= Retrieved user info (SHD_RCP_355), password:%s", reqID, user_info.Password)
 	return user_info, true
+}
+
+func (p *pbContext) VerifyUserPassword(
+	reqID string,
+	email string,
+	plaintextPassword string) (bool, int, string) {
+	// Find the auth record by email (this works for the "users" collection if it's set as auth collection)
+	user, err := p.e.App.FindAuthRecordByEmail("users", email)
+	if err != nil {
+		error_msg := fmt.Sprintf("user not found (SHD_RCP_503), email:%s", email)
+		log.Printf("[req=%s] +++++ Warning:%s (SHD_EML_240)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserNotAuthed,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_248"})
+
+		return false, http.StatusUnauthorized, error_msg
+	}
+
+	// Let Pocketbase verify the password
+	if !user.ValidatePassword(plaintextPassword) {
+		error_msg := fmt.Sprintf("password not match (SHD_RCP_519), email:%s, password:%s", email, plaintextPassword)
+		log.Printf("[req=%s] +++++ Warning:%s (SHD_EML_240)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidPassword,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_248"})
+
+		return false, http.StatusUnauthorized, error_msg
+	}
+
+	return true, 0, ""
 }
 
 func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool) {

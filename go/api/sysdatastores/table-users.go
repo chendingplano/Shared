@@ -449,3 +449,33 @@ func UpdatePasswordByUserName(reqID string, user_name string, password string) e
 	log.Printf("[req=%s] Update password success (SHD_USR_576), user_name:%s", reqID, user_name)
 	return nil
 }
+
+func UpdatePasswordByEmail(reqID string, email string, password string) error {
+	var db *sql.DB
+	var stmt string
+	db_type := ApiTypes.DatabaseInfo.DBType
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	switch db_type {
+	case ApiTypes.MysqlName:
+		db = ApiTypes.MySql_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET user_password = ?, user_status = 'active' WHERE email = ?", table_name)
+
+	case ApiTypes.PgName:
+		db = ApiTypes.PG_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET user_password = $1, user_status = 'active' WHERE email = $2", table_name)
+
+	default:
+		err := fmt.Errorf("unsupported database type (SHD_USR_565): %s", db_type)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, err.Error())
+		return err
+	}
+
+	_, err := db.Exec(stmt, password, email)
+	if err != nil {
+		error_msg := fmt.Errorf("failed to update password (SHD_USR_572), stmt:%s, err: %w", stmt, err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg.Error())
+		return error_msg
+	}
+	log.Printf("[req=%s] Update password success (SHD_USR_576), email:%s", reqID, email)
+	return nil
+}

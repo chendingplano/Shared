@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/smtp"
+	"net/url"
 	"os"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -23,30 +24,6 @@ func GenerateSecureToken(length int) string {
 	}
 	return hex.EncodeToString(bytes)
 }
-
-/*
-// Helper to generate a short, random request ID
-func generateRequestID() string {
-	bytes := make([]byte, 8) // 8 bytes = 16 hex chars
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback if crypto/rand fails (very rare)
-		return "fallback-req-id"
-	}
-	return hex.EncodeToString(bytes)
-}
-
-func GetReqID(c echo.Context) string {
-	ctx := c.Request().Context()
-	if reqID, ok := ctx.Value("reqID").(string); ok {
-		return reqID
-	}
-	reqID := generateRequestID()
-	ctx = context.WithValue(c.Request().Context(), "reqID", reqID)
-	c.SetRequest(c.Request().WithContext(ctx))
-	log.Printf("***** Alarm: Failed retrieving reqID, generated new:%s", reqID)
-	return reqID
-}
-*/
 
 // SendMail sends an email using SMTP.
 // Example usage:
@@ -352,4 +329,25 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 func IsSecure() bool {
 	// Adjust based on your deployment
 	return os.Getenv("ENV") == "production"
+}
+
+func GetRedirectURL(
+	reqID string,
+	token string,
+	user_name string) string {
+	// Redirect to port 8090 (backend) instead of 5173 (vite dev server)
+	// This ensures the pb_auth cookie is set on the correct domain
+	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	if home_domain == "" {
+		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_RCP_092)"
+		home_domain = "http://localhost:5173"
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+	}
+
+	redirect_url := fmt.Sprintf("%s/oauth/callback", home_domain)
+	redirectURL := fmt.Sprintf("%s?token=%s&name=%s",
+		redirect_url,
+		url.QueryEscape(token),
+		url.QueryEscape(user_name))
+	return redirectURL
 }

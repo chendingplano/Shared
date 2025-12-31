@@ -157,7 +157,7 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 			url.QueryEscape(token),
 			url.QueryEscape(googleUserInfo.Name))
 	*/
-	redirectURL := rc.GetRedirectURL(reqID, token, googleUserInfo.Name)
+	redirectURL := ApiUtils.GetRedirectURL(reqID, token, googleUserInfo.Name)
 	http.Redirect(e.Response, e.Request, redirectURL, http.StatusSeeOther)
 	return nil
 }

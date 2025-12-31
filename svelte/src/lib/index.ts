@@ -9,7 +9,7 @@ export { isAuthenticated,
 } from './utils/auth';
 
 export { default as EmailVerifyPage } from './components/EmailVerifyPage.svelte';
-export { appAuthStore } from './stores/auth.svelte';
+// export { appAuthStore } from './stores/auth.svelte';
 export { db_store } from './stores/dbstore';
 export type {LoginResults} from './stores/auth.svelte'
 export {GetStoreByName, StoreMap} from './stores/InMemStores'

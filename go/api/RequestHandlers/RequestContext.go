@@ -42,10 +42,13 @@ type RequestContext interface {
 	GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool)
 	MarkUserVerified(reqID string, email string) error
 	UpdateTokenByEmail(reqID string, email string, token string) error
-	GetRedirectURL(
-		reqID string,
-		token string,
-		username string) string
+	VerifyUserPassword(reqID string, email string, plaintextPassword string) (bool, int, string)
+	UpdatePassword(reqID string, email string, plaintextPassword string) (bool, int, string)
+	GenerateAuthToken(reqID string, email string) (string, error)
+	// GetRedirectURL(
+	// 	reqID string,
+	// 	token string,
+	// 	username string) string
 
 	UpsertUser(reqID string,
 		user_id_type string,
