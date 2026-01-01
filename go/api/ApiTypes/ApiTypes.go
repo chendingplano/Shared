@@ -305,7 +305,7 @@ type JimoResponse struct {
 type ResourceDef struct {
 	ResourceID      int64                  `json:"resource_id"`
 	ResourceName    string                 `json:"resource_name"`
-	ResourceAction  string                 `json:"resource_action"`
+	ResourceOpr     string                 `json:"resource_opr"`
 	ResourceDesc    string                 `json:"resource_desc"`
 	ResourceType    string                 `json:"resource_type"`
 	DBName          string                 `json:"db_name"`

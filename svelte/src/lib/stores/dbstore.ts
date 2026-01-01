@@ -194,8 +194,11 @@ async function getUserInfo(userID: string): UserIDResponse {
 
 */
 
-// Automatically generate: GraphQL/HTTP Request
-// Select xxx from Users
+// DBStore interfaces with the backend database through GraphQL/HTTP requests. 
+// The function retrieveRecords implements the SELECT-like operation.
+// The function saveRecord implements the INSERT-like operation.
+// The function updateRecord implements the UPDATE-like operation.
+// The function deleteRecord implements the DELETE-like operation.
 class DBStore {
     constructor() {}
 
