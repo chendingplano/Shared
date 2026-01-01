@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func InitLib(config_path string) {
+func LoadLibConfig(config_path string) {
 	// config_path should be "~/Workspace/Shared/libconfig.toml"
 	// 1. DB Must be initialized properly
 	log.Printf("Loading config from %s (SHD_LMG_047)", config_path)
@@ -42,7 +42,9 @@ func InitLib(config_path string) {
 		log.Printf("***** Alarm: unable to decode config (SHD_LMG_064): %v", err)
 		os.Exit(1)
 	}
+}
 
+func InitLib(config_path string) {
 	log.Printf("Lib Config, sessions:%s", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 	log.Printf("Lib Config, email_store:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
 	log.Printf("Lib Config, test:%s", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
