@@ -7,49 +7,49 @@ The query builder provides a fluent, type-safe interface for building database q
 ## Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────-─┐
 │                     Application Layer                        │
-│                                                               │
+│                                                              │
 │  import { query_builder, cond_builder, join_builder }        │
 │          from '$lib/stores';                                 │
-│                                                               │
+│                                                              │
 │  const results = await query_builder                         │
 │    .select()                                                 │
 │    .from('users')                                            │
 │    .where(cond_builder.filter().condEq('status', 'active'))  │
 │    .execute();                                               │
-└───────────────────────┬───────────────────────────────────────┘
+└───────────────────────┬──────────────────────────────────────┘
                         │
                         ▼
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────-─┐
 │                    Query Builder Layer                       │
-│                                                               │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │ QueryBuilder    │  │ ConditionBuilder│  │ JoinBuilder  │ │
-│  │                 │  │                 │  │              │ │
-│  │ - select()      │  │ - condEq()      │  │ - from()     │ │
-│  │ - from()        │  │ - condGt()      │  │ - join()     │ │
-│  │ - where()       │  │ - condLt()      │  │ - on()       │ │
-│  │ - leftJoin()    │  │ - and()         │  │ - select()   │ │
-│  │ - orderBy()     │  │ - or()          │  │ - embedAs()  │ │
-│  │ - limit()       │  │ - build()       │  │ - build()    │ │
-│  │ - execute()     │  │                 │  │              │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-│                                                               │
-│  ┌─────────────────┐  ┌─────────────────┐                   │
-│  │ UpdateBuilder   │  │ DeleteBuilder   │                   │
-│  │                 │  │ (not impl yet)  │                   │
-│  │ - start()       │  │                 │                   │
-│  │ - modify()      │  │                 │                   │
-│  │ - build()       │  │                 │                   │
-│  └─────────────────┘  └─────────────────┘                   │
-└───────────────────────┬───────────────────────────────────────┘
+│                                                              │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐  │
+│  │ QueryBuilder    │  │ ConditionBuilder│  │ JoinBuilder  │  │
+│  │                 │  │                 │  │              │  │
+│  │ - select()      │  │ - condEq()      │  │ - from()     │  │
+│  │ - from()        │  │ - condGt()      │  │ - join()     │  │
+│  │ - where()       │  │ - condLt()      │  │ - on()       │  │
+│  │ - leftJoin()    │  │ - and()         │  │ - select()   │  │
+│  │ - orderBy()     │  │ - or()          │  │ - embedAs()  │  │
+│  │ - limit()       │  │ - build()       │  │ - build()    │  │
+│  │ - execute()     │  │                 │  │              │  │
+│  └─────────────────┘  └─────────────────┘  └──────────────┘  │
+│                                                              │
+│  ┌─────────────────┐  ┌─────────────────┐                    │
+│  │ UpdateBuilder   │  │ DeleteBuilder   │                    │
+│  │                 │  │ (not impl yet)  │                    │
+│  │ - start()       │  │                 │                    │
+│  │ - modify()      │  │                 │                    │
+│  │ - build()       │  │                 │                    │
+│  └─────────────────┘  └─────────────────┘                    │
+└───────────────────────┬──────────────────────────────────────┘
                         │
                         │ execute()
                         ▼
-┌─────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────-──┐
 │                       DBStore Layer                          │
-│                                                               │
+│                                                              │
 │  class DBStore {                                             │
 │    async retrieveRecords(                                    │
 │      db_name: string,                                        │
@@ -57,25 +57,25 @@ The query builder provides a fluent, type-safe interface for building database q
 │      field_names: string[],                                  │
 │      field_defs: Record<string, unknown>[],                  │
 │      loc: string,                                            │
-│      conds: CondDef,              ◄─── From ConditionBuilder│
-│      join_def: JoinDef[],         ◄─── From JoinBuilder     │
-│      orderby_def: OrderbyDef[],   ◄─── From QueryBuilder    │
-│      record_schema: unknown,      ◄─── Zod Schema           │
+│      conds: CondDef,              ◄─── From ConditionBuilder │
+│      join_def: JoinDef[],         ◄─── From JoinBuilder      │
+│      orderby_def: OrderbyDef[],   ◄─── From QueryBuilder     │
+│      record_schema: unknown,      ◄─── Zod Schema            │
 │      embed_name: string,                                     │
-│      embed_schema: unknown,       ◄─── Zod Schema           │
+│      embed_schema: unknown,       ◄─── Zod Schema            │
 │      start: number,                                          │
 │      num_records: number                                     │
 │    ): Promise<JimoResponse>                                  │
 │  }                                                           │
-└───────────────────────┬───────────────────────────────────────┘
+└───────────────────────┬──────────────────────────────────────┘
                         │
                         │ HTTP POST
                         ▼
-┌─────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────-──┐
 │                      Backend API                             │
-│                                                               │
+│                                                              │
 │  POST /shared_api/v1/jimo_req                                │
-│                                                               │
+│                                                              │
 │  Request: QueryRequest {                                     │
 │    request_type: 'query',                                    │
 │    db_name: string,                                          │
@@ -87,22 +87,22 @@ The query builder provides a fluent, type-safe interface for building database q
 │    start: number,                                            │
 │    page_size: number                                         │
 │  }                                                           │
-│                                                               │
+│                                                              │
 │  Response: JimoResponse {                                    │
 │    status: boolean,                                          │
 │    error_msg: string,                                        │
 │    num_records: number,                                      │
 │    results: JsonObjectOrArray                                │
 │  }                                                           │
-└───────────────────────┬───────────────────────────────────────┘
+└───────────────────────┬──────────────────────────────────────┘
                         │
                         ▼
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────-───┐
 │                        Database                              │
-│                                                               │
+│                                                              │
 │  PostgreSQL / MySQL / SQLite                                 │
 │  (Abstracted by backend)                                     │
-└─────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────-────┘
 ```
 
 ## Data Flow
