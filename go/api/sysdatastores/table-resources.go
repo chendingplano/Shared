@@ -22,7 +22,7 @@ const (
 	ResourceStoreTableDescSimple = `
         ResourceID        	int64     # A unique sequence number
         ResourceName 		string    # Resource name, identify the resource
-        ResourceAction      string    # Resource action, identify the operation on the resource
+        ResourceOpr         string    # Resource action, identify the operation on the resource
         ResourceDesc		string    # Resource description
         ResourceType		string    # Resource type
         DBName              string    # Its db name, if the resource type is 'table'
@@ -45,7 +45,7 @@ func CreateResourcesTable(
 	log.Printf("To create resource table")
 	var stmt string
 	fields_1 := "resource_name 		VARCHAR(128)    NOT NULL, " +
-		"resource_action 	VARCHAR(32)     NOT NULL, " +
+		"resource_opr 		VARCHAR(32)     NOT NULL, " +
 		"resource_desc		TEXT		    NOT NULL, " +
 		"resource_type		VARCHAR(32)     NOT NULL, " +
 		"db_name            VARCHAR(64)     DEFAULT NULL, " +
