@@ -25,6 +25,9 @@ type IDRecordDef struct {
 
 type ContextKey string
 
+const CallFlowKey ContextKey = "call_flow"
+const RequestIDKey ContextKey = "reqID"
+
 type LibConfigDef struct {
 	IDStartValue int `mapstructure:"id_start_value"`
 	IDIncValue   int `mapstructure:"id_inc_value"`
@@ -277,11 +280,6 @@ type DeleteRequest struct {
 func IsValidDBType(db_type string) bool {
 	return db_type == MysqlName || db_type == PgName
 }
-
-// Define a key type for better type safety
-type contextKey string
-
-const RequestIDKey contextKey = "reqID"
 
 type AddPromptResponse struct {
 	Status   bool   `json:"status"`
