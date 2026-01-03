@@ -10,6 +10,7 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/go-sql-driver/mysql"
@@ -342,6 +343,16 @@ func GetRedirectURL(
 		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_RCP_092)"
 		home_domain = "http://localhost:5173"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+	}
+
+	// Ensure home_domain has a scheme (http:// or https://)
+	// APP_DOMAIN_NAME should include the scheme, but add legacy support
+	if !strings.HasPrefix(home_domain, "http://") && !strings.HasPrefix(home_domain, "https://") {
+		if strings.HasPrefix(home_domain, "localhost") {
+			home_domain = "http://" + home_domain
+		} else {
+			home_domain = "https://" + home_domain
+		}
 	}
 
 	redirect_url := fmt.Sprintf("%s/oauth/callback", home_domain)
