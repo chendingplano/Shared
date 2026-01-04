@@ -138,62 +138,6 @@ async function handleResp(resp: Response): Promise<JimoResponse> {
     }
 }
 
-
-/*
-users.go
-
-type UserTableDefinition {
-    Name string `postgres:"TEXT"`
-    Age int `postgres:"INT64"`
-    Hello string `postgres"TEXT"`
-}
-
-func RegisterTables() {
-    tableRegistrar.Add("alijwdlaijd", UserTableDefinition{})
-}
-
-
-type UserIDResponse {
-    Name string `json:"name" postgres:"TEXT PRIMARY KEY"`
-    Age int
-}
-
-func GetUserInfo(userID string) UserIDResponse {
-    res := db.Query("SELECT name, age FROM users WHERE ID=$1", userID)
-    return res
-}
-
-api.go
-
-api.Add(GetUserInfo)
-
-// run `mise generate` => run `jimo generate --input-directory "./src" --output-directory "./frontend/gen"
-
-automatically generated javascript file:
-
-type UserIDResponse {
-    name: string
-    age: number
-}
-
-async function getUserInfo(userID: string): UserIDResponse {
-    const res = await fetch("/api/v1/UserService.GetUserInfo", { method: "POST", body: {userID: userID}});
-    const res2 = await res.json();
-    return res2 as UserIDResponse;
-}
-
-// this is what you'll run in javascript
-
-<script lang="ts">
-    let userInfo = $state<UserIDResponse | null>(null);
-
-    onMount(() => {
-        userInfo = await getUserInfo("abcd");
-    })
-</script>
-
-*/
-
 // DBStore interfaces with the backend database through GraphQL/HTTP requests. 
 // The function retrieveRecords implements the SELECT-like operation.
 // The function saveRecord implements the INSERT-like operation.

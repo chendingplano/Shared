@@ -6,6 +6,7 @@
       "name": "@chendingplano/shared",
       "dependencies": {
         "@iarna/toml": "^2.2.5",
+        "esm-env": "^1.2.2",
         "http-status": "^2.1.0",
         "http-status-codes": "^2.3.0",
         "zod": "^4.2.1",

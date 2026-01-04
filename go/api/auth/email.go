@@ -702,7 +702,7 @@ func HandleForgotPasswordBase(
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 
-	resetURL := fmt.Sprintf("%s/auth/email/reset?token=%s", home_domain, token)
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
 	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", fmt.Sprintf(`
         <p>Hi %s,</p>
         <p>Click the link below to reset your password:</p>

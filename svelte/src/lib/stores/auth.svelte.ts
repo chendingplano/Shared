@@ -17,7 +17,7 @@ appAuthStore.stopImpersonation();
 
 import { writable } from 'svelte/store';
 import type { UserInfo } from '$lib/types/CommonTypes';
-import type { JimoResponse } from '$lib/types/CommonTypes'
+import type { JimoResponse } from '$lib/types/CommonTypes';
 
 export let onNavigate = (path: string) => {}; // passed from the host app
 
@@ -192,12 +192,11 @@ function createAuthStore(): AuthStore {
 
     // DISABLED: Auto-check is causing infinite loop when /auth/me endpoint doesn't exist
     // This will be re-enabled when migrating from PocketBase to PostgreSQL
-    // if (typeof window !== 'undefined') {
-    //     checkAuthStatus();
-    // } else {
-    //     // SSR: resolve immediately (no auth check possible)
-    //     readyResolve();
-    // }
+    // For now, consuming apps should manually call checkAuthStatus() if needed
+    if (typeof window === 'undefined') {
+        // SSR: resolve immediately (no auth check possible)
+        readyResolve();
+    }
 
     // Temporary: Always resolve immediately without auth check
     readyResolve();
