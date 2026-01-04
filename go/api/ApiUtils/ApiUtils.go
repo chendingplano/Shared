@@ -26,11 +26,38 @@ func GenerateSecureToken(length int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// SendMail sends an email using SMTP.
+// EmailSenderFunc is the signature for custom email sender functions.
+// Apps can register their own email sender to use their preferred email service and styling.
+// Parameters: reqID (for logging), to (recipient), subject, htmlBody, loc (caller location for logging)
+type EmailSenderFunc func(reqID, to, subject, htmlBody, loc string) error
+
+// customEmailSender holds the registered custom email sender function.
+// If nil, the default SMTP sender is used.
+var customEmailSender EmailSenderFunc
+
+// SetEmailSender registers a custom email sender function.
+// Call this during app initialization to use your own email service (e.g., Resend).
+func SetEmailSender(sender EmailSenderFunc) {
+	customEmailSender = sender
+	log.Println("Custom email sender registered")
+}
+
+// SendMail sends an email using either the custom sender (if registered) or default SMTP.
 // Example usage:
 //
 //	err := SendMail("user@example.com", "Verify your email", "<p>Click here...</p>")
 func SendMail(reqID, to, subject, body string, loc string) error {
+	// Use custom sender if registered
+	if customEmailSender != nil {
+		return customEmailSender(reqID, to, subject, body, loc)
+	}
+
+	// Fall back to default SMTP sender
+	return sendMailSMTP(reqID, to, subject, body, loc)
+}
+
+// sendMailSMTP is the default SMTP-based email sender using Gmail.
+func sendMailSMTP(reqID, to, subject, body string, loc string) error {
 	// ⚙️ SMTP server configuration
 	from := "chending1111@gmail.com"
 	password := "fonn wwrr jthy ylph"
