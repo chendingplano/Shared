@@ -8,8 +8,6 @@ package RequestHandlers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"io"
 	"net/http"
 	"time"
@@ -60,7 +58,7 @@ type RequestContext interface {
 		first_name string,
 		last_name string,
 		token string,
-		avatar string) error
+		avatar string) (ApiTypes.UserInfo, error)
 
 	SaveSession(
 		reqID string,
@@ -71,14 +69,4 @@ type RequestContext interface {
 		user_reg_id string,
 		user_email string,
 		expiry time.Time) error
-}
-
-// Helper to generate a short, random request ID
-func generateRequestID(key string) string {
-	bytes := make([]byte, 4) // 4 bytes = 8 hex chars
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback if crypto/rand fails (very rare)
-		return "fallback-req-id"
-	}
-	return key + "-" + hex.EncodeToString(bytes)
 }

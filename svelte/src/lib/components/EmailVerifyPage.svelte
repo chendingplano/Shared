@@ -13,7 +13,7 @@
     }
 
     try {
-      const res = await fetch('http://localhost:5173/auth/email/verify', {
+      const res = await fetch('/auth/email/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })

@@ -235,14 +235,15 @@ func (p *pbContext) UpsertUser(reqID string,
 	first_name string,
 	last_name string,
 	token string,
-	avatar string) error {
+	avatar string) (ApiTypes.UserInfo, error) {
 
 	log.Printf("[req=%s] UpsertUser (SHD_RCP_130), email:%s, password:%s, token:%s", reqID, user_email, plain_password, token)
+	var user_info ApiTypes.UserInfo
 
 	// Get the collection
 	collection, err := p.e.App.FindCollectionByNameOrId("users")
 	if err != nil {
-		return err
+		return user_info, err
 	}
 
 	record, err := p.e.App.FindFirstRecordByFilter(
@@ -254,7 +255,7 @@ func (p *pbContext) UpsertUser(reqID string,
 	)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("failed to check existing user: %w", err)
+		return user_info, fmt.Errorf("failed to check existing user: %w", err)
 	}
 
 	is_dirty := false
@@ -280,27 +281,57 @@ func (p *pbContext) UpsertUser(reqID string,
 				}
 			}
 		}
+
+		user_info.Email = user_email
+		user_info.FirstName = first_name
+		user_info.LastName = last_name
+		user_info.UserIdType = user_id_type
+		user_info.UserName = user_name
+		user_info.Password = plain_password
+		user_info.AuthType = auth_type
+		user_info.UserStatus = status
+		user_info.VToken = token
+		user_info.Avatar = avatar
 		is_dirty = true
 	} else {
+		user_info.Email = user_email
+		user_info.UserIdType = user_id_type
+		user_info.AuthType = auth_type
+		user_info.UserStatus = status
+		user_info.Admin = record.GetBool("admin")
+		user_info.EmailVisibility = record.GetBool("emailVisibility")
+		user_info.Verified = record.GetBool("verified")
+
 		if record.GetString("firstName") == "" {
 			record.Set("firstName", first_name)
+			user_info.FirstName = first_name
 			is_dirty = true
+		} else {
+			user_info.FirstName = record.GetString("firstName")
 		}
 
 		if record.GetString("lastName") == "" {
 			record.Set("lastName", last_name)
+			user_info.LastName = last_name
 			is_dirty = true
+		} else {
+			user_info.LastName = record.GetString("lastName")
 		}
 
 		if plain_password != "" {
 			record.SetPassword(plain_password)
+			user_info.Password = plain_password
 			is_dirty = true
+		} else {
+			user_info.Password = record.GetString("password")
 		}
 
 		if token != "" {
 			record.Set("tokenKey1", token)
-			log.Printf("[req=%s] ========== UpsertUser called (SHD_RCP_174), email:%s, name:%s, token:%s", reqID, user_email, user_name, token)
+			user_info.VToken = token
 			is_dirty = true
+		} else {
+			user_info.VToken = record.GetString("tokenKey1")
 		}
 
 		if strings.TrimSpace(avatar) != "" {
@@ -314,6 +345,9 @@ func (p *pbContext) UpsertUser(reqID string,
 					record.Set("avatar", file)
 				}
 			}
+			user_info.Avatar = avatar
+		} else {
+			user_info.Avatar = record.GetString("avatar")
 		}
 	}
 
@@ -323,11 +357,11 @@ func (p *pbContext) UpsertUser(reqID string,
 		if err := p.e.App.Save(record); err != nil {
 			error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", user_email, err)
 			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
-			return fmt.Errorf("%s", error_msg)
+			return user_info, fmt.Errorf("%s", error_msg)
 		}
 	}
 
-	return nil
+	return user_info, nil
 }
 
 func (p *pbContext) SaveSession(
@@ -414,7 +448,7 @@ func (p *pbContext) ReqID() string {
 		return id
 	}
 	// Generate and store
-	id := generateRequestID("p")
+	id := ApiUtils.GenerateRequestID("p")
 	newCtx := context.WithValue(ctx, PocketReqIDKey, id)
 	*p.e.Request = *p.e.Request.WithContext(newCtx)
 	return id

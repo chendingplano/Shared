@@ -89,9 +89,9 @@ func isStaticAsset(path string) bool {
 func IsAuthenticated(
 	c echo.Context,
 	loc string) (ApiTypes.UserInfo, error) {
+	log.Printf("isAuthenticated invoked (SHD_AUT_108), caller:%s", loc)
 	ctx := c.Request().Context()
-	// reqID, ok := ctx.Value(ApiTypes.RequestIDKey).(string)
-	reqID, ok := ctx.Value("reqID").(string)
+	reqID, ok := ctx.Value(ApiTypes.RequestIDKey).(string)
 	if !ok {
 		log.Printf("***** Alarm failed retrieving reqID (SHD_AUT_112)")
 	}

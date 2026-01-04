@@ -81,7 +81,7 @@ func (e *echoContext) ReqID() string {
 		return id
 	}
 	// Generate and store
-	id := generateRequestID("e")
+	id := ApiUtils.GenerateRequestID("e")
 	e.c.Set(EchoReqIDKey, id)
 	return id
 }
@@ -150,8 +150,7 @@ func (e *echoContext) VerifyUserPassword(reqID string, email, password string) (
 	if user_info.Password == "" {
 		home_domain := os.Getenv("APP_DOMAIN_NAME")
 		if home_domain == "" {
-			error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_RCP_092)"
-			home_domain = "http://localhost:5173"
+			error_msg := "missing APP_DOMAIN_NAME env var (SHD_RCP_092)"
 			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		}
 		token := uuid.NewString()
@@ -222,7 +221,7 @@ func (e *echoContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.U
 		}
 
 		// Real database error
-		error_msg := fmt.Sprintf("Database error:%v, email:%s", err, email)
+		error_msg := fmt.Sprintf("Database error (SHD_RHD_225):%v, email:%s", err, email)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return user_info, false
 	}
@@ -253,6 +252,28 @@ func (e *echoContext) UpdateTokenByEmail(reqID string, email string, token strin
 		ApiTypes.LibConfig.SystemTableNames.TableNameUsers, email, token)
 }
 
+/*
+type UserInfo struct {
+	UserId          string `json:"user_id"`
+	UserName        string `json:"user_name"`
+	Password        string `json:"password"`
+	UserIdType      string `json:"user_id_type"`
+	FirstName       string `json:"firstName"`
+	LastName        string `json:"lastName"`
+	Email           string `json:"email"`
+	UserMobile      string `json:"user_mobile,omitempty"`
+	UserAddress     string `json:"user_address"`
+	Verified        bool   `json:"verfied"`
+	Admin           bool   `json:"admin"`
+	EmailVisibility bool   `json:"emailVisibility"`
+	AuthType        string `json:"auth_type"`
+	UserStatus      string `json:"user_status"`
+	Avatar          string `json:"avatar"`
+	Locale          string `json:"locale"`
+	VToken          string `json:"v_token"`
+}
+*/
+
 func (e *echoContext) UpsertUser(reqID string,
 	user_id_type string,
 	user_name string,
@@ -263,19 +284,73 @@ func (e *echoContext) UpsertUser(reqID string,
 	first_name string,
 	last_name string,
 	token string,
-	avatar string) error {
-	// Set the user
-	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(plain_password), bcrypt.DefaultCost)
-	user_info := ApiTypes.UserInfo{}
-	user_info.UserName = user_name
-	user_info.UserIdType = user_id_type
-	user_info.Email = user_email
-	user_info.FirstName = first_name
-	user_info.LastName = last_name
-	user_info.AuthType = auth_type
-	user_info.UserStatus = status
-	user_info.Password = string(hashedPwd)
-	user_info.VToken = token
+	avatar string) (ApiTypes.UserInfo, error) {
+	// Check if user exists
+	user_info, found := e.GetUserInfoByEmail(reqID, user_email)
+	var is_dirty bool = false
+	if !found {
+		is_dirty = true
+		user_info.UserName = user_name
+		user_info.UserIdType = user_id_type
+		user_info.Email = user_email
+		user_info.FirstName = first_name
+		user_info.LastName = last_name
+		user_info.AuthType = auth_type
+		user_info.UserStatus = status
+		user_info.VToken = token
+		if plain_password != "" {
+			hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(plain_password), bcrypt.DefaultCost)
+			user_info.Password = string(hashedPwd)
+		}
+	} else {
+		// Update existing user info
+		if user_name != "" {
+			user_info.UserName = user_name
+			is_dirty = true
+		}
+		if user_id_type != "" {
+			user_info.UserIdType = user_id_type
+			is_dirty = true
+		}
+		if first_name != "" {
+			user_info.FirstName = first_name
+			is_dirty = true
+		}
+		if last_name != "" {
+			user_info.LastName = last_name
+			is_dirty = true
+		}
+		if user_email != "" {
+			user_info.Email = user_email
+			is_dirty = true
+		}
+		if auth_type != "" {
+			user_info.AuthType = auth_type
+			is_dirty = true
+		}
+		if status != "" {
+			user_info.UserStatus = status
+			is_dirty = true
+		}
+		if plain_password != "" {
+			hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(plain_password), bcrypt.DefaultCost)
+			user_info.Password = string(hashedPwd)
+			is_dirty = true
+		}
+		if token != "" {
+			user_info.VToken = token
+			is_dirty = true
+		}
+		if avatar != "" {
+			user_info.Avatar = avatar
+			is_dirty = true
+		}
+	}
+
+	if !is_dirty {
+		log.Printf("[req=%s] No changes for user %s, skip upsert (SHD_RCE_121)", reqID, user_email)
+		return user_info, nil
+	}
 
 	ok, err := sysdatastores.AddUserNew(reqID, user_info)
 	if !ok {
@@ -293,10 +368,10 @@ func (e *echoContext) UpsertUser(reqID string,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_664"})
 
-		return fmt.Errorf("%s", error_msg)
+		return user_info, fmt.Errorf("%s", error_msg)
 	}
 
-	return nil
+	return user_info, nil
 }
 
 func (e *echoContext) IsAuthenticated(reqID string, loc string) (ApiTypes.UserInfo, error) {
@@ -314,7 +389,7 @@ func (e *echoContext) IsAuthenticated(reqID string, loc string) (ApiTypes.UserIn
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_RHD_065"})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_067)", reqID, error_msg)
+		log.Printf("[req:%s] %s (SHD_RHD_067)", reqID, error_msg)
 		return ApiTypes.UserInfo{}, fmt.Errorf("%s", error_msg)
 	}
 	return user_info, nil

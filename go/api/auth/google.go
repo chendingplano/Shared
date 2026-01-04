@@ -25,8 +25,8 @@ import (
 func getGoogleOauthConfig() *oauth2.Config {
 	redirectURL := os.Getenv("GOOGLE_OAUTH_REDIRECT_URL")
 	if redirectURL == "" {
-		// Default to port 8090 for Pocketbase, 8080 for Echo
-		redirectURL = "http://localhost:8090/auth/google/callback"
+		error_msg := "missing GOOGLE_OAUTH_REDIRECT_URL env var (SHD_GGL_003)"
+		log.Printf("***** Alarm: %s", error_msg)
 	}
 	return &oauth2.Config{
 		ClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
@@ -40,9 +40,9 @@ func getGoogleOauthConfig() *oauth2.Config {
 var oauthStateString = "random-string" // 开发阶段可用常量，生产环境请生成并验证
 
 func HandleGoogleLogin(c echo.Context) error {
-	log.Printf("HandleGoogleLogin called (MID_GGL_043)")
 	config := getGoogleOauthConfig()
 	url := config.AuthCodeURL(oauthStateString, oauth2.AccessTypeOffline)
+	log.Printf("HandleGoogleLogin called (MID_GGL_043), redirect to:%s", url)
 	return c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -91,7 +91,7 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 	}
 
 	// Get user info from Google
-	googleUserInfo, err := getUserInfo(rc.Context(), code)
+	googleUserInfo, err := getGoogleUserInfo(rc.Context(), code)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get user info: %v (SHD_GGL_092)", err)
 		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
@@ -116,7 +116,7 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 		return nil
 	}
 
-	err = rc.UpsertUser(reqID,
+	_, err = rc.UpsertUser(reqID,
 		"google", "", "", googleUserInfo.Email, "google",
 		"active", googleUserInfo.GivenName,
 		googleUserInfo.FamilyName, "", googleUserInfo.Picture)
@@ -150,14 +150,7 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 	// Redirect to frontend OAuth callback page with token
 	// The frontend will receive the token and set it in the Pocketbase authStore
 	// Note: Using /oauth/callback instead of /auth/callback to avoid the (auth) layout
-	/*
-		redirect_url := "http://localhost:5173/oauth/callback"
-		redirectURL := fmt.Sprintf("%s?token=%s&name=%s",
-			redirect_url,
-			url.QueryEscape(token),
-			url.QueryEscape(googleUserInfo.Name))
-	*/
-	redirectURL := ApiUtils.GetRedirectURL(reqID, token, googleUserInfo.Name)
+	redirectURL := ApiUtils.GetOAuthRedirectURL(reqID, token, googleUserInfo.Name)
 	http.Redirect(e.Response, e.Request, redirectURL, http.StatusSeeOther)
 	return nil
 }
@@ -195,7 +188,7 @@ func HandleGoogleCallbackBase(
 	}
 
 	// Retrieve user info from Google OAuth
-	userInfo, err := getUserInfo(rc.Context(), code)
+	googleUserInfo, err := getGoogleUserInfo(rc.Context(), code)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get user info: %v (MID_GGL_055)", err)
 		log.Printf("***** Alarm %s", error_msg)
@@ -223,10 +216,10 @@ func HandleGoogleCallbackBase(
 		reqID,
 		"google_login",
 		sessionID,
-		userInfo.Email,
+		googleUserInfo.Email,
 		"email",
-		userInfo.Email,
-		userInfo.Email,
+		googleUserInfo.Email,
+		googleUserInfo.Email,
 		expired_time)
 	if err1 != nil {
 		error_msg := fmt.Sprintf("failed to save session: %s (MID_GGL_076)", err1)
@@ -246,16 +239,16 @@ func HandleGoogleCallbackBase(
 		LoginMethod:  "google_login",
 		SessionID:    sessionID,
 		Status:       "active",
-		UserName:     userInfo.Email,
+		UserName:     googleUserInfo.Email,
 		UserNameType: "email",
-		UserRegID:    userInfo.Email,
-		UserEmail:    &userInfo.Email,
+		UserRegID:    googleUserInfo.Email,
+		UserEmail:    &googleUserInfo.Email,
 		CallerLoc:    "SHD_GGL_123",
 		ExpiresAt:    &expired_time_str,
 	})
 
-	if !userInfo.VerifiedEmail {
-		error_msg := fmt.Sprintf("***** Alarm Unverified email login attempt, email:%s (MID_GGL_118)", userInfo.Email)
+	if !googleUserInfo.VerifiedEmail {
+		error_msg := fmt.Sprintf("***** Alarm Unverified email login attempt, email:%s (MID_GGL_118)", googleUserInfo.Email)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
 			ActivityType: ApiTypes.ActivityType_UnverifiedEmail,
@@ -267,13 +260,13 @@ func HandleGoogleCallbackBase(
 	}
 
 	// Add user to database by rc.
-	err = rc.UpsertUser(
-		reqID, "google", userInfo.Email, "", userInfo.Email,
-		"google", "active", userInfo.GivenName, userInfo.FamilyName,
-		"", userInfo.Picture)
+	user_info, err := rc.UpsertUser(
+		reqID, "google", googleUserInfo.Email, "", googleUserInfo.Email,
+		"google", "active", googleUserInfo.GivenName, googleUserInfo.FamilyName,
+		"", googleUserInfo.Picture)
 
 	if err != nil {
-		error_msg := fmt.Sprintf("failed creating user, email:%s, err:%s (SHD_GGL_125)", userInfo.Email, err1)
+		error_msg := fmt.Sprintf("failed creating user, email:%s, err:%s (SHD_GGL_125)", googleUserInfo.Email, err1)
 		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -286,12 +279,11 @@ func HandleGoogleCallbackBase(
 	}
 
 	msg := fmt.Sprintf("User registered, email:%s, name:%s %s, picture:%s, locale:%s",
-		userInfo.Email,
-		userInfo.GivenName,
-		userInfo.FamilyName,
-		userInfo.Picture,
-		userInfo.Locale)
-
+		googleUserInfo.Email,
+		googleUserInfo.GivenName,
+		googleUserInfo.FamilyName,
+		googleUserInfo.Picture,
+		googleUserInfo.Locale)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
 		ActivityType: ApiTypes.ActivityType_UserCreated,
@@ -314,18 +306,21 @@ func HandleGoogleCallbackBase(
 		CallerLoc:    "SHD_GGL_179"})
 
 	// Construct redirect URL
-	// redirect_url := ApiTypes.DatabaseInfo.HomeURL
-	redirect_url := "http://localhost:8090/admin"
+	var redirect_url string
+	if user_info.Admin {
+		redirect_url = fmt.Sprintf("%s/%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_ADMIN_ENDPOINT"))
+	} else {
+		redirect_url = fmt.Sprintf("%s/%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_ENDPOINT"))
+	}
 	if redirect_url == "" {
 		log.Printf("***** Alarm missing home_url config (MID_GGL_094)")
-		redirect_url = "localhost:8090"
 	}
 
 	// Redirect to the home URL
-	redirectURL := fmt.Sprintf("%s?name=%s", redirect_url, url.QueryEscape(userInfo.Name))
+	redirectURL := fmt.Sprintf("%s?name=%s", redirect_url, url.QueryEscape(googleUserInfo.Name))
 
 	msg2 := fmt.Sprintf("User %s (%s) logged in successfully, redirect to:%s",
-		userInfo.Name, userInfo.Email, redirectURL)
+		googleUserInfo.Name, googleUserInfo.Email, redirectURL)
 	log.Printf("%s (SHD_GGL_217)", msg2)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -351,10 +346,10 @@ type userInfoResp struct {
 	Locale        string `json:"locale,omitempty"`
 }
 
-// getUserInfo: use oauth2.Config.Exchange to get token，then use config.Client to parse JSON
+// getGoogleUserInfo: use oauth2.Config.Exchange to get token，then use config.Client to parse JSON
 // Upon success, it returns an instance of 'userInfoResp'.
-func getUserInfo(ctx context.Context, code string) (*userInfoResp, error) {
-	log.Printf("google getUserInfo (MID_GGL_119)")
+func getGoogleUserInfo(ctx context.Context, code string) (*userInfoResp, error) {
+	log.Printf("google getGoogleUserInfo (MID_GGL_119)")
 	config := getGoogleOauthConfig()
 	token, err := config.Exchange(ctx, code)
 	if err != nil {

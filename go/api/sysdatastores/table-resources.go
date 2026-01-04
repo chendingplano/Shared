@@ -15,10 +15,6 @@ const (
 		"db_name,           table_name,     resource_status, resource_remarks, resource_def, " +
 		"query_conds,       error_msg"
 
-	// resource_store_insert_field_names = "resource_name, resource_action, resource_desc,    resource_type, db_name" +
-	// 	"table_name,    resource_status, resource_remarks, resource_def,  query_conds, " +
-	// 	"error_msg,     creator,         updater,          loc"
-
 	ResourceStoreTableDescSimple = `
         ResourceID        	int64     # A unique sequence number
         ResourceName 		string    # Resource name, identify the resource

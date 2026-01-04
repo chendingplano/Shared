@@ -15,7 +15,11 @@ The query builders provide a Drizzle-ORM-inspired API for building database quer
 ## Quick Start
 
 ```typescript
+// If you are in Shared/svelte
 import { query_builder, cond_builder, join_builder } from '$lib/stores';
+
+// If you are in a different project
+import { query_builder, cond_builder, join_builder } from '@chendingplano/shared';
 
 // Simple query
 const users = await query_builder

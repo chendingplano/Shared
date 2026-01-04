@@ -1,36 +1,4 @@
-import type { UserInfo } from '../db-scripts/userinfo';
-
-/*
-How to use the register function:
-  async function handleRegister() {
-    if (password !== passwordConfirm) {
-      errorMessage = 'Passwords do not match';
-      return;
-    }
-
-    isSubmitting = true;
-    errorMessage = '';
-
-    try {
-      await authStore.register({
-        email,
-        password,
-        passwordConfirm,
-        first_name,
-        last_name
-      });
-      
-      // Registration successful!
-      // The authStore will automatically update isLoggedIn and user
-      console.log('Registration successful');
-    } catch (error) {
-      // Handle registration errors
-      errorMessage = error instanceof Error ? error.message : 'Registration failed';
-    } finally {
-      isSubmitting = false;
-    }
-  }
-*/
+import type { UserInfo } from '../types/CommonTypes';
 
 interface ActivityLogStore {
   isLoggedIn:     boolean;
@@ -91,7 +59,7 @@ function createActivityLogStore(): ActivityLogStore {
         const last_name = userData.last_name;
         const email = userData.email;
         const password = userData.password;
-        const res = await fetch("http://localhost:8080/auth/email/signup", {
+        const res = await fetch("/auth/email/signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ first_name, last_name, email, password })

@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 
+	"github.com/chendingplano/shared/go/api/RequestHandlers"
 	"github.com/chendingplano/shared/go/api/auth"
 	"github.com/labstack/echo/v4"
 	"github.com/pocketbase/pocketbase/core"
@@ -60,8 +61,8 @@ func RegisterRoutes(e *echo.Echo) {
 	// log.Println("Register /shared_api/v1/add_prompt (SHD_RTR_067)")
 	// e.POST("/shared_api/v1/add_prompt", sysdatastores.AddPromptFromFrontend)
 
-	// log.Println("Register /shared_api/v1/jimo_req (SHD_RTR_062)")
-	// e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequest)
+	log.Println("Register /shared_api/v1/jimo_req (SHD_RTR_062)")
+	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 }
 
 func RegisterRoutesPocket(router *router.Router[*core.RequestEvent]) {

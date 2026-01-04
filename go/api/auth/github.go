@@ -20,10 +20,11 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
+var domain_name = os.Getenv("APP_DOMAIN_NAME")
 var githubOauthConfig = &oauth2.Config{
 	ClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
 	ClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),
-	RedirectURL:  "http://localhost:8080/auth/github/callback",
+	RedirectURL:  domain_name + "/auth/github/callback",
 	Scopes:       []string{"user:email"},
 	Endpoint:     github.Endpoint,
 }
@@ -208,10 +209,9 @@ func HandleGitHubCallbackBase(
 	rc.SetCookie(sessionID)
 
 	// Construct redirect URL
-	redirect_url := ApiTypes.DatabaseInfo.HomeURL
+	redirect_url := ApiUtils.GetDefahotHomeURL()
 	if redirect_url == "" {
-		redirect_url = "localhost:5173"
-		error_msg := fmt.Sprintf("missing home_url config, default to:%s", redirect_url)
+		error_msg := "missing home_url config"
 		log.Printf("***** Alarm:%s (MID_GHB_104)", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{

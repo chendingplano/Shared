@@ -144,7 +144,7 @@ export function test_reset() {
     const qb = query_builder
         .select('id', 'name')
         .from('users')
-        .where(cond_builder.filter().condEq('status', 'active'))
+        .where(cond_builder.filter().condEq('status', 'active').build())
         .limit(50);
 
     qb.reset();

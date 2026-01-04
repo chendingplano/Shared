@@ -211,7 +211,7 @@ func HandleEmailLoginBase(
 
 	// Construct redirect URL with Pocketbase auth token (like Google OAuth)
 	user_name := user_info.FirstName + " " + user_info.LastName
-	redirect_url := ApiUtils.GetRedirectURL(reqID, token, user_name)
+	redirect_url := ApiUtils.GetOAuthRedirectURL(reqID, token, user_name)
 	msg1 := fmt.Sprintf("email login success, email:%s, session_id:%s, redirect_url:%s",
 		req.Email, sessionID, redirect_url)
 	log.Printf("[req=%s] %s (SHD_EML_316)", reqID, msg1)
@@ -540,7 +540,7 @@ func HandleEmailSignupBase(
 	// 3. Generate a verification token and Create a user record with "verified = false"
 	token := uuid.NewString()
 	var user_name = req.Email
-	err1 := rc.UpsertUser(reqID,
+	_, err1 := rc.UpsertUser(reqID,
 		"email", user_name, req.Password, req.Email, "email", "pending_verify",
 		req.FirstName, req.LastName, token, "")
 
@@ -557,8 +557,7 @@ func HandleEmailSignupBase(
 
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_EML_808)"
-		home_domain = "http://localhost:5173"
+		error_msg := "missing APP_DOMAIN_NAME env var (SHD_EML_808)"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 
@@ -699,8 +698,7 @@ func HandleForgotPasswordBase(
 
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_EML_808)"
-		home_domain = "http://localhost:5173"
+		error_msg := "missing APP_DOMAIN_NAME env var (SHD_EML_808)"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 
@@ -771,8 +769,7 @@ func HandleResetLinkBase(
 	// Redirect to frontend reset form
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_EML_808)"
-		home_domain = "http://localhost:5173"
+		error_msg := "missing APP_DOMAIN_NAME env var (SHD_EML_808)"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 	redirect_url := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)

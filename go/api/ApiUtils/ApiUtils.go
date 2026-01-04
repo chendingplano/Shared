@@ -1,6 +1,7 @@
 package ApiUtils
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -226,7 +227,7 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 	log.Printf("[req=%s] Check session (SHD_DBS_271), stmt: %s, user_name:%s",
 		reqID, query, user_name.String)
 
-	const selected_fields = "user_id, user_name, user_id_type, firstName, lastName," +
+	const selected_fields = "user_id, user_name, user_id_type, first_name, last_name," +
 		"email, user_mobile, user_address, verified, is_admin, " +
 		"emailVisibility, user_type, user_status, avatar, locale"
 
@@ -359,7 +360,7 @@ func IsSecure() bool {
 	return os.Getenv("ENV") == "production"
 }
 
-func GetRedirectURL(
+func GetOAuthRedirectURL(
 	reqID string,
 	token string,
 	user_name string) string {
@@ -367,8 +368,7 @@ func GetRedirectURL(
 	// This ensures the pb_auth cookie is set on the correct domain
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var, default to localhost:5173 (SHD_RCP_092)"
-		home_domain = "http://localhost:5173"
+		error_msg := fmt.Sprintf("missing APP_DOMAIN_NAME env var, set to:%s", home_domain)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 
@@ -388,4 +388,25 @@ func GetRedirectURL(
 		url.QueryEscape(token),
 		url.QueryEscape(user_name))
 	return redirectURL
+}
+
+func AddCallFlow(ctx context.Context, current_flow string) context.Context {
+	parent_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	new_flow := fmt.Sprintf("%s->%s", parent_flow, current_flow)
+	return context.WithValue(ctx, ApiTypes.CallFlowKey, new_flow)
+}
+
+// Helper to generate a short, random request ID
+func GenerateRequestID(key string) string {
+	bytes := make([]byte, 4) // 4 bytes = 8 hex chars
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback if crypto/rand fails (very rare)
+		return "fallback-req-id"
+	}
+	return key + "-" + hex.EncodeToString(bytes)
+}
+
+func GetDefahotHomeURL() string {
+	var url = fmt.Sprintf("%s%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_ENDPOINT"))
+	return url
 }

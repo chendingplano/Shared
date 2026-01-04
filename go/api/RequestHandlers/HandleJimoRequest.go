@@ -78,6 +78,7 @@ to construct the conditions.
 package RequestHandlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -111,23 +112,35 @@ const (
 
 func HandleJimoRequestEcho(c echo.Context) error {
 	rc := NewFromEcho(c)
+	ctx := c.Request().Context()
+	call_flow := ctx.Value(ApiTypes.CallFlowKey)
+	reqID := ctx.Value(ApiTypes.RequestIDKey)
 	body, _ := io.ReadAll(c.Request().Body)
-	reqID := rc.ReqID()
 
-	status_code, resp := handleJimoRequestPriv(rc, reqID, body)
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_119", call_flow)
+	log.Printf("[req=%s] ++++++++++ HandleJimoRequestEcho:%s, data:%s",
+		reqID, new_call_flow, string(body))
+
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, new_call_flow)
+
+	status_code, resp := handleJimoRequestPriv(new_ctx, rc, body)
 	defer c.Request().Body.Close()
 	c.JSON(status_code, resp)
 	return nil
 }
 
 func handleJimoRequestPriv(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	body []byte) (int, ApiTypes.JimoResponse) {
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
 	user_info, err := rc.IsAuthenticated(reqID, "SHD_RHD_126")
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_135", call_flow))
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d", err, log_id)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_139", call_flow)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
 			ActivityName: ApiTypes.ActivityName_JimoRequest,
@@ -135,14 +148,14 @@ func handleJimoRequestPriv(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_065"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_067)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_071",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_NotLoggedIn, resp
 	}
@@ -154,6 +167,7 @@ func handleJimoRequestPriv(
 	if err := json.Unmarshal(body, &genericReq); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed parse request_type:%v, log_id:%d", err, log_id)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_166", call_flow)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
 			ActivityName: ApiTypes.ActivityName_JimoRequest,
@@ -161,14 +175,14 @@ func handleJimoRequestPriv(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_117"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] %s (SHD_RHD_117)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_117",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -177,21 +191,22 @@ func handleJimoRequestPriv(
 	var user_name = user_info.UserName
 	switch genericReq.RequestType {
 	case ApiTypes.ReqAction_Insert:
-		return HandleDBInsert(rc, reqID, body, user_name)
+		return HandleDBInsert(new_ctx, rc, body, user_name)
 
 	case ApiTypes.ReqAction_Query:
-		return HandleDBQuery(rc, reqID, body, user_name)
+		return HandleDBQuery(new_ctx, rc, body, user_name)
 
 	case ApiTypes.ReqAction_Update:
-		return HandleDBUpdate(rc, reqID, body, user_name)
+		return HandleDBUpdate(new_ctx, rc, body, user_name)
 
 	case ApiTypes.ReqAction_Delete:
-		return HandleDBDelete(rc, reqID, body, user_name)
+		return HandleDBDelete(new_ctx, rc, body, user_name)
 
 	default:
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("unrecognized request_type:%s, log_id:%d",
 			genericReq.RequestType, log_id)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_205", call_flow)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
 			ActivityName: ApiTypes.ActivityName_JimoRequest,
@@ -199,24 +214,27 @@ func handleJimoRequestPriv(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_166"})
-
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_168)", reqID, error_msg)
+			CallerLoc:    new_call_flow})
+		log.Printf("[req:%s] ***** Alarm:%s (%s->SHD_RHD_168)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_166",
+			Loc:      new_call_flow,
 		}
 
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 }
 
-func HandleDBQuery(rc RequestContext,
-	reqID string,
+func HandleDBQuery(
+	ctx context.Context,
+	rc RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
 	// It is a database query:
 	//	- Get db name and table name
 	//	- Check access controls
@@ -289,6 +307,7 @@ func HandleDBQuery(rc RequestContext,
 	if err := json.Unmarshal(body, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed parse request_type:%v, log_id:%d", err, log_id)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_305", call_flow)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
 			ActivityName: ApiTypes.ActivityName_JimoRequest,
@@ -296,7 +315,7 @@ func HandleDBQuery(rc RequestContext,
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_302"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_304)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
@@ -304,22 +323,23 @@ func HandleDBQuery(rc RequestContext,
 			ReqID:     reqID,
 			TableName: req.TableName,
 			ErrorMsg:  error_msg,
-			Loc:       "SHD_RHD_304",
+			Loc:       new_call_flow,
 		}
 
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	query, args, selected_fields, aliases, field_def_map, err := buildQuery(reqID, req)
+	query, args, selected_fields, aliases, field_def_map, err := buildQuery(new_ctx, req)
 	table_name := req.TableName
 	if err != nil {
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_330", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
 			ReqID:     reqID,
 			TableName: req.TableName,
 			ErrorMsg:  err.Error(),
 			ErrorCode: ApiTypes.CustomHttpStatus_InternalError,
-			Loc:       "SHD_RHD_324",
+			Loc:       new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
@@ -337,13 +357,14 @@ func HandleDBQuery(rc RequestContext,
 		error_msg := fmt.Sprintf("invalid db type:%s:%s:%s, table_name:%s, loc:%s (SHD_RHD_447)",
 			db_type, ApiTypes.MysqlName, ApiTypes.PgName, table_name, req.Loc)
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_260)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_355", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
 			ReqID:     reqID,
 			ErrorMsg:  error_msg,
 			TableName: req.TableName,
 			ErrorCode: ApiTypes.CustomHttpStatus_InternalError,
-			Loc:       "SHD_RHD_376",
+			Loc:       new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
@@ -370,13 +391,14 @@ func HandleDBQuery(rc RequestContext,
 	if req.PageSize <= 0 || req.Start < 0 {
 		var error_msg = fmt.Sprintf("invalid limit clause (SHD_RHD_382), page_size:%d, start:%d",
 			req.PageSize, req.Start)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_389", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
 			ReqID:     reqID,
 			TableName: req.TableName,
 			ErrorMsg:  error_msg,
 			ErrorCode: ApiTypes.CustomHttpStatus_InternalError,
-			Loc:       "SHD_RHD_389",
+			Loc:       new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
@@ -385,15 +407,16 @@ func HandleDBQuery(rc RequestContext,
 	// log.Printf("[req:%s] To run query:%s, args:%v, table:%s, loc:%s (SHD_RHD_366)",
 	// 	reqID, query, args, table_name, req.Loc)
 
-	json_data, num_records, err := RunQuery(rc, reqID, req, db, query,
+	json_data, num_records, err := RunQuery(new_ctx, rc, req, db, query,
 		args, selected_fields, aliases, field_def_map)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_410", call_flow)
 		error_msg := fmt.Sprintf("run query failed, err:%v, logid:%d, table:%s, loc:%s",
 			err, log_id, table_name, req.Loc)
 		error_msg1 := fmt.Sprintf("run query failed, err:%v, query:%s, "+
 			"table_name:%s, loc:%s", err, query, req.TableName, req.Loc)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_297)", reqID, error_msg1)
+		log.Printf("[req:%s] ***** Alarm:%s (%s->SHD_RHD_297)", reqID, error_msg, call_flow)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -402,7 +425,7 @@ func HandleDBQuery(rc RequestContext,
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg1,
-			CallerLoc:    "SHD_RHD_307"})
+			CallerLoc:    new_call_flow})
 
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
@@ -415,6 +438,7 @@ func HandleDBQuery(rc RequestContext,
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
 
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_437", call_flow)
 	resp := ApiTypes.JimoResponse{
 		Status:     true,
 		ReqID:      reqID,
@@ -423,7 +447,7 @@ func HandleDBQuery(rc RequestContext,
 		NumRecords: num_records,
 		TableName:  req.TableName,
 		Results:    json_data,
-		Loc:        "SHD_RHD_399",
+		Loc:        new_call_flow,
 	}
 
 	msg := fmt.Sprintf("query success, query:%s, num_records:%d, table:%s, loc:%s",
@@ -435,7 +459,7 @@ func HandleDBQuery(rc RequestContext,
 		AppName:      ApiTypes.AppName_RequestHandler,
 		ModuleName:   ApiTypes.ModuleName_RequestHandler,
 		ActivityMsg:  &msg,
-		CallerLoc:    "SHD_RHD_333"})
+		CallerLoc:    new_call_flow})
 
 	return http.StatusOK, resp
 }
@@ -561,15 +585,20 @@ func buildJoinClauses(
 // If the table does not exist and dynamic table is allowed, it will
 // create the table dynamically as a generic table.
 func HandleDBInsert(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_590", call_flow))
+
 	// This function handles the 'insert' request.
 	// The data to be inserted is in req.records
 	var req ApiTypes.InsertRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_597", call_flow)
 		error_msg := fmt.Sprintf("failed parse request_type:%v, log_id:%d", err, log_id)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -578,14 +607,14 @@ func HandleDBInsert(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_142"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_142)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_142",
+			Loc:      new_call_flow,
 		}
 
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
@@ -594,8 +623,8 @@ func HandleDBInsert(
 	db_name := req.DBName
 	table_name := req.TableName
 	field_defs := req.FieldDefs
-	log.Printf("[req:%s] handleDBInsert, table:%s:%s", reqID, db_name, table_name)
-	log.Printf("[req:%s] FieldDefs:%d", reqID, len(field_defs))
+	log.Printf("[req:%s] (SHD_RHD_622) handleDBInsert, table:%s:%s", reqID, db_name, table_name)
+	log.Printf("[req:%s] (SHD_RHD_623) FieldDefs:%d", reqID, len(field_defs))
 	/*
 		if field_defs == nil {
 			resource_def, err 	:= stores.GetResouroceDef(resource_name, resource_opr)
@@ -641,11 +670,12 @@ func HandleDBInsert(
 		error_msg := "failed get table name."
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_400)", reqID, error_msg)
 
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_669", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_405",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -655,11 +685,12 @@ func HandleDBInsert(
 		error_msg := "missing records to insert."
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_581)", reqID, error_msg)
 
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_684", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_581",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -670,42 +701,45 @@ func HandleDBInsert(
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.DatabaseInfo.MySQLDBHandle
-		err = InsertBatch(user_name, db, table_name, req, field_defs, records, 30, db_type)
+		err = InsertBatch(new_ctx, user_name, db, table_name, req, field_defs, records, 30, db_type)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.DatabaseInfo.PGDBHandle
-		err = InsertBatch(user_name, db, table_name, req, field_defs, records, 30, db_type)
+		err = InsertBatch(new_ctx, user_name, db, table_name, req, field_defs, records, 30, db_type)
 
 	default:
 		error_msg := fmt.Sprintf("invalid db type:%s", db_type)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_465)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_669", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_469",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
 	if err != nil {
 		error_msg := fmt.Sprintf("failed insert to db:%v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_477)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_721", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_481",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_732", call_flow)
 	resp := ApiTypes.JimoResponse{
 		Status:     true,
 		ReqID:      reqID,
 		ErrorMsg:   "",
 		ResultType: "none",
-		Loc:        "SHD_RHD_638",
+		Loc:        new_call_flow,
 	}
 	return http.StatusOK, resp
 }
@@ -719,13 +753,18 @@ func HandleDBInsert(
 //	 Records                 string      `json:"records,omitempty"`
 //	 FieldDefs               string  	`json:"field_defs"`
 func HandleDBUpdate(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
+
 	var req ApiTypes.UpdateRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_763", call_flow)
 		error_msg := fmt.Sprintf("failed parse request_type:%v, log_id:%d", err, log_id)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -734,14 +773,14 @@ func HandleDBUpdate(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_639"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_641)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_641",
+			Loc:      new_call_flow,
 		}
 
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
@@ -761,39 +800,43 @@ func HandleDBUpdate(
 		db = ApiTypes.PG_DB_miner
 
 	default:
-		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (SHD_RHD_765): %s", reqID, db_type)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
+		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (%s): %s", reqID, new_call_flow, db_type)
 		log.Printf("%s", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_771",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] handleDBInsert:%s:%s", db_name, reqID, table_name)
-	log.Printf("[req:%s] FieldDefs:%d", reqID, len(field_defs))
+	log.Printf("[req:%s] (SHD_RHD_811) handleDBInsert:%s:%s", db_name, reqID, table_name)
+	log.Printf("[req:%s] (SHD_RHD_812) FieldDefs:%d", reqID, len(field_defs))
 
 	if table_name == "" {
 		error_msg := "failed get table name"
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_400)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_405",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] Table:%s.%s (SHD_RHD_411)", reqID, db_name, table_name)
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_828", call_flow)
+	log.Printf("[req:%s] Table:%s.%s (%s)", reqID, db_name, table_name, new_call_flow)
 
 	update_record := req.Record
 	if len(update_record) <= 0 {
 		error_msg := "no records provided for update"
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_772)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_834", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -809,27 +852,29 @@ func HandleDBUpdate(
 	}
 
 	cond_def := req.Condition
-	expr, err := buildConditionExpr(table_name, cond_def, field_map)
+	expr, err := buildConditionExpr(new_ctx, table_name, cond_def, field_map)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed building conditions, err:%v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_760)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_854", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_760",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
 	if expr == nil {
 		error_msg := fmt.Sprintf("missing conditions, loc:%s", req.Loc)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_717)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_867", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_717",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -842,12 +887,13 @@ func HandleDBUpdate(
 		// Validate field name (security critical!)
 		if !isValidFieldName(field) {
 			error_msg := fmt.Sprintf("invalid field name (SHD_RHD_757): %s", field)
-			log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_774)", reqID, error_msg)
+			new_call_flow := fmt.Sprintf("%s->SHD_RHD_886", call_flow)
+			log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 			resp := ApiTypes.JimoResponse{
 				Status:   false,
 				ReqID:    reqID,
 				ErrorMsg: error_msg,
-				Loc:      "SHD_RHD_774",
+				Loc:      new_call_flow,
 			}
 			return ApiTypes.CustomHttpStatus_BadRequest, resp
 		}
@@ -862,7 +908,8 @@ func HandleDBUpdate(
 	sql, args, err := query.ToSql()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to build SQL query: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_793)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_907", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -878,12 +925,13 @@ func HandleDBUpdate(
 	result, err := db.Exec(sql, args...)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to execute update query: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_808)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_924", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_808",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
@@ -892,17 +940,19 @@ func HandleDBUpdate(
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get rows affected: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_821)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_932", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_821",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
 
 	// Success response
+	new_call_flow = fmt.Sprintf("%s->SHD_RHD_951", call_flow)
 	resp := ApiTypes.JimoResponse{
 		Status:     true,
 		ReqID:      reqID,
@@ -912,7 +962,7 @@ func HandleDBUpdate(
 			"rows_affected": rowsAffected,
 			"sql":           sql, // Include SQL for debugging (remove in production)
 		},
-		Loc: "SHD_RHD_837",
+		Loc: new_call_flow,
 	}
 
 	return ApiTypes.CustomHttpStatus_Success, resp
@@ -927,13 +977,19 @@ func HandleDBUpdate(
 //	 Records                 string      `json:"records,omitempty"`
 //	 FieldDefs               string  	`json:"field_defs"`
 func HandleDBDelete(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_983", call_flow))
+
 	var req ApiTypes.DeleteRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_988", call_flow)
 		error_msg := fmt.Sprintf("failed parse request_type:%v, log_id:%d", err, log_id)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -942,14 +998,14 @@ func HandleDBDelete(
 			AppName:      ApiTypes.AppName_RequestHandler,
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RHD_639"})
+			CallerLoc:    new_call_flow})
 
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_641)", reqID, error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_641",
+			Loc:      new_call_flow,
 		}
 
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
@@ -969,34 +1025,36 @@ func HandleDBDelete(
 		db = ApiTypes.PG_DB_miner
 
 	default:
-		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (SHD_RHD_973): %s", reqID, db_type)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_024", call_flow)
+		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (5s): %s, loc:%s", reqID, db_type, new_call_flow)
 		log.Printf("%s", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_979",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] handleDBDelete:%s:%s", reqID, db_name, table_name)
-	log.Printf("[req:%s] FieldDefs:%d", reqID, len(field_defs))
+	log.Printf("[req:%s] (SHD_RHD_036) handleDBDelete:%s:%s", reqID, db_name, table_name)
+	log.Printf("[req:%s] (SHD_RHD_037) FieldDefs:%d", reqID, len(field_defs))
 
 	if table_name == "" {
 		error_msg := "failed get table name. Resource name"
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_847)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_041", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_880",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] Delete records, table:%s.%s (SHD_RHD_885)", reqID, db_name, table_name)
+	log.Printf("[req:%s] (SHD_RHD_053) Delete records, table:%s.%s", reqID, db_name, table_name)
 
 	field_map := make(map[string]bool)
 	for _, fd := range field_defs {
@@ -1004,27 +1062,29 @@ func HandleDBDelete(
 	}
 
 	cond_def := req.Condition
-	expr, err := buildConditionExpr(table_name, cond_def, field_map)
+	expr, err := buildConditionExpr(new_ctx, table_name, cond_def, field_map)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed building conditions, err:%v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_686)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_064", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_868",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
 	if expr == nil {
 		error_msg := fmt.Sprintf("missing conditions, loc:%s", req.Loc)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_879)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_077", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_879",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -1039,12 +1099,13 @@ func HandleDBDelete(
 	sql, args, err := query.ToSql()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to build SQL query: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_887)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_098", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_887",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
@@ -1055,12 +1116,13 @@ func HandleDBDelete(
 	result, err := db.Exec(sql, args...)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to execute update query: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_902)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_115", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_902",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
@@ -1069,17 +1131,19 @@ func HandleDBDelete(
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get rows affected: %v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_915)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_130", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
 			ErrorMsg: error_msg,
-			Loc:      "SHD_RHD_915",
+			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
 
 	// Success response
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_142", call_flow)
 	resp := ApiTypes.JimoResponse{
 		Status:     true,
 		ReqID:      reqID,
@@ -1089,7 +1153,7 @@ func HandleDBDelete(
 			"rows_affected": rowsAffected,
 			"sql":           sql, // Include SQL for debugging (remove in production)
 		},
-		Loc: "SHD_RHD_931",
+		Loc: new_call_flow,
 	}
 
 	return ApiTypes.CustomHttpStatus_Success, resp
@@ -1112,8 +1176,8 @@ const (
 
 // RunQuery executes the given query and returns the results as JSON string
 func RunQuery(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	req ApiTypes.QueryRequest,
 	db *sql.DB,
 	query string,
@@ -1121,9 +1185,12 @@ func RunQuery(
 	selected_fields []string,
 	aliases []string,
 	field_def_map map[string][]ApiTypes.FieldDef) ([]map[string]interface{}, int, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		log.Printf("[req:%s] ***** Alarm:%v (SHD_RHD_493)", reqID, err)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_186", call_flow)
+		log.Printf("[req:%s] ***** Alarm:%v (%s)", reqID, err, new_call_flow)
 		return nil, 0, err
 	}
 	defer rows.Close()
@@ -1152,8 +1219,9 @@ func RunQuery(
 
 		log.Printf("[req:%s] Handle record:%d, args:%v (SHD_RHD_058)", reqID, count, args)
 		// Scan the row into the value pointers
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_216", call_flow)
 		if err := rows.Scan(valuePtrs...); err != nil {
-			log.Printf("[req:%s] ***** Alarm:scan error: %v (SHD_RHD_511)", reqID, err)
+			log.Printf("[req:%s] ***** Alarm:scan error: %v (%s)", reqID, err, new_call_flow)
 			return nil, 0, fmt.Errorf("scan error:%v (SHD_RHD_511)", err)
 		}
 
@@ -1189,8 +1257,9 @@ func RunQuery(
 					rowMap[field_aliase] = convertedValue
 				}
 			} else {
-				error_msg := fmt.Sprintf("field not found (SHD_RHD_955):%s, selected:%v, data_types:%v",
-					field_name, selected_fields, data_types)
+				new_call_flow := fmt.Sprintf("%s->SHD_RHD_254", call_flow)
+				error_msg := fmt.Sprintf("field not found (%s):%s, selected:%v, data_types:%v",
+					new_call_flow, field_name, selected_fields, data_types)
 				log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 				return nil, 0, fmt.Errorf("%s", error_msg)
 			}
@@ -1206,7 +1275,8 @@ func RunQuery(
 	log.Printf("[req:%s] Query success, records:%d (SHD_RHD_970)", reqID, count)
 
 	if err = rows.Err(); err != nil {
-		error_msg := fmt.Sprintf("rows error: %v (SHD_RHD_530)", err)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_272", call_flow)
+		error_msg := fmt.Sprintf("rows error: %v (%s)", err, new_call_flow)
 		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 		return nil, 0, fmt.Errorf("%s", error_msg)
 	}
@@ -1295,35 +1365,42 @@ func convertValueByType(value interface{}, dataType string) interface{} {
 }
 
 func GetFieldStrValue(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) (string, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	if value_obj, ok := objMap[field_name]; ok {
 		if value_str, ok := value_obj.(string); ok {
 			return value_str, nil
 		}
 
-		error_msg := fmt.Sprintf("value is not a string, field_name:%s, resource_name:%s (SHD_RHD_633)",
-			field_name, resource_name)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_372", call_flow)
+		error_msg := fmt.Sprintf("value is not a string, field_name:%s, resource_name:%s (%s)",
+			field_name, resource_name, new_call_flow)
 		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 		err := fmt.Errorf("%s", error_msg)
 		return "", err
 	}
 
-	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (SHD_RHD_640)",
-		field_name, resource_name)
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_380", call_flow)
+	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)",
+		field_name, resource_name, new_call_flow)
 	log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 	return "", fmt.Errorf("%s", error_msg)
 }
 
 func GetFieldStrArrayValue(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]string, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+
 	if value_obj, ok := objMap[field_name]; ok {
 		if value_slice, ok := value_obj.([]interface{}); ok {
 			result := make([]string, len(value_slice))
@@ -1331,48 +1408,63 @@ func GetFieldStrArrayValue(
 				if str, ok := v.(string); ok {
 					result[i] = str
 				} else {
-					return nil, fmt.Errorf("element at index %d is not a string, got %T", i, v)
+					new_call_flow := fmt.Sprintf("%s->SHD_RHD_400", call_flow)
+					return nil, fmt.Errorf("element at index %d is not a string, got %T, loc:%s",
+						i, v, new_call_flow)
 				}
 			}
 			return result, nil
 		}
-		return nil, fmt.Errorf("field %s is not a []interface{} type, got %T", field_name, value_obj)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_406", call_flow)
+		return nil, fmt.Errorf("field %s is not a []interface{} type, got %T, loc:%s",
+			field_name, value_obj, new_call_flow)
 	}
 
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_410", call_flow)
 	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (665)",
 		field_name, resource_name)
-	log.Printf("[req:%s] +++++ Warn:%s", reqID, error_msg)
+	log.Printf("[req:%s] +++++ Warn:%s (%s)", reqID, error_msg, new_call_flow)
 	return nil, nil
 }
 
 func GetFieldAnyArrayValue(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]interface{}, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+
 	if value_obj, ok := objMap[field_name]; ok {
 		if result, ok := value_obj.([]interface{}); ok {
 			return result, nil
 		}
-		return nil, fmt.Errorf("field %s is not a []interface{} type, got %T", field_name, value_obj)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_427", call_flow)
+		return nil, fmt.Errorf("field %s is not a []interface{} type, got %T, loc:%s",
+			field_name, value_obj, new_call_flow)
 	}
 
-	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (665)",
-		field_name, resource_name)
-	log.Printf("[req:%s] +++++ Warn:%s", reqID, error_msg)
+	new_call_flow := fmt.Sprintf("%s->SHD_RHD_431", call_flow)
+	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)",
+		field_name, resource_name, new_call_flow)
+	log.Printf("[req:%s] +++++ Warn:%s (%s)", reqID, error_msg, new_call_flow)
 	return nil, fmt.Errorf("%s", error_msg)
 }
 
 func GetTableName(
+	ctx context.Context,
 	rc RequestContext,
-	reqID string,
 	resource_def map[string]interface{},
 	resource_name string) (string, string, error) {
-	// It retrieves: db_name and table_name. db_name is optional.
-	db_name, _ := GetFieldStrValue(rc, reqID, resource_def, resource_name, "db_name")
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
 
-	table_name, err := GetFieldStrValue(rc, reqID, resource_def, resource_name, "table_name")
+	// It retrieves: db_name and table_name. db_name is optional.
+	db_name, _ := GetFieldStrValue(new_ctx, rc, resource_def, resource_name, "db_name")
+
+	table_name, err := GetFieldStrValue(new_ctx, rc, resource_def, resource_name, "table_name")
 	if err != nil {
 		return "", "", err
 	}
@@ -1412,9 +1504,13 @@ func GetSelectedFields(json_array []map[string]interface{}, resource_name string
 // Field names in the condition are all local field names.
 // 'field_map' is also local field name map!
 func buildConditionExpr(
+	ctx context.Context,
 	table_name string,
 	condition ApiTypes.CondDef,
 	field_map map[string]bool) (sq.Sqlizer, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
+
 	switch condition.Type {
 	case ApiTypes.ConditionTypeNull:
 		return nil, nil
@@ -1427,8 +1523,9 @@ func buildConditionExpr(
 
 		// Validate field name (security critical!)
 		if !field_map[field] {
-			return nil, fmt.Errorf("invalid field name: %s, field_map:%v in table:%s",
-				field, field_map, table_name)
+			new_call_flow := fmt.Sprintf("%s->SHD_RHD_527", call_flow)
+			return nil, fmt.Errorf("invalid field name: %s, field_map:%v in table:%s, loc:%s",
+				field, field_map, table_name, new_call_flow)
 		}
 
 		// Use rawValue directly for parameterized queries - Squirrel handles type conversion
@@ -1450,36 +1547,44 @@ func buildConditionExpr(
 			if dataType == "string" {
 				strVal, ok := rawValue.(string)
 				if !ok {
-					return nil, fmt.Errorf("CONTAIN operator requires string value, got %T, table_name:%s", rawValue, table_name)
+					new_call_flow := fmt.Sprintf("%s->SHD_RHD_524", call_flow)
+					return nil, fmt.Errorf("CONTAIN operator requires string value, got %T, table_name:%s, loc:%s",
+						rawValue, table_name, new_call_flow)
 				}
 				expr = sq.Like{field: "%" + strVal + "%"}
 			} else {
-				return nil, fmt.Errorf("CONTAIN operator only supported for string type, got %s, table_name:%s", dataType, table_name)
+				new_call_flow := fmt.Sprintf("%s->SHD_RHD_529", call_flow)
+				return nil, fmt.Errorf("CONTAIN operator only supported for string type, got %s, table_name:%s, loc:%s",
+					dataType, table_name, new_call_flow)
 			}
 		case Prefix:
 			if dataType == "string" {
 				strVal, ok := rawValue.(string)
 				if !ok {
-					return nil, fmt.Errorf("PREFIX operator requires string value, got %T, table_name:%s", rawValue, table_name)
+					new_call_flow := fmt.Sprintf("%s->SHD_RHD_536", call_flow)
+					return nil, fmt.Errorf("PREFIX operator requires string value, got %T, table_name:%s, loc:%s", rawValue, table_name, new_call_flow)
 				}
 				expr = sq.Like{field: strVal + "%"}
 			} else {
-				return nil, fmt.Errorf("PREFIX operator only supported for string type, got %s, table_name:%s", dataType, table_name)
+				new_call_flow := fmt.Sprintf("%s->SHD_RHD_541", call_flow)
+				return nil, fmt.Errorf("PREFIX operator only supported for string type, got %s, table_name:%s, loc:%s", dataType, table_name, new_call_flow)
 			}
 		default:
-			return nil, fmt.Errorf("unsupported operator (SHD_RHD_319): %s, table_name:%s", condition.Opr, table_name)
+			new_call_flow := fmt.Sprintf("%s->SHD_RHD_545", call_flow)
+			return nil, fmt.Errorf("unsupported operator (SHD_RHD_319): %s, table_name:%s, loc:%s", condition.Opr, table_name, new_call_flow)
 		}
 		return expr, nil
 
 	case ApiTypes.ConditionTypeAnd:
 		// Build AND of multiple conditions
 		if len(condition.Conditions) == 0 {
-			return nil, fmt.Errorf("AND condition must have at least one sub-condition, table_name:%s", table_name)
+			new_call_flow := fmt.Sprintf("%s->SHD_RHD_553", call_flow)
+			return nil, fmt.Errorf("AND condition must have at least one sub-condition, table_name:%s, loc:%s", table_name, new_call_flow)
 		}
 
 		var subExprs []sq.Sqlizer
 		for _, subCond := range condition.Conditions {
-			expr, err := buildConditionExpr(table_name, subCond, field_map)
+			expr, err := buildConditionExpr(new_ctx, table_name, subCond, field_map)
 			if err != nil {
 				return nil, err
 			}
@@ -1493,12 +1598,13 @@ func buildConditionExpr(
 	case ApiTypes.ConditionTypeOr:
 		// Build OR of multiple conditions
 		if len(condition.Conditions) == 0 {
-			return nil, fmt.Errorf("OR condition must have at least one sub-condition, table_name:%s", table_name)
+			new_call_flow := fmt.Sprintf("%s->SHD_RHD_573", call_flow)
+			return nil, fmt.Errorf("OR condition must have at least one sub-condition, table_name:%s, loc:%s", table_name, new_call_flow)
 		}
 
 		var subExprs []sq.Sqlizer
 		for _, subCond := range condition.Conditions {
-			expr, err := buildConditionExpr(table_name, subCond, field_map)
+			expr, err := buildConditionExpr(new_ctx, table_name, subCond, field_map)
 			if err != nil {
 				return nil, err
 			}
@@ -1510,7 +1616,9 @@ func buildConditionExpr(
 		return sq.Or(subExprs), nil
 
 	default:
-		return nil, fmt.Errorf("unknown condition type: %s, table_name:%s", condition.Type, table_name)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_591", call_flow)
+		return nil, fmt.Errorf("unknown condition type: %s, table_name:%s, loc:%s",
+			condition.Type, table_name, new_call_flow)
 	}
 }
 
@@ -1527,12 +1635,18 @@ func buildConditionExpr(
 //   - Directly write in code
 //   - Write it and save it in database, use it when you need, parameterized
 func buildQuery(
-	reqID string,
+	ctx context.Context,
 	req ApiTypes.QueryRequest) (string, []interface{}, []string, []string, map[string][]ApiTypes.FieldDef, error) {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_644", call_flow))
+
 	db_name := req.DBName
 	table_name := req.TableName
-	if db_name == "" || table_name == "" {
-		error_msg := "missing db/table name (SHD_RHD_219)"
+	if table_name == "" {
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_646", call_flow)
+		error_msg := fmt.Sprintf("missing table name, db:%s, table:%s, loc:%s",
+			db_name, table_name, new_call_flow)
 		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
@@ -1548,19 +1662,21 @@ func buildQuery(
 	fieldDefMap[table_name] = field_defs
 	selected_fields := req.FieldNames
 	if len(selected_fields) == 0 {
-		error_msg := fmt.Sprintf("missing selected fields, table name:%s", table_name)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_235)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_630", call_flow)
+		error_msg := fmt.Sprintf("missing selected fields, table name:%s, loc:%s", table_name, new_call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 
 	if len(field_defs) == 0 {
-		error_msg := fmt.Sprintf("missing field_defs, table name:%s", table_name)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_637", call_flow)
+		error_msg := fmt.Sprintf("missing field_defs, table name:%s, loc:%s", table_name, new_call_flow)
 		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_323)", reqID, error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 
 	query_cond := req.Condition
-	log.Printf("[req:%s] Table:%s.%s, selected fields:%v, condition:%s, loc:%s",
+	log.Printf("[req:%s] (SHD_RHD_679) Table:%s.%s, selected fields:%v, condition:%s, loc:%s",
 		reqID, db_name, table_name, selected_fields, query_cond, req.Loc)
 
 	// Note: the field map assumes field names are not full names (i.e.,
@@ -1572,7 +1688,7 @@ func buildQuery(
 		field_map[fd.FieldName] = true
 	}
 
-	expr, err := buildConditionExpr(table_name, query_cond, field_map)
+	expr, err := buildConditionExpr(new_ctx, table_name, query_cond, field_map)
 	if err != nil {
 		return "", nil, nil, nil, nil, err
 	}
@@ -1640,8 +1756,9 @@ func buildQuery(
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		error_msg := fmt.Sprintf("failed building query:%v", err)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_549)", reqID, error_msg)
+		new_call_flow := fmt.Sprintf("%s->SHD_RHD_724", call_flow)
+		error_msg := fmt.Sprintf("failed building query:%v, loc:%s", err, new_call_flow)
+		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 	log.Printf("[req:%s] Generated query:%s, args:%d (SHD_RHD_483)", reqID, sql, len(args))
@@ -1696,69 +1813,3 @@ func getAliases(selected_field_names []string) ([]string, []string) {
 
 	return fields, aliases
 }
-
-/*
-// Helper function to parse simple PostgreSQL text arrays like {a,b,c} or {"a","b"}
-func parsePostgresTextArray(raw string) ([]string, error) {
-	if len(raw) < 2 || raw[0] != '{' || raw[len(raw)-1] != '}' {
-		// Not a valid array literal
-		error_msg := fmt.Sprintf("not a valid array literal:%v", raw)
-		log.Printf("***** Alarm:%s", error_msg)
-		return []string{raw}, fmt.Errorf("%s", error_msg)
-	}
-	inner := raw[1 : len(raw)-1]
-	if inner == "" {
-		return []string{}, nil
-	}
-
-	// Handle quoted elements: PostgreSQL uses " for escaping
-	// Simple approach: split on comma not inside quotes
-	var elements []string
-	var current strings.Builder
-	inQuotes := false
-	escaped := false // unused here since lib/pq doesn't escape inside
-
-	for _, ch := range inner {
-		if escaped {
-			current.WriteRune(ch)
-			escaped = false
-			continue
-		}
-
-		switch ch {
-		case '"':
-			inQuotes = !inQuotes
-		case '\\':
-			// In real PG, backslash escapes, but lib/pq unescapes already
-			// We'll assume input is clean
-			current.WriteRune(ch)
-		case ',':
-			if !inQuotes {
-				elements = append(elements, strings.TrimSpace(current.String()))
-				current.Reset()
-				continue
-			}
-			fallthrough
-		default:
-			current.WriteRune(ch)
-		}
-	}
-	// Add last element
-	if current.Len() > 0 || len(elements) == 0 {
-		elements = append(elements, strings.TrimSpace(current.String()))
-	}
-
-	// Remove surrounding quotes and unescape (basic)
-	for i, el := range elements {
-		el = strings.TrimSpace(el)
-		if len(el) >= 2 && el[0] == '"' && el[len(el)-1] == '"' {
-			el = el[1 : len(el)-1]
-			// Unescape double quotes ("" -> ")
-			el = strings.ReplaceAll(el, `""`, `"`)
-		}
-		elements[i] = el
-	}
-
-	return elements, nil
-}
-*/

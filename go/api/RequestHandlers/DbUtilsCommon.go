@@ -1,6 +1,7 @@
 package RequestHandlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 // and sanitized to prevent SQL injection, as they are interpolated
 // directly into the SQL string.
 func InsertBatch(
+	ctx context.Context,
 	user_name string,
 	db *sql.DB,
 	tableName string,
@@ -23,6 +25,9 @@ func InsertBatch(
 	records []map[string]interface{},
 	batchSize int,
 	db_type string) error {
+	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+
 	// This function inserts records in batch. It supports MySQL and PostgreSQL only now.
 	// In the future, it may support more databases.
 	if batchSize <= 0 {
@@ -33,13 +38,13 @@ func InsertBatch(
 	for _, f := range fieldDefs {
 		switch f.DataType {
 		case "_ignore":
-			 continue // Skip to next field
-			
+			continue // Skip to next field
+
 		case "_auto_inc":
-			 continue // Skip to next field
-			
+			continue // Skip to next field
+
 		default:
-			 columns = append(columns, f.FieldName)
+			columns = append(columns, f.FieldName)
 		}
 	}
 
@@ -62,38 +67,43 @@ func InsertBatch(
 		valueGroups := []string{}
 		args := []interface{}{}
 
-
 		switch db_type {
 		case ApiTypes.MysqlName:
-			 var err1 error
-			 valueGroups, args, err1 = CreateValueGroupsMySQL(user_name, fieldDefs, chunk)
-			 if err1 != nil {
-				log.Printf("CreateValueGroupsMySQL failed, %d:%d", len(valueGroups), len(args))
+			var err1 error
+			valueGroups, args, err1 = CreateValueGroupsMySQL(user_name, fieldDefs, chunk)
+			if err1 != nil {
+				log.Printf("[req=%s] CreateValueGroupsMySQL failed, %d:%d (SHD_UCM_077)",
+					reqID, len(valueGroups), len(args))
 				return err1
-			 }
+			}
 
-			 conflict_suffix, _ = CreateOnConflictMySQL(resource_request)
+			conflict_suffix, _ = CreateOnConflictMySQL(resource_request)
 
 		case ApiTypes.PgName:
-			 var err1 error
-			 valueGroups, args, err1 = CreateValueGroupsPG(user_name, fieldDefs, chunk)
-			 if err1 != nil {
-				log.Printf("CreateValueGroupsPG failed, %d:%d", len(valueGroups), len(args))
+			var err1 error
+			valueGroups, args, err1 = CreateValueGroupsPG(user_name, fieldDefs, chunk)
+			if err1 != nil {
+				log.Printf("[req=%s] CreateValueGroupsPG failed, %d:%d (SHD_UCM_087)",
+					reqID, len(valueGroups), len(args))
 				return err1
-			 }
+			}
 
-			 conflict_suffix, _ = CreateOnConflictPG(resource_request)
+			conflict_suffix, _ = CreateOnConflictPG(resource_request)
 
 		default:
-		 	 error_msg := fmt.Sprintf("invalid db type:%s", db_type)
-		 	 log.Printf("***** Alarm:%s (SHD_DUP_059), %d:%d", error_msg, len(valueGroups), len(args))
-			 return fmt.Errorf("%s", error_msg) 
+			error_msg := fmt.Sprintf("invalid db type:%s", db_type)
+			new_call_flow := fmt.Sprintf("%s->SHD_UCM_095", call_flow)
+			log.Printf("***** Alarm:[req=%s] %s (%s), %d:%d",
+				reqID, error_msg, new_call_flow, len(valueGroups), len(args))
+			return fmt.Errorf("%s", error_msg)
 		}
 
 		if len(valueGroups) == 0 {
-		 	 error_msg := fmt.Sprintf("missing values, db_type:%s, table_name:%s", db_type, tableName)
-		 	 log.Printf("***** Alarm:%s (SHD_DUP_086), %d:%d", error_msg, len(valueGroups), len(args))
-			 return fmt.Errorf("%s", error_msg)
+			error_msg := fmt.Sprintf("missing values, db_type:%s, table_name:%s", db_type, tableName)
+			new_call_flow := fmt.Sprintf("%s->SHD_UCM_102", call_flow)
+			log.Printf("***** Alarm:[req=%s] %s (%s), %d:%d",
+				reqID, error_msg, new_call_flow, len(valueGroups), len(args))
+			return fmt.Errorf("%s", error_msg)
 		}
 
 		sqlStr := fmt.Sprintf(
@@ -109,8 +119,10 @@ func InsertBatch(
 
 		_, err := tx.Exec(sqlStr, args...)
 		if err != nil {
-			error_msg := fmt.Sprintf("failed run statement, error:%v, stmt:%s, values:%v", err, sqlStr, args)
-			log.Printf("%s (SHD_UTC_103)", error_msg)
+			new_call_flow := fmt.Sprintf("%s->SHD_UCM_120", call_flow)
+			error_msg := fmt.Sprintf("failed run statement, error:%v, stmt:%s, values:%v, loc:%s",
+				err, sqlStr, args, new_call_flow)
+			log.Printf("[req%s] %s", reqID, error_msg)
 			return fmt.Errorf("%s", error_msg)
 		}
 	}

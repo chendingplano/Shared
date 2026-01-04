@@ -190,12 +190,17 @@ function createAuthStore(): AuthStore {
         }
     };
 
-    if (typeof window !== 'undefined') {
-        checkAuthStatus();
-    } else {
-        // SSR: resolve immediately (no auth check possible)
-        readyResolve();
-    }
+    // DISABLED: Auto-check is causing infinite loop when /auth/me endpoint doesn't exist
+    // This will be re-enabled when migrating from PocketBase to PostgreSQL
+    // if (typeof window !== 'undefined') {
+    //     checkAuthStatus();
+    // } else {
+    //     // SSR: resolve immediately (no auth check possible)
+    //     readyResolve();
+    // }
+
+    // Temporary: Always resolve immediately without auth check
+    readyResolve();
 
     async function login(email: string, password: string): Promise<LoginResults> {
         try {
@@ -298,7 +303,7 @@ function createAuthStore(): AuthStore {
             }
 
             if (typeof window !== 'undefined') {
-              window.location.href = 'http://localhost:5173/login';
+              window.location.href = '/login';
             }
 
         } catch (error) {
@@ -340,7 +345,7 @@ function createAuthStore(): AuthStore {
           }));
         }
 
-        const res = await fetch("http://localhost:8080/auth/email/signup", {
+        const res = await fetch("/auth/email/signup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ first_name, last_name, email, password })

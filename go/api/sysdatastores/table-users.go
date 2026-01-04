@@ -10,11 +10,11 @@ import (
 	"github.com/chendingplano/shared/go/api/databaseutil"
 )
 
-var Users_selected_field_names = "user_id, user_name, user_password, user_id_type, firstName, lastName, " +
+var Users_selected_field_names = "user_id, user_name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, user_type, user_status, avatar, " +
 	"locale, v_token"
 
-var Users_insert_field_names = "user_id, user_name, user_password, user_id_type, firstName, lastName, " +
+var Users_insert_field_names = "user_id, user_name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, user_type, user_status, avatar, " +
 	"locale, v_token"
 
@@ -25,10 +25,10 @@ func CreateUsersTable(
 	var stmt string
 	fields := "user_id      VARCHAR(128) 	DEFAULT NULL, " +
 		"user_name      	VARCHAR(128) 	NOT NULL PRIMARY KEY, " +
-		"user_password  	VARCHAR(128) 	DEFAULT NULL, " +
+		"password  			VARCHAR(128) 	DEFAULT NULL, " +
 		"user_id_type   	VARCHAR(32)  	DEFAULT NULL, " +
-		"firstName      	VARCHAR(128) 	DEFAULT NULL, " +
-		"lastName       	VARCHAR(128) 	DEFAULT NULL, " +
+		"first_name      	VARCHAR(128) 	DEFAULT NULL, " +
+		"last_name       	VARCHAR(128) 	DEFAULT NULL, " +
 		"email          	VARCHAR(255) 	NOT NULL, " +
 		"user_mobile    	VARCHAR(64) 	DEFAULT NULL, " +
 		"user_address   	TEXT 			DEFAULT NULL, " +
@@ -39,7 +39,7 @@ func CreateUsersTable(
 		"user_status    	VARCHAR(32) 	NOT NULL, " +
 		"avatar         	text DEFAULT 	NULL, " +
 		"locale         	VARCHAR(128) 	DEFAULT NULL, " +
-		"userToken      	VARCHAR(128) 	DEFAULT NULL, " +
+		"v_token      		VARCHAR(128) 	DEFAULT NULL, " +
 		"created        	TIMESTAMP 		DEFAULT CURRENT_TIMESTAMP, " +
 		"updated        	TIMESTAMP 		DEFAULT CURRENT_TIMESTAMP "
 
@@ -254,11 +254,11 @@ func GetUserNameAndPasswordByEmail(user_email string) (string, *string, string) 
 
 	switch db_type {
 	case ApiTypes.MysqlName:
-		query = fmt.Sprintf("SELECT user_name, user_status, user_password FROM %s WHERE email = ? LIMIT 1", table_name)
+		query = fmt.Sprintf("SELECT user_name, user_status, password FROM %s WHERE email = ? LIMIT 1", table_name)
 		db = ApiTypes.MySql_DB_miner
 
 	case ApiTypes.PgName:
-		query = fmt.Sprintf("SELECT user_name, user_status, user_password FROM %s WHERE email = $1 LIMIT 1", table_name)
+		query = fmt.Sprintf("SELECT user_name, user_status, password FROM %s WHERE email = $1 LIMIT 1", table_name)
 		db = ApiTypes.PG_DB_miner
 
 	default:
@@ -428,11 +428,11 @@ func UpdatePasswordByUserName(reqID string, user_name string, password string) e
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET user_password = ?, user_status = 'active' WHERE user_name = ?", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET password = ?, user_status = 'active' WHERE user_name = ?", table_name)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.PG_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET user_password = $1, user_status = 'active' WHERE user_name = $2", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET password = $1, user_status = 'active' WHERE user_name = $2", table_name)
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_565): %s", db_type)
@@ -458,11 +458,11 @@ func UpdatePasswordByEmail(reqID string, email string, password string) error {
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET user_password = ?, user_status = 'active' WHERE email = ?", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET password = ?, user_status = 'active' WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.PG_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET user_password = $1, user_status = 'active' WHERE email = $2", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET password = $1, user_status = 'active' WHERE email = $2", table_name)
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_565): %s", db_type)

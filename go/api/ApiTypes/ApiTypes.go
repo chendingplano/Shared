@@ -75,7 +75,6 @@ type DatabaseInfoDef struct {
 	MySQLDBName   string
 	PGDBHandle    *sql.DB
 	MySQLDBHandle *sql.DB
-	HomeURL       string
 }
 
 var DatabaseInfo DatabaseInfoDef

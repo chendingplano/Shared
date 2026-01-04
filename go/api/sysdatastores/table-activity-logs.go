@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -111,11 +110,6 @@ func NextActivityLogID() int64 {
 // This is a non-blocking public API call. Records are added to the cache
 // and flushed to the database in the background.
 func AddActivityLog(record ApiTypes.ActivityLogDef) error {
-	use_pg := os.Getenv("USE_POSTGRESQL")
-	if use_pg != "false" {
-		return nil
-	}
-
 	c := activity_log_singleton
 	if c == nil {
 		error_msg := "cache not initialized; call InitCache first (SHD_ALG_077)"

@@ -200,16 +200,25 @@ async function getUserInfo(userID: string): UserIDResponse {
 // The function updateRecord implements the UPDATE-like operation.
 // The function deleteRecord implements the DELETE-like operation.
 class DBStore {
-    constructor() {}
+    private domain_name: string;
+
+    constructor(domain_name: string = '') {
+        this.domain_name = domain_name
+    }
 
     getFileURL(user_name: string, filename: string, token: string): string {
         // The URL for a file is composed:
         // 'http://<domain_name>:<port>/<data_dir>/<username>/<filename>
         // TBD: will use config!!!
         if (typeof filename === "string" && filename.length > 0) {
-            const frontendURLEnv = process.env.FRONTEND_URL
-            return `http://localhost:5173/data/custom_files/${user_name}/${filename}`
+            if (!this.domain_name) {
+                console.error("missing env var (SHD_DST_212)")
+                return ""
+            }
+
+            return `${this.domain_name}/data/custom_files/${user_name}/${filename}`
         }
+        console.log('invalid filename:' + filename)
         return ""
     }
 
@@ -627,77 +636,13 @@ class DBStore {
         } 
     }
 
-    /*
-    async updateMultipleRecords(
-            db_name: string,
-            table_name: string,
-            field_defs: Record<string, unknown>[],
-            update_entries: UpdateWithCondDef,
-            loc: string) : Promise<JimoResponse> {
-        if (update_entries === null || update_entries === undefined) {
-            const error_msg = "missing update_entries"
-            return {
-	            status:         false,
-	            error_msg:      error_msg,
-                result_type:    '',
-                results:        '',
-                error_code:     CustomHttpStatus.InvalidRequest,
-	            loc:            'SHD_DST_429'
-            } as JimoResponse
-        }
-
-        // IMPORTANT: Not implemented yet on the backend (Chen Ding, 2025/12/11)!!!
-        const req : JimoRequest = {
-            request_type:   "resource_request",
-            action:         "update_multiple",
-            resource_name:  table_name,
-            db_name:        db_name,
-            table_name:     table_name,
-            field_defs:     field_defs,
-            conditions:     [],
-            resource_info:  '',
-            loc:            loc,
-            records:        update_entries
-        }
-
-        try {
-            const resp = await fetch("/shared_api/v1/jimo_req", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(req),
-                credentials: 'include'
-                });
-
-            return handleResp(resp)
-        } catch (e) {
-            if (e instanceof Error) {
-                const error_msg = "Error fetching data:" + e.message;
-                const resp = {
-                    status:         false,
-                    error_msg:      error_msg,
-                    result_type:    'exception',
-                    error_code:     CustomHttpStatus.ServerException,
-                    results:        '',
-                    loc:            'SHD_DST_176'
-                }
-                return resp
-            }   
-
-            const error_msg = "Error fetching data:" + e;
-            const resp = {
-                status:         false,
-                error_msg:      error_msg,
-                result_type:    'exception',
-                results:        '',
-                error_code:     CustomHttpStatus.ServerException,
-                loc:            'SHD_DST_188'
-            }
-            return resp
-        }
+    setDomainName(domain_name: string) {
+        this.domain_name = domain_name
     }
-    */
 
     async getToken() : Promise<[string, number, string]> {
+        // Not implemented yet
+        console.error("getToken not implemented yet (SHD_DST_641)")
         return ["token-12345", StatusCodes.OK, '']
         // return ["", CustomHttpStatus.NotImplementedYet, "NotImplementedYet"]
     }
