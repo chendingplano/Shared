@@ -121,7 +121,7 @@ func RegisterRoutesPocket(router *router.Router[*core.RequestEvent]) {
 		return auth.HandleResetLinkPocket(e) // user clicks link in email
 	})
 
-	log.Println("Register /auth/email/confirm route (SHD_RTR_118)")
+	log.Println("Register /auth/email/reset/confirm (POST) route (SHD_RTR_118)")
 	router.POST("/auth/email/reset/confirm", func(e *core.RequestEvent) error {
 		return auth.HandleResetPasswordConfirmPocket(e) // user submits new password
 	})

@@ -824,6 +824,7 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 }
 
 func HandleResetPasswordConfirmPocket(e *core.RequestEvent) error {
+	log.Printf("Handle Reset Password Confirm (SHD_EML_827)")
 	rc := RequestHandlers.NewFromPocket(e)
 	reqID := rc.ReqID()
 	status_code, msg := HandleResetPasswordConfirmBase(rc, reqID)
