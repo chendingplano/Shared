@@ -364,7 +364,7 @@ func GetOAuthRedirectURL(
 	reqID string,
 	token string,
 	user_name string) string {
-	// Redirect to port 8090 (backend) instead of 5173 (vite dev server)
+	// Redirect to port 8090 (backend) 5173 (vite dev server)
 	// This ensures the pb_auth cookie is set on the correct domain
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {

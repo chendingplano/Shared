@@ -65,6 +65,7 @@ func (p *pbContext) SetCookie(token string) {
 		MaxAge:   604800, // 7 days (Pocketbase default)
 	}
 	http.SetCookie(p.e.Response, authCookie)
+	log.Printf("Set Pocketbase cookie 'pb_auth':%s (SHD_RCP_068)", token)
 }
 
 func (p *pbContext) GetRequest() *http.Request {

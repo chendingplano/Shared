@@ -274,8 +274,23 @@ func HandleEmailVerifyPocket(e *core.RequestEvent) error {
 
 	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID)
 	if msg == "" {
-		e.JSON(status_code, resp)
+		// Success case: redirect to frontend callback with token in URL
+		// This matches the OAuth flow pattern
+		if authToken, ok := resp["auth_token"]; ok {
+			// Get the frontend URL from redirect_url (which contains the full domain)
+			frontendDomain := GetRedirectURL(reqID, "", false, true) // domain_name_only = true
+			callbackURL := fmt.Sprintf("%s/auth/email/verify/callback?token=%s", frontendDomain, authToken)
+			if name, ok := resp["name"]; ok && name != "" {
+				callbackURL += fmt.Sprintf("&name=%s", name)
+			}
+			log.Printf("[req=%s] Redirecting to callback (SHD_EML_289): %s", reqID, callbackURL)
+			e.Redirect(http.StatusSeeOther, callbackURL)
+		} else {
+			// Fallback: if no auth_token, return JSON
+			e.JSON(status_code, resp)
+		}
 	} else {
+		// Error case: return error message
 		e.String(status_code, msg)
 	}
 	return nil
@@ -358,51 +373,8 @@ func HandleEmailVerifyBase(
 		return http.StatusBadRequest, e_msg, nil
 	}
 
-	// Generate a secure random session ID
-	sessionID := ApiUtils.GenerateSecureToken(32) // e.g., 256-bit random string
-
-	// Save session in DB/cache: map sessionID → user_email (or user_id)
-	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
-	customLayout := "2006-01-02 15:04:05"
-	expired_time_str := expired_time.Format(customLayout)
-	err1 := sysdatastores.SaveSession(
-		"email",
-		sessionID,
-		user_info.UserName,
-		"email",
-		user_info.Email,
-		user_info.Email,
-		expired_time)
-
-	if err1 != nil {
-		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed to save session, err:%s, log_id:%d", err1.Error(), log_id)
-		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_429)", reqID, error_msg)
-
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:        log_id,
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_DatabaseError,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_EML_438"})
-		return http.StatusInternalServerError, error_msg, nil
-	}
-
-	sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
-		LoginMethod:  "email_signup",
-		SessionID:    sessionID,
-		Status:       "active",
-		UserName:     user_info.UserName,
-		UserNameType: "email",
-		UserRegID:    user_info.Email,
-		UserEmail:    &user_info.Email,
-		CallerLoc:    "SHD_EML_435",
-		ExpiresAt:    &expired_time_str,
-	})
-
-	err1 = rc.MarkUserVerified(reqID, user_info.Email)
+	// Mark user as verified first
+	err1 := rc.MarkUserVerified(reqID, user_info.Email)
 	if err1 != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("mark user failed, error:%v, user_name:%s, log_id:%d",
@@ -417,11 +389,63 @@ func HandleEmailVerifyBase(
 			ModuleName:   ApiTypes.ModuleName_EmailAuth,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_468"})
-	} else {
-		log.Printf("[req=%s] Email signup success (SHD_EML_253): email:%s, session_id:%s", reqID, user_info.Email, sessionID)
+		return http.StatusInternalServerError, error_msg, nil
 	}
 
-	rc.SetCookie(sessionID)
+	// Generate Pocketbase auth token (not session ID)
+	authToken, err := rc.GenerateAuthToken(reqID, user_info.Email)
+	if err != nil {
+		log_id := sysdatastores.NextActivityLogID()
+		error_msg := fmt.Sprintf("failed to generate auth token, err:%s, log_id:%d", err.Error(), log_id)
+		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_429)", reqID, error_msg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_DatabaseError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_438"})
+		return http.StatusInternalServerError, error_msg, nil
+	}
+
+	// Generate a secure random session ID for logging purposes
+	sessionID := ApiUtils.GenerateSecureToken(32)
+	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
+	customLayout := "2006-01-02 15:04:05"
+	expired_time_str := expired_time.Format(customLayout)
+
+	// Save session in DB for audit logging
+	err1 = sysdatastores.SaveSession(
+		"email_verify",
+		sessionID,
+		user_info.UserName,
+		"email",
+		user_info.Email,
+		user_info.Email,
+		expired_time)
+
+	if err1 != nil {
+		log.Printf("[req=%s] +++++ Warning: failed saving session (non-critical): %v (SHD_EML_285)", reqID, err1)
+	}
+
+	sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
+		LoginMethod:  "email_verify",
+		SessionID:    sessionID,
+		Status:       "active",
+		UserName:     user_info.UserName,
+		UserNameType: "email",
+		UserRegID:    user_info.Email,
+		UserEmail:    &user_info.Email,
+		CallerLoc:    "SHD_EML_435",
+		ExpiresAt:    &expired_time_str,
+	})
+
+	log.Printf("[req=%s] Email verification success (SHD_EML_253): email:%s, session_id:%s", reqID, user_info.Email, sessionID)
+
+	// Don't set cookie here - frontend will handle it via pb.authStore.save()
+	// This matches the OAuth flow pattern
 
 	redirect_url := GetRedirectURL(reqID, user_info.Email, user_info.Admin, false)
 	msg := fmt.Sprintf("Email verify success: email:%s, session_id:%s, redirect:%s",
@@ -434,10 +458,12 @@ func HandleEmailVerifyBase(
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_505"})
 
+	user_name := user_info.FirstName + " " + user_info.LastName
 	response := map[string]string{
-		"name":         user_info.UserName, // or user.Email if that's what you use
+		"name":         user_name,
 		"email":        user_info.Email,
 		"redirect_url": redirect_url,
+		"auth_token":   authToken, // Return token to be set by frontend
 		"loc":          "SHD_EML_210",
 	}
 	return http.StatusOK, "", response
