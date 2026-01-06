@@ -229,6 +229,29 @@ func (e *echoContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.U
 	return user_info, true
 }
 
+func (e *echoContext) GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.UserInfo, bool) {
+	user_info, err := sysdatastores.GetUserInfoByUserID(reqID, user_id)
+	if err != nil {
+		// Possible reasons:
+		// 1. user not found: user not found
+		// 2. user pending verify:
+		// 3. database error: error: xxx
+		// 4. invalid user: (status not active)
+		if errors.Is(err, sql.ErrNoRows) {
+			// No user found with that email
+			log.Printf("[req=%s] No user found for user_id: %s", reqID, user_id)
+			return user_info, false
+		}
+
+		// Real database error
+		error_msg := fmt.Sprintf("Database error (SHD_RHD_225):%v, user_id:%s", err, user_id)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return user_info, false
+	}
+
+	return user_info, true
+}
+
 func (e *echoContext) SaveSession(
 	reqID string,
 	login_method string,
@@ -393,6 +416,22 @@ func (e *echoContext) IsAuthenticated(reqID string, loc string) (ApiTypes.UserIn
 		return ApiTypes.UserInfo{}, fmt.Errorf("%s", error_msg)
 	}
 	return user_info, nil
+}
+
+func (e *echoContext) SendHTMLResp(errorHTML string) error {
+	e.c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
+	e.c.Response().WriteHeader(http.StatusBadRequest)
+	_, err := e.c.Response().Write([]byte(errorHTML))
+	return err
+}
+
+func (e *echoContext) Redirect(redirect_url string, status_code int) error {
+	http.Redirect(e.c.Response(), e.c.Request(), redirect_url, status_code)
+	return nil
+}
+
+func (e *echoContext) SendJSONResp(status_code int, json_resp map[string]interface{}) error {
+	return e.c.JSON(status_code, json_resp)
 }
 
 // Private context key (avoids collisions)

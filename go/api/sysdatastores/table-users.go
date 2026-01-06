@@ -154,6 +154,51 @@ func GetUserInfoByEmail(reqID string, user_email string) (ApiTypes.UserInfo, err
 	return user_info, nil
 }
 
+func GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.UserInfo, error) {
+	// This function checks whether 'user_email' is used in the users table.
+	var query string
+	var db *sql.DB
+	db_type := ApiTypes.DatabaseInfo.DBType
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	var user_info ApiTypes.UserInfo
+	switch db_type {
+	case ApiTypes.MysqlName:
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_id = ? LIMIT 1", Users_selected_field_names, table_name)
+		db = ApiTypes.MySql_DB_miner
+
+	case ApiTypes.PgName:
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_id = $1 LIMIT 1", Users_selected_field_names, table_name)
+		db = ApiTypes.PG_DB_miner
+
+	default:
+		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
+		log.Printf("[req=%s] ***** Alarm: %s", reqID, err.Error())
+		return user_info, err
+	}
+
+	err := db.QueryRow(query, user_id).Scan(
+		&user_info.UserId,
+		&user_info.UserName,
+		&user_info.Password,
+		&user_info.UserIdType,
+		&user_info.FirstName,
+		&user_info.LastName,
+		&user_info.Email,
+		&user_info.UserMobile,
+		&user_info.UserAddress,
+		&user_info.AuthType,
+		&user_info.UserStatus,
+		&user_info.Avatar,
+		&user_info.Locale,
+		&user_info.VToken)
+	if err != nil {
+		return user_info, err
+	}
+	log.Printf("[req=%s] User info retrieved (SHD_USR_349), user: %s, status:%s",
+		reqID, user_info.UserName, user_info.UserStatus)
+	return user_info, nil
+}
+
 func GetUserInfoByUserName(reqID string, user_name string) (ApiTypes.UserInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
 	var query string

@@ -114,7 +114,7 @@ func HandleJimoRequestEcho(c echo.Context) error {
 	rc := NewFromEcho(c)
 	ctx := c.Request().Context()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey)
-	reqID := ctx.Value(ApiTypes.RequestIDKey)
+	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	body, _ := io.ReadAll(c.Request().Body)
 
 	new_call_flow := fmt.Sprintf("%s->SHD_RHD_119", call_flow)

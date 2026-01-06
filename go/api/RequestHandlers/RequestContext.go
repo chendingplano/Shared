@@ -38,15 +38,15 @@ type RequestContext interface {
 	QueryParam(key string) string
 	GetUserInfoByEmail(reqID string, email string) (ApiTypes.UserInfo, bool)
 	GetUserInfoByToken(reqID string, token string) (ApiTypes.UserInfo, bool)
+	GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.UserInfo, bool)
 	MarkUserVerified(reqID string, email string) error
 	UpdateTokenByEmail(reqID string, email string, token string) error
 	VerifyUserPassword(reqID string, email string, plaintextPassword string) (bool, int, string)
 	UpdatePassword(reqID string, email string, plaintextPassword string) (bool, int, string)
+	SendHTMLResp(html_str string) error
+	SendJSONResp(status_code int, json_resp map[string]interface{}) error
 	GenerateAuthToken(reqID string, email string) (string, error)
-	// GetRedirectURL(
-	// 	reqID string,
-	// 	token string,
-	// 	username string) string
+	Redirect(redirect_url string, status_code int) error
 
 	UpsertUser(reqID string,
 		user_id_type string,

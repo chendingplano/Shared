@@ -511,15 +511,60 @@ func (p *pbContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.Use
 		return user_info, false
 	}
 
+	user_info.UserId = records[0].GetString("id")
 	user_info.Email = records[0].GetString("email")
 	user_info.Admin = records[0].GetBool("admin")
 	user_info.EmailVisibility = records[0].GetBool("emailVisibility")
 	user_info.FirstName = records[0].GetString("firstName")
 	user_info.LastName = records[0].GetString("lastName")
-	user_info.Password = records[0].GetString("password")
 	user_info.VToken = records[0].GetString("tokenKey1")
 	user_info.Verified = records[0].GetBool("verified")
 	user_info.Avatar = records[0].GetString("avatar")
+	user_info.OutlookRefreshToken = records[0].GetString("outlookRefreshToken")
+	user_info.OutlookAccessToken = records[0].GetString("outlookAccessToken")
+	user_info.OutlookTokenExpiresAt = records[0].GetString("outlookTokenExpiresAt")
+	log.Printf("[req=%s] Retrieved user info (SHD_RCP_355), email:%s", reqID, user_info.Email)
+	return user_info, true
+}
+
+func (p *pbContext) GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.UserInfo, bool) {
+	var user_info ApiTypes.UserInfo
+	users_table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	records, err := p.e.App.FindRecordsByFilter(
+		users_table_name,
+		`email = {:email}`,
+		"created",
+		10, // limit
+		0,  // offset
+		map[string]interface{}{
+			"id": user_id,
+		})
+
+	if err != nil || len(records) > 1 {
+		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_184), error:%v", err)
+		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		return user_info, false
+	}
+
+	if len(records) <= 0 {
+		// The cookie is not valid.
+		var error_msg = fmt.Sprintf("user not found (SHD_RCP_337), error:%v", err)
+		log.Printf("[req=%s] +++++ WARN %s", reqID, error_msg)
+		return user_info, false
+	}
+
+	user_info.UserId = records[0].GetString("id")
+	user_info.Email = records[0].GetString("email")
+	user_info.Admin = records[0].GetBool("admin")
+	user_info.EmailVisibility = records[0].GetBool("emailVisibility")
+	user_info.FirstName = records[0].GetString("firstName")
+	user_info.LastName = records[0].GetString("lastName")
+	user_info.VToken = records[0].GetString("tokenKey1")
+	user_info.Verified = records[0].GetBool("verified")
+	user_info.Avatar = records[0].GetString("avatar")
+	user_info.OutlookRefreshToken = records[0].GetString("outlookRefreshToken")
+	user_info.OutlookAccessToken = records[0].GetString("outlookAccessToken")
+	user_info.OutlookTokenExpiresAt = records[0].GetString("outlookTokenExpiresAt")
 	log.Printf("[req=%s] Retrieved user info (SHD_RCP_355), email:%s", reqID, user_info.Email)
 	return user_info, true
 }
@@ -590,15 +635,18 @@ func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.Use
 		return user_info, false
 	}
 
+	user_info.UserId = records[0].GetString("id")
 	user_info.Email = records[0].GetString("email")
 	user_info.Admin = records[0].GetBool("admin")
 	user_info.EmailVisibility = records[0].GetBool("emailVisibility")
 	user_info.FirstName = records[0].GetString("firstName")
 	user_info.LastName = records[0].GetString("lastName")
-	user_info.Password = records[0].GetString("password")
 	user_info.VToken = records[0].GetString("tokenKey1")
 	user_info.Verified = records[0].GetBool("verified")
 	user_info.Avatar = records[0].GetString("avatar")
+	user_info.OutlookRefreshToken = records[0].GetString("outlookRefreshToken")
+	user_info.OutlookAccessToken = records[0].GetString("outlookAccessToken")
+	user_info.OutlookTokenExpiresAt = records[0].GetString("outlookTokenExpiresAt")
 	return user_info, true
 }
 
@@ -775,4 +823,20 @@ func (p *pbContext) UploadImageFromURL(
 
 	log.Printf("[req=%s] Uploaded avatar image as: %s", reqID, filename)
 	return file, nil
+}
+
+func (p *pbContext) SendHTMLResp(errorHTML string) error {
+	p.e.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	p.e.Response.WriteHeader(http.StatusBadRequest)
+	_, err := p.e.Response.Write([]byte(errorHTML))
+	return err
+}
+
+func (p *pbContext) Redirect(redirect_url string, status_code int) error {
+	http.Redirect(p.e.Response, p.e.Request, redirect_url, status_code)
+	return nil
+}
+
+func (p *pbContext) SendJSONResp(status_code int, json_resp map[string]interface{}) error {
+	return p.e.JSON(status_code, json_resp)
 }

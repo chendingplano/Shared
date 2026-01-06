@@ -363,23 +363,26 @@ type UserAccount struct {
 
 // Make sure this struct syncs with Shared/svelte/src/lib/types/CommonTypes.ts::UserInfo
 type UserInfo struct {
-	UserId          string `json:"user_id"`
-	UserName        string `json:"user_name"`
-	Password        string `json:"password"`
-	UserIdType      string `json:"user_id_type"`
-	FirstName       string `json:"firstName"`
-	LastName        string `json:"lastName"`
-	Email           string `json:"email"`
-	UserMobile      string `json:"user_mobile,omitempty"`
-	UserAddress     string `json:"user_address"`
-	Verified        bool   `json:"verfied"`
-	Admin           bool   `json:"admin"`
-	EmailVisibility bool   `json:"emailVisibility"`
-	AuthType        string `json:"auth_type"`
-	UserStatus      string `json:"user_status"`
-	Avatar          string `json:"avatar"`
-	Locale          string `json:"locale"`
-	VToken          string `json:"v_token"`
+	UserId                string `json:"user_id"`
+	UserName              string `json:"user_name"`
+	Password              string `json:"password"`
+	UserIdType            string `json:"user_id_type"`
+	FirstName             string `json:"firstName"`
+	LastName              string `json:"lastName"`
+	Email                 string `json:"email"`
+	UserMobile            string `json:"user_mobile,omitempty"`
+	UserAddress           string `json:"user_address"`
+	Verified              bool   `json:"verfied"`
+	Admin                 bool   `json:"admin"`
+	EmailVisibility       bool   `json:"emailVisibility"`
+	AuthType              string `json:"auth_type"`
+	UserStatus            string `json:"user_status"`
+	Avatar                string `json:"avatar"`
+	Locale                string `json:"locale"`
+	VToken                string `json:"v_token"`
+	OutlookRefreshToken   string `json:"outlookRefreshToken"`
+	OutlookAccessToken    string `json:"outlookAccessToken"`
+	OutlookTokenExpiresAt string `json:"outlookTokenExpiresAt"`
 }
 
 // Make sure this struct syncs with tax/web/src/lib/pocketbas-types.ts::UsersRecord
