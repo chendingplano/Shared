@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/smtp"
 	"net/url"
 	"os"
@@ -409,4 +410,69 @@ func GenerateRequestID(key string) string {
 func GetDefahotHomeURL() string {
 	var url = fmt.Sprintf("%s%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_ENDPOINT"))
 	return url
+}
+
+// GeneratePassword creates a cryptographically secure random password
+// with the specified length using letters, numbers, and special characters
+func GeneratePassword(length int) string {
+	if length <= 0 {
+		log.Printf("***** Alarm: invalid length:%d, default to 12 (SHD_UTL_419)", length)
+		length = 12
+	}
+
+	// Character set with all printable ASCII characters (excluding ambiguous ones)
+	charset := "abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+		"0123456789" +
+		"@#$%&-=+"
+
+	// Alternative charset without ambiguous characters (0, O, l, 1, etc.)
+	// charset := "abcdefghijkmnpqrstuvwxyz" +
+	//            "ABCDEFGHJKMNPQRSTUVWXYZ" +
+	//            "23456789" +
+	//            "!@#$%^&*()-_=+[]{}|;:,.<>?"
+
+	charsetLength := len(charset)
+	password := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		// Generate a random index within the charset range
+		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
+		if err != nil {
+			log.Printf("***** Alarm: failed to generate random number: %v", err)
+			// Create a new *big.Int from the fallback value
+			randomIndex = big.NewInt(int64(i % charsetLength))
+		}
+		password[i] = charset[randomIndex.Int64()]
+	}
+
+	return string(password)
+}
+
+// GeneratePasswordCustom allows custom character sets and length
+func GeneratePasswordCustom(length int, charset string) string {
+	if length <= 0 {
+		log.Printf("***** Alarm: invalid length:%d, default to 12 (SHD_UTL_453)", length)
+		length = 12
+	}
+
+	if len(charset) == 0 {
+		log.Printf("***** Alarm: invalid charset:%d, use default (SHD_UTL_458)", length)
+		return GeneratePassword(length)
+	}
+
+	charsetLength := len(charset)
+	password := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
+		if err != nil {
+			log.Printf("failed to generate random number: %v (SHD_UTL_468)", err)
+			// Create a new *big.Int from the fallback value
+			randomIndex = big.NewInt(int64(i % charsetLength))
+		}
+		password[i] = charset[randomIndex.Int64()]
+	}
+
+	return string(password)
 }

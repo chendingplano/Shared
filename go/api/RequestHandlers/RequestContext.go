@@ -42,13 +42,15 @@ type RequestContext interface {
 	MarkUserVerified(reqID string, email string) error
 	UpdateTokenByEmail(reqID string, email string, token string) error
 	VerifyUserPassword(reqID string, email string, plaintextPassword string) (bool, int, string)
-	UpdatePassword(reqID string, email string, plaintextPassword string) (bool, int, string)
+	UpdatePassword(ctx context.Context, reqID string, email string, plaintextPassword string) (bool, int, string)
 	SendHTMLResp(html_str string) error
 	SendJSONResp(status_code int, json_resp map[string]interface{}) error
 	GenerateAuthToken(reqID string, email string) (string, error)
 	Redirect(redirect_url string, status_code int) error
 
-	UpsertUser(reqID string,
+	UpsertUser(
+		ctx context.Context,
+		reqID string,
 		user_id_type string,
 		user_name string,
 		hashed_password string,

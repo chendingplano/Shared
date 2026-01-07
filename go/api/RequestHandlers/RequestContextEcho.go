@@ -103,7 +103,11 @@ func (e *echoContext) GenerateAuthToken(reqID string, email string) (string, err
 	return token, nil
 }
 
-func (e *echoContext) UpdatePassword(reqID string, email string, plaintextPassword string) (bool, int, string) {
+func (e *echoContext) UpdatePassword(
+	ctx context.Context,
+	reqID string,
+	email string,
+	plaintextPassword string) (bool, int, string) {
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -297,7 +301,9 @@ type UserInfo struct {
 }
 */
 
-func (e *echoContext) UpsertUser(reqID string,
+func (e *echoContext) UpsertUser(
+	ctx context.Context,
+	reqID string,
 	user_id_type string,
 	user_name string,
 	plain_password string,
@@ -308,8 +314,10 @@ func (e *echoContext) UpsertUser(reqID string,
 	last_name string,
 	token string,
 	avatar string) (ApiTypes.UserInfo, error) {
+
 	// Check if user exists
 	user_info, found := e.GetUserInfoByEmail(reqID, user_email)
+	call_flow := ctx.Value(ApiTypes.CallFlowKey)
 	var is_dirty bool = false
 	if !found {
 		is_dirty = true
@@ -371,15 +379,15 @@ func (e *echoContext) UpsertUser(reqID string,
 	}
 
 	if !is_dirty {
-		log.Printf("[req=%s] No changes for user %s, skip upsert (SHD_RCE_121)", reqID, user_email)
+		log.Printf("[req=%s] No changes for user %s, skip upsert (%s->SHD_RCE_121)", reqID, user_email, call_flow)
 		return user_info, nil
 	}
 
 	ok, err := sysdatastores.AddUserNew(reqID, user_info)
 	if !ok {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("Failed creating user (SHD_RCE_123), user_name:%s, email:%s, err:%s, log_id:%d",
-			user_info.UserName, user_info.Email, err, log_id)
+		error_msg := fmt.Sprintf("Failed creating user, user_name:%s, email:%s, err:%s, log_id:%d (%s->SHD_RCE_123)",
+			user_info.UserName, user_info.Email, err, log_id, call_flow)
 		log.Printf("[req=%s] ***** Alarm %s (SHD_EML_393)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{

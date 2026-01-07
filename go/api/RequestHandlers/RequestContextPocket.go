@@ -170,7 +170,11 @@ func (p *pbContext) GenerateAuthToken(reqID string, email string) (string, error
 	return token, nil
 }
 
-func (p *pbContext) UpdatePassword(reqID string, email, password string) (bool, int, string) {
+func (p *pbContext) UpdatePassword(
+	ctx context.Context,
+	reqID string,
+	email string,
+	password string) (bool, int, string) {
 	// Get the collection
 	log.Printf("[req=%s] Update user password (SHD_RCP_167), email:%s", reqID, email)
 
@@ -215,7 +219,7 @@ func (p *pbContext) UpdatePassword(reqID string, email, password string) (bool, 
 	// Save the record
 	log.Printf("[req=%s] ========== (SHD_RCP_188), update password:%s", reqID, email)
 	if err := p.e.App.Save(record); err != nil {
-		error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", email, err)
+		error_msg := fmt.Sprintf("failed saving user (ARX_RCP_218), user_email:%s, err:%v", email, err)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return false, http.StatusInternalServerError, error_msg
 	}
@@ -226,7 +230,9 @@ func (p *pbContext) UpdatePassword(reqID string, email, password string) (bool, 
 // CreateUser adds a user if the user does not exist.
 // Otherwise, it updates the record.
 // Users are identified by user_email.
-func (p *pbContext) UpsertUser(reqID string,
+func (p *pbContext) UpsertUser(
+	ctx context.Context,
+	reqID string,
 	user_id_type string,
 	user_name string,
 	plain_password string,
@@ -238,6 +244,7 @@ func (p *pbContext) UpsertUser(reqID string,
 	token string,
 	avatar string) (ApiTypes.UserInfo, error) {
 
+	call_flow := ctx.Value(ApiTypes.CallFlowKey)
 	log.Printf("[req=%s] UpsertUser (SHD_RCP_130), email:%s, password:%s, token:%s", reqID, user_email, plain_password, token)
 	var user_info ApiTypes.UserInfo
 
@@ -256,7 +263,9 @@ func (p *pbContext) UpsertUser(reqID string,
 	)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return user_info, fmt.Errorf("failed to check existing user: %w", err)
+		error_msg := fmt.Sprintf("failed to check existing user: %v (%s->SHD_RCP_262)", err, call_flow)
+		log.Printf("***** Alarm:%s", error_msg)
+		return user_info, fmt.Errorf("%s", error_msg)
 	}
 
 	is_dirty := false
@@ -273,7 +282,7 @@ func (p *pbContext) UpsertUser(reqID string,
 		if strings.TrimSpace(avatar) != "" {
 			file, err := p.UploadImageFromURL(reqID, avatar, "users")
 			if err != nil {
-				error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_146), filename:%s, err:%v", avatar, err)
+				error_msg := fmt.Sprintf("failed uploading file, avatar:%s, err:%v (%s->SHD_RCP_281)", avatar, err, call_flow)
 				log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 			} else {
 				if record.GetString("avatar") == "" {
@@ -338,7 +347,7 @@ func (p *pbContext) UpsertUser(reqID string,
 		if strings.TrimSpace(avatar) != "" {
 			file, err := p.UploadImageFromURL(reqID, avatar, "users")
 			if err != nil {
-				error_msg := fmt.Sprintf("failed uploading file (SHD_RCP_175), avatar:%s, err:%v", avatar, err)
+				error_msg := fmt.Sprintf("failed uploading file, avatar:%s, err:%v (%s->SHD_RCP_346)", avatar, err, call_flow)
 				log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 			} else {
 				if record.GetString("avatar") == "" {
@@ -356,7 +365,7 @@ func (p *pbContext) UpsertUser(reqID string,
 		// Save the record
 		log.Printf("[req=%s] (SHD_RCP_196), save users record:%s", reqID, user_email)
 		if err := p.e.App.Save(record); err != nil {
-			error_msg := fmt.Sprintf("failed saving user (ARX_RCP_098), user_email:%s, err:%v", user_email, err)
+			error_msg := fmt.Sprintf("failed saving user, user_email:%s, err:%v (%s->SHD_RCP_364)", user_email, err, call_flow)
 			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 			return user_info, fmt.Errorf("%s", error_msg)
 		}

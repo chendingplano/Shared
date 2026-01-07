@@ -58,9 +58,11 @@ func HandleGoogleLoginPocketbase(e *core.RequestEvent) error {
 
 func HandleGoogleCallback(c echo.Context) error {
 	rc := RequestHandlers.NewFromEcho(c)
+	ctx := rc.Context()
+	call_flow := fmt.Sprintf("%s->SHD_GGL_062", ctx.Value(ApiTypes.CallFlowKey))
 	// body, _ := io.ReadAll(c.Request().Body)
-	reqID := rc.ReqID()
-	status_code, redirect_url := HandleGoogleCallbackBase(rc, reqID)
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+	status_code, redirect_url := HandleGoogleCallbackBase(new_ctx, rc)
 	if status_code == http.StatusSeeOther {
 		return c.Redirect(http.StatusSeeOther, redirect_url)
 	}
@@ -69,6 +71,8 @@ func HandleGoogleCallback(c echo.Context) error {
 
 func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 	rc := RequestHandlers.NewFromPocket(e)
+	ctx := rc.Context()
+	call_flow := fmt.Sprintf("%s->SHD_GGL_074", ctx.Value(ApiTypes.CallFlowKey))
 	reqID := rc.ReqID()
 
 	log.Printf("[req=%s] HandleGoogleCallbackPocket called (SHD_GGL_071)", reqID)
@@ -116,7 +120,9 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 		return nil
 	}
 
-	_, err = rc.UpsertUser(reqID,
+	call_flow = fmt.Sprintf("%s->SHD_EML_123", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+	_, err = rc.UpsertUser(new_ctx, reqID,
 		"google", "", "", googleUserInfo.Email, "google",
 		"active", googleUserInfo.GivenName,
 		googleUserInfo.FamilyName, "", googleUserInfo.Picture)
@@ -156,8 +162,9 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 }
 
 func HandleGoogleCallbackBase(
-	rc RequestHandlers.RequestContext,
-	reqID string) (int, string) {
+	ctx context.Context,
+	rc RequestHandlers.RequestContext) (int, string) {
+	reqID := rc.ReqID()
 	log.Printf("HandleGoogleCallback called (MID_GGL_020)")
 	if rc.FormValue("state") != oauthStateString {
 		error_msg := fmt.Sprintf("invalid oauth state: expected %s, got %s",
@@ -260,8 +267,10 @@ func HandleGoogleCallbackBase(
 	}
 
 	// Add user to database by rc.
+	call_flow := fmt.Sprintf("%s->SHD_GGL_270", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
 	user_info, err := rc.UpsertUser(
-		reqID, "google", googleUserInfo.Email, "", googleUserInfo.Email,
+		new_ctx, reqID, "google", googleUserInfo.Email, "", googleUserInfo.Email,
 		"google", "active", googleUserInfo.GivenName, googleUserInfo.FamilyName,
 		"", googleUserInfo.Picture)
 

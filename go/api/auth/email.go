@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -476,23 +477,28 @@ func HandleEmailVerifyBase(
 
 func HandleEmailSignup(c echo.Context) error {
 	rc := RequestHandlers.NewFromEcho(c)
-	reqID := rc.ReqID()
-	status_code, resp := HandleEmailSignupBase(rc, reqID)
+	ctx := rc.Context()
+	call_flow := fmt.Sprintf("%s->SHD_EML_482", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+	status_code, resp := HandleEmailSignupBase(new_ctx, rc)
 	c.JSON(status_code, resp)
 	return nil
 }
 
 func HandleEmailSignupPocket(e *core.RequestEvent) error {
 	rc := RequestHandlers.NewFromPocket(e)
-	reqID := rc.ReqID()
-	status_code, resp := HandleEmailSignupBase(rc, reqID)
+	ctx := rc.Context()
+	call_flow := fmt.Sprintf("%s->SHD_EML_492", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+
+	status_code, resp := HandleEmailSignupBase(new_ctx, rc)
 	e.JSON(status_code, resp)
 	return nil
 }
 
 func HandleEmailSignupBase(
-	rc RequestHandlers.RequestContext,
-	reqID string) (int, EmailSignupResponse) {
+	ctx context.Context,
+	rc RequestHandlers.RequestContext) (int, EmailSignupResponse) {
 	// The request body:
 	// {
 	//   "first_name": "John",		// Optional
@@ -500,6 +506,7 @@ func HandleEmailSignupBase(
 	//   "email": "xxx",
 	//   "password": "yyy"
 	// }
+	reqID := rc.ReqID()
 	log.Printf("[req=%s] Handle email signup request (SHD_EML_300)", reqID)
 
 	var req EmailSignupRequest
@@ -566,7 +573,7 @@ func HandleEmailSignupBase(
 	// 3. Generate a verification token and Create a user record with "verified = false"
 	token := uuid.NewString()
 	var user_name = req.Email
-	_, err1 := rc.UpsertUser(reqID,
+	_, err1 := rc.UpsertUser(ctx, reqID,
 		"email", user_name, req.Password, req.Email, "email", "pending_verify",
 		req.FirstName, req.LastName, token, "")
 
@@ -816,9 +823,15 @@ type ResetConfirmRequest struct {
 }
 
 func HandleResetPasswordConfirm(c echo.Context) error {
+	log.Printf("Handle reset password confirm (SHD_EML_820)")
 	rc := RequestHandlers.NewFromEcho(c)
-	reqID := rc.ReqID()
-	status_code, msg := HandleResetPasswordConfirmBase(rc, reqID)
+	ctx := c.Request().Context()
+	call_flow := fmt.Sprintf("%s->SHD_EML_824", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+	new_req := c.Request().WithContext(new_ctx)
+	c.SetRequest(new_req)
+
+	status_code, msg := HandleResetPasswordConfirmBase(new_ctx, rc)
 	c.String(status_code, msg)
 	return nil
 }
@@ -826,15 +839,22 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 func HandleResetPasswordConfirmPocket(e *core.RequestEvent) error {
 	log.Printf("Handle Reset Password Confirm (SHD_EML_827)")
 	rc := RequestHandlers.NewFromPocket(e)
-	reqID := rc.ReqID()
-	status_code, msg := HandleResetPasswordConfirmBase(rc, reqID)
+	ctx := rc.Context()
+	call_flow := fmt.Sprintf("%s->SHD_EML_838", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
+
+	// Note that Pocketbase does not offer a way to replace requests
+	// in 'e'. We generally do not need to create a new request, anyway.
+	// In all function calls, always pass 'ctx' instead of letting functions
+	// retrieve ctx (context.Context) from request.
+	status_code, msg := HandleResetPasswordConfirmBase(new_ctx, rc)
 	e.String(status_code, msg)
 	return nil
 }
 
 func HandleResetPasswordConfirmBase(
-	rc RequestHandlers.RequestContext,
-	reqID string) (int, string) {
+	ctx context.Context,
+	rc RequestHandlers.RequestContext) (int, string) {
 
 	// The frontend (routes/reset-password/+page.svelte)
 	// fetches (POST) this endpoint with Token and Password.
@@ -859,6 +879,7 @@ func HandleResetPasswordConfirmBase(
 		}
 	*/
 
+	reqID := rc.ReqID()
 	var req ResetConfirmRequest
 	if err := json.NewDecoder(rc.GetBody()).Decode(&req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
@@ -899,7 +920,9 @@ func HandleResetPasswordConfirmBase(
 	}
 
 	// Hash new password
-	status, status_code, msg := rc.UpdatePassword(reqID, user_info.Email, req.Password)
+	new_call_flow := fmt.Sprintf("%s->SHD_EML_918", ctx.Value(ApiTypes.CallFlowKey))
+	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, new_call_flow)
+	status, status_code, msg := rc.UpdatePassword(new_ctx, reqID, user_info.Email, req.Password)
 	if !status {
 		return status_code, msg
 	}
