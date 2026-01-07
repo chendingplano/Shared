@@ -146,6 +146,7 @@ func (p *pbContext) MarkUserVerified(reqID string, email string) error {
 		return fmt.Errorf("%s", error_msg)
 	}
 
+	log.Printf("[req=%s] Successfully marked user as verified (SHD_RCP_149), email:%s", reqID, email)
 	return nil
 }
 
