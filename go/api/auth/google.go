@@ -120,10 +120,12 @@ func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
 		return nil
 	}
 
+	// Will generate a password since Pocketbase does not allow empty password
+	password := ApiUtils.GeneratePassword(12)
 	call_flow = fmt.Sprintf("%s->SHD_EML_123", ctx.Value(ApiTypes.CallFlowKey))
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
 	_, err = rc.UpsertUser(new_ctx, reqID,
-		"google", "", "", googleUserInfo.Email, "google",
+		"google", "", password, googleUserInfo.Email, "google",
 		"active", googleUserInfo.GivenName,
 		googleUserInfo.FamilyName, "", googleUserInfo.Picture)
 	if err != nil {
