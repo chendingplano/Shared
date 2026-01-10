@@ -140,6 +140,7 @@ func (p *pbContext) MarkUserVerified(reqID string, email string) error {
 	}
 
 	record.Set("verified", true)
+	record.Set("active", true)
 	if err := p.e.App.Save(record); err != nil {
 		error_msg := fmt.Sprintf("failed to update user (SHD_RCP_122), err:%v", err)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)

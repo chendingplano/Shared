@@ -261,7 +261,8 @@ func HandleEmailVerify(c echo.Context) error {
 	rc := RequestHandlers.NewFromEcho(c)
 	reqID := rc.ReqID()
 
-	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID)
+	is_post := false
+	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID, is_post)
 	if msg == "" {
 		c.JSON(status_code, resp)
 	} else {
@@ -274,7 +275,8 @@ func HandleEmailVerifyPocket(e *core.RequestEvent) error {
 	rc := RequestHandlers.NewFromPocket(e)
 	reqID := rc.ReqID()
 
-	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID)
+	is_post := false
+	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID, is_post)
 	if msg == "" {
 		// Success case: redirect to frontend callback with token in URL
 		// This matches the OAuth flow pattern
@@ -300,50 +302,52 @@ func HandleEmailVerifyPocket(e *core.RequestEvent) error {
 
 func HandleEmailVerifyBase(
 	rc RequestHandlers.RequestContext,
-	reqID string) (int, string, map[string]string) {
+	reqID string,
+	is_post bool) (int, string, map[string]string) {
 	log.Printf("[req=%s] Handle email verify request (SHD_EML_192)", reqID)
 
-	/* The following code is for POST.
-	var req EmailVerifyRequest
-	if err := rc.Bind(reqID, &req); err != nil {
-		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("Failed to bind request body: %v, log_id:%d, user_name:%s",
-			err, log_id, user_name)
-		log.Printf("[req=%s] %s (SHD_EML_361)", reqID, error_msg)
+	var token string
+	if is_post {
+		// The request is a POST
+		var req EmailVerifyRequest
+		if err := rc.Bind(reqID, &req); err != nil {
+			log_id := sysdatastores.NextActivityLogID()
+			error_msg := fmt.Sprintf("Failed to bind request body: %v, log_id:%d", err, log_id)
+			log.Printf("[req=%s] %s (SHD_EML_361)", reqID, error_msg)
 
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:        log_id,
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_BadRequest,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_EML_369"})
+			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+				LogID:        log_id,
+				ActivityName: ApiTypes.ActivityName_Auth,
+				ActivityType: ApiTypes.ActivityType_BadRequest,
+				AppName:      ApiTypes.AppName_Auth,
+				ModuleName:   ApiTypes.ModuleName_EmailAuth,
+				ActivityMsg:  &error_msg,
+				CallerLoc:    "SHD_EML_369"})
 
-		e_msg := fmt.Sprintf("invalid request body, log_id:%d, user_name:%s (SHD_EML_361)", log_id, user_name)
-		return http.StatusBadRequest, e_msg, nil
-	}
+			e_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_EML_361)", log_id)
+			return http.StatusBadRequest, e_msg, nil
+		}
+		token = req.Token
+	} else {
+		// The request is a GET
+		token = rc.QueryParam("token")
+		if token == "" {
+			log_id := sysdatastores.NextActivityLogID()
+			error_msg := fmt.Sprintf("Failed retrieving token, log_id:%d", log_id)
+			log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_205)", reqID, error_msg)
 
-	token := req.Token
-	*/
-	// We assume the link uses GET!!!
-	token := rc.QueryParam("token")
-	if token == "" {
-		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("Failed retrieving token, log_id:%d", log_id)
-		log.Printf("[req=%s] ***** Alarm:%s (SHD_EML_205)", reqID, error_msg)
+			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+				LogID:        log_id,
+				ActivityName: ApiTypes.ActivityName_Auth,
+				ActivityType: ApiTypes.ActivityType_BadRequest,
+				AppName:      ApiTypes.AppName_Auth,
+				ModuleName:   ApiTypes.ModuleName_EmailAuth,
+				ActivityMsg:  &error_msg,
+				CallerLoc:    "SHD_EML_400"})
 
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			LogID:        log_id,
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_BadRequest,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_EML_400"})
-
-		e_msg := fmt.Sprintf("failed retrieving token, log_id:%d (SHD_EML_393)", log_id)
-		return http.StatusBadRequest, e_msg, nil
+			e_msg := fmt.Sprintf("failed retrieving token, log_id:%d (SHD_EML_393)", log_id)
+			return http.StatusBadRequest, e_msg, nil
+		}
 	}
 
 	log.Printf("[req=%s] Handle email verify (SHD_EML_193), token:%s, dbtype:%s, tablename:%s",
