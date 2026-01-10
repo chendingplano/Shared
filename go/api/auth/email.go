@@ -237,9 +237,10 @@ func HandleEmailLoginBase(
 func sendVerificationEmail(reqID string, to string, url string) error {
 	log_id := sysdatastores.NextActivityLogID()
 	subject := "Verify your email address"
-	body := fmt.Sprintf(`
+	htmlBody := fmt.Sprintf(`
         <p>Please click the link below to verify your email (logid:%d):</p>
         <p><a href="%s">%s</a></p>`, log_id, url, url)
+	textBody := fmt.Sprintf("Please click the link below to verify your email (logid:%d):\n%s", log_id, url)
 
 	msg := fmt.Sprintf("Sending verification email to %s with URL: %s, logid:%d", to, url, log_id)
 	log.Printf("[req=%s] %s (SHD_EML_345)", reqID, msg)
@@ -253,7 +254,7 @@ func sendVerificationEmail(reqID string, to string, url string) error {
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_351"})
 
-	return ApiUtils.SendMail(reqID, to, subject, body, "SHD_EML_284") // implement this using smtp.SendMail or a library
+	return ApiUtils.SendMail(reqID, to, subject, textBody, htmlBody, "SHD_EML_284")
 }
 
 func HandleEmailVerify(c echo.Context) error {
@@ -736,11 +737,13 @@ func HandleForgotPasswordBase(
 	}
 
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
-	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", fmt.Sprintf(`
+	htmlBody := fmt.Sprintf(`
         <p>Hi %s,</p>
         <p>Click the link below to reset your password:</p>
         <p><a href="%s">%s</a></p>
-    `, user.UserName, resetURL, resetURL), "SHD_EML_732")
+    `, user.UserName, resetURL, resetURL)
+	textBody := fmt.Sprintf("Hi %s,\n\nClick the link below to reset your password:\n%s", user.UserName, resetURL)
+	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", textBody, htmlBody, "SHD_EML_732")
 
 	log_id := sysdatastores.NextActivityLogID()
 	msg := fmt.Sprintf("reset link sent to email:%s", req.Email)

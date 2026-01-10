@@ -23,6 +23,13 @@ import (
 )
 
 func getGoogleOauthConfig() *oauth2.Config {
+	// IMPORTANT: any time when you change your domain names, use need to configure
+	// Google to allow your domains:
+	// 	Link: https://console.cloud.google.com/apis/dashboard
+	//		- Select "Credentials" from the last panel
+	//		- Click Web Login link under "OAuth 2.0 Client IDs"
+	//		- Find "Authorized redirect URLs", which is a list of allowed URLS
+	//		- Add your URLs.
 	redirectURL := os.Getenv("GOOGLE_OAUTH_REDIRECT_URL")
 	if redirectURL == "" {
 		error_msg := "missing GOOGLE_OAUTH_REDIRECT_URL env var (SHD_GGL_003)"

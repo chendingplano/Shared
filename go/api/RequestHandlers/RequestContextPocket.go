@@ -509,7 +509,7 @@ func (p *pbContext) GetUserInfoByEmail(reqID string, email string) (ApiTypes.Use
 		})
 
 	if err != nil || len(records) > 1 {
-		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_184), error:%v", err)
+		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_512), error:%v", err)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return user_info, false
 	}
@@ -542,7 +542,7 @@ func (p *pbContext) GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.
 	users_table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	records, err := p.e.App.FindRecordsByFilter(
 		users_table_name,
-		`email = {:email}`,
+		`id = {:id}`,
 		"created",
 		10, // limit
 		0,  // offset
@@ -551,7 +551,7 @@ func (p *pbContext) GetUserInfoByUserID(reqID string, user_id string) (ApiTypes.
 		})
 
 	if err != nil || len(records) > 1 {
-		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_184), error:%v", err)
+		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_554), table:%s, num_records:%d, error:%v", users_table_name, len(records), err)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return user_info, false
 	}
@@ -633,7 +633,7 @@ func (p *pbContext) GetUserInfoByToken(reqID string, token string) (ApiTypes.Use
 		})
 
 	if err != nil || len(records) > 1 {
-		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_184), error:%v", err)
+		var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_636), error:%v", err)
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 		return user_info, false
 	}
@@ -715,72 +715,6 @@ func (p *pbContext) IsValidSessionPocket(reqID string, session_id string) (ApiTy
 	}
 
 	return user_info, true, nil
-
-	/*
-		const users_table_name = "users"
-		records, err := p.e.App.FindRecordsByFilter(
-			users_table_name,
-			`email = {:email} && verified = true`,
-			"created",
-			10, // limit
-			0,  // offset
-			map[string]interface{}{
-				"email": user_email,
-			})
-
-		if err != nil || len(records) > 1 {
-			var error_msg = fmt.Sprintf("failed retrieving users (SHD_RCP_184), error:%v", err)
-			log.Printf("%s", error_msg)
-			return nil, false, fmt.Errorf("%s", error_msg)
-		}
-
-		if len(records) <= 0 {
-			// The cookie is not valid.
-			var error_msg = fmt.Sprintf("cookie not valid (SHD_RCP_191), error:%v", err)
-			log.Printf("%s", error_msg)
-			return nil, false, fmt.Errorf("%s", error_msg)
-		}
-
-		record := make(map[string]interface{})
-		record["id"] = records[0].GetString("id")
-		record["email"] = records[0].GetString("email")
-		record["admin"] = records[0].GetBool("admin")
-		record["created"] = records[0].GetString("created")
-		record["updated"] = records[0].GetString("updated")
-		record["emailVisibility"] = records[0].GetBool("emailVisibility")
-		record["firstName"] = records[0].GetString("firstName")
-		record["lastName"] = records[0].GetString("lastName")
-		record["isOwner"] = records[0].GetBool("isOwner")
-		record["password"] = records[0].GetString("password")
-		record["tokenKey"] = records[0].GetString("tokenKey")
-		record["verified"] = records[0].GetBool("verified")
-		record["avatar"] = records[0].GetString("avatar")
-	*/
-
-	/*
-		raw := records[0].GetDataValue("avatar")
-		if raw != nil {
-			return record, true, nil
-		}
-
-		// File fields are always arrays in PocketBase
-		fileList, ok := raw.([]any)
-		if !ok || len(fileList) == 0 {
-			var error_msg = fmt.Sprintf("invalid file data (SHD_RCP_201)")
-			log.Printf("[req=%s] %s", reqID, error_msg)
-			return record, true, nil
-		}
-
-		// Get first file
-		firstFile, ok := fileList[0].(map[string]any)
-		if !ok {
-			var error_msg = fmt.Sprintf("invalid file data (SHD_RCP_209)")
-			log.Printf("[req=%s] %s", reqID, error_msg)
-			return record, true, nil
-		}
-
-		record["avatar"] = firstFile
-	*/
 }
 
 // Helper: download image from URL and upload to PB storage

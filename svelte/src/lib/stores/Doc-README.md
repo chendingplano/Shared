@@ -23,7 +23,7 @@ import { query_builder, cond_builder, join_builder } from '@chendingplano/shared
 
 // Simple query
 const users = await query_builder
-    .select('id', 'username', 'email')
+    .select('id', 'userame', 'email')
     .from('users')
     .where(cond_builder.filter().condEq('status', 'active'))
     .execute();

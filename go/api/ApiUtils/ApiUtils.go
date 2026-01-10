@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"net/smtp"
 	"net/url"
@@ -20,6 +20,8 @@ import (
 	"github.com/lib/pq"
 )
 
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 func GenerateSecureToken(length int) string {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
@@ -30,8 +32,8 @@ func GenerateSecureToken(length int) string {
 
 // EmailSenderFunc is the signature for custom email sender functions.
 // Apps can register their own email sender to use their preferred email service and styling.
-// Parameters: reqID (for logging), to (recipient), subject, htmlBody, loc (caller location for logging)
-type EmailSenderFunc func(reqID, to, subject, htmlBody, loc string) error
+// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location for logging)
+type EmailSenderFunc func(reqID, to, subject, textBody, htmlBody, loc string) error
 
 // customEmailSender holds the registered custom email sender function.
 // If nil, the default SMTP sender is used.
@@ -41,51 +43,94 @@ var customEmailSender EmailSenderFunc
 // Call this during app initialization to use your own email service (e.g., Resend).
 func SetEmailSender(sender EmailSenderFunc) {
 	customEmailSender = sender
-	log.Println("Custom email sender registered")
+	logger.Info("Custom email sender registered")
 }
 
 // SendMail sends an email using either the custom sender (if registered) or default SMTP.
 // Example usage:
 //
-//	err := SendMail("user@example.com", "Verify your email", "<p>Click here...</p>")
-func SendMail(reqID, to, subject, body string, loc string) error {
+//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC")
+func SendMail(reqID, to, subject, textBody, htmlBody string, loc string) error {
 	// Use custom sender if registered
 	if customEmailSender != nil {
-		return customEmailSender(reqID, to, subject, body, loc)
+		return customEmailSender(reqID, to, subject, textBody, htmlBody, loc)
 	}
 
 	// Fall back to default SMTP sender
-	return sendMailSMTP(reqID, to, subject, body, loc)
+	return sendMailSMTP(reqID, to, subject, textBody, htmlBody, loc)
 }
 
 // sendMailSMTP is the default SMTP-based email sender using Gmail.
-func sendMailSMTP(reqID, to, subject, body string, loc string) error {
-	// ⚙️ SMTP server configuration
-	from := "chending1111@gmail.com"
-	password := "fonn wwrr jthy ylph"
-	smtpHost := "smtp.gmail.com"
-	smtpPort := "587"
+func sendMailSMTP(reqID, to, subject, textBody, htmlBody string, loc string) error {
+	// ⚙️ SMTP server configuration from environment variables
+	from := os.Getenv("SMTP_FROM")
+	if from == "" {
+		error_msg := "Missing SMTP_FROM environment variable"
+		logger.Error("***** Alarm", "error", error_msg)
+		from = "chending1111@gmail.com" // fallback
+	}
 
-	// 📩 Message headers and body
-	msg := []byte(fmt.Sprintf(
-		"From: %s\r\n"+
-			"To: %s\r\n"+
-			"Subject: %s\r\n"+
-			"MIME-version: 1.0;\r\n"+
-			"Content-Type: text/html; charset=\"UTF-8\";\r\n\r\n"+
-			"%s\r\n", from, to, subject, body))
+	password := os.Getenv("SMTP_PASSWORD")
+	if password == "" {
+		password = "fonn wwrr jthy ylph" // fallback
+	}
+
+	smtpHost := os.Getenv("SMTP_HOST")
+	if smtpHost == "" {
+		smtpHost = "smtp.gmail.com" // fallback
+	}
+
+	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "587" // fallback
+	}
+
+	// Generate MIME boundary
+	boundary := "boundary-" + GenerateSecureToken(16)
+
+	// 📩 Build multipart message with both text and HTML versions
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("From: %s\r\n", from))
+	msg.WriteString(fmt.Sprintf("To: %s\r\n", to))
+	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	msg.WriteString("MIME-Version: 1.0\r\n")
+	msg.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary))
+	msg.WriteString("\r\n")
+
+	// Plain text part
+	if textBody != "" {
+		msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+		msg.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 7bit\r\n")
+		msg.WriteString("\r\n")
+		msg.WriteString(textBody)
+		msg.WriteString("\r\n\r\n")
+	}
+
+	// HTML part
+	if htmlBody != "" {
+		msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+		msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 7bit\r\n")
+		msg.WriteString("\r\n")
+		msg.WriteString(htmlBody)
+		msg.WriteString("\r\n\r\n")
+	}
+
+	// Closing boundary
+	msg.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 
 	// 🔐 Authentication
 	auth := smtp.PlainAuth("", from, password, smtpHost)
 
 	// 🚀 Send email
-	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, msg)
+	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, []byte(msg.String()))
 	if err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
-	fmt.Printf("[req=%s] (SHD_AUT_036:%s) Email sent successfully to %s, subject:%s, content:%s\n",
-		reqID, loc, to, subject, body)
+	fmt.Printf("[req=%s] (SHD_AUT_036:%s) Email sent successfully to %s, subject:%s\n",
+		reqID, loc, to, subject)
 	return nil
 }
 
@@ -206,7 +251,7 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-		log.Printf("[req=%s] ***** Alarm %s:", reqID, error_msg.Error())
+		logger.Error("***** Alarm", "req", reqID, "error", error_msg.Error())
 		return ApiTypes.UserInfo{}, false, error_msg
 	}
 
@@ -215,18 +260,17 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 	if err != nil || !user_name.Valid {
 		if err == sql.ErrNoRows {
 			error_msg := fmt.Sprintf("user not found:%s (SHD_DBS_333)", user_name.String)
-			log.Printf("[req=%s] %s", reqID, error_msg)
+			logger.Warn("+++++ WARN", "req", reqID, "error", error_msg)
 			return ApiTypes.UserInfo{}, false, nil
 
 		}
 
 		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_240): %w", err)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
 		return ApiTypes.UserInfo{}, false, error_msg
 	}
 
-	log.Printf("[req=%s] Check session (SHD_DBS_271), stmt: %s, user_name:%s",
-		reqID, query, user_name.String)
+	logger.Info("Check session (SHD_DBS_271)", "req", reqID, "stmt", query, "user_name", user_name.String)
 
 	const selected_fields = "user_id, user_name, user_id_type, first_name, last_name," +
 		"email, user_mobile, user_address, verified, is_admin, " +
@@ -246,7 +290,7 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-		log.Printf("[req=%s] ***** Alarm %s:", reqID, error_msg.Error())
+		logger.Error("***** Alarm", "req", reqID, "error", error_msg.Error())
 		return ApiTypes.UserInfo{}, false, error_msg
 	}
 
@@ -275,12 +319,12 @@ func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool,
 	if err != nil {
 		if err == sql.ErrNoRows {
 			error_msg := fmt.Sprintf("user not found:%s (SHD_DBS_243)", user_name.String)
-			log.Printf("[req=%s] %s", reqID, error_msg)
+			logger.Warn("+++++ WARN", "req", reqID, "error", error_msg)
 			return ApiTypes.UserInfo{}, false, nil
 		}
 
 		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_248): %w", err)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
 		return ApiTypes.UserInfo{}, false, error_msg
 	}
 
@@ -370,7 +414,7 @@ func GetOAuthRedirectURL(
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
 		error_msg := fmt.Sprintf("missing APP_DOMAIN_NAME env var, set to:%s", home_domain)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
 	}
 
 	// Ensure home_domain has a scheme (http:// or https://)
@@ -416,7 +460,8 @@ func GetDefahotHomeURL() string {
 // with the specified length using letters, numbers, and special characters
 func GeneratePassword(length int) string {
 	if length <= 0 {
-		log.Printf("***** Alarm: invalid length:%d, default to 12 (SHD_UTL_419)", length)
+		logger.Error("***** Alarm", "invalid length", length,
+			"default to", "12", "loc", " (SHD_UTL_419)")
 		length = 12
 	}
 
@@ -439,7 +484,7 @@ func GeneratePassword(length int) string {
 		// Generate a random index within the charset range
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
 		if err != nil {
-			log.Printf("***** Alarm: failed to generate random number: %v", err)
+			logger.Error("***** Alarm", "failed to generate random number", err)
 			// Create a new *big.Int from the fallback value
 			randomIndex = big.NewInt(int64(i % charsetLength))
 		}
@@ -452,12 +497,15 @@ func GeneratePassword(length int) string {
 // GeneratePasswordCustom allows custom character sets and length
 func GeneratePasswordCustom(length int, charset string) string {
 	if length <= 0 {
-		log.Printf("***** Alarm: invalid length:%d, default to 12 (SHD_UTL_453)", length)
+		logger.Error("***** Alarm", "invalid length", length,
+			"default to", "12", "loc", "SHD_UTL_453")
 		length = 12
 	}
 
 	if len(charset) == 0 {
-		log.Printf("***** Alarm: invalid charset:%d, use default (SHD_UTL_458)", length)
+		logger.Error("***** Alarm", "invalid charset", length,
+			"default to", "12", "loc", "SHD_UTL_458")
+		length = 12
 		return GeneratePassword(length)
 	}
 
@@ -467,7 +515,8 @@ func GeneratePasswordCustom(length int, charset string) string {
 	for i := 0; i < length; i++ {
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
 		if err != nil {
-			log.Printf("failed to generate random number: %v (SHD_UTL_468)", err)
+			logger.Error("***** Alarm", "failed to generate random number", err,
+				"loc", "SHD_UTL_468")
 			// Create a new *big.Int from the fallback value
 			randomIndex = big.NewInt(int64(i % charsetLength))
 		}
