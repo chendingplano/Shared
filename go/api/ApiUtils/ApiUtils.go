@@ -30,10 +30,17 @@ func GenerateSecureToken(length int) string {
 	return hex.EncodeToString(bytes)
 }
 
+// Email type constants for identifying email templates
+const (
+	EmailTypeGeneric       = "generic"        // Default, wrapped in basic layout
+	EmailTypeVerification  = "verification"   // Email verification with CTA button
+	EmailTypePasswordReset = "password_reset" // Password reset with CTA button
+)
+
 // EmailSenderFunc is the signature for custom email sender functions.
 // Apps can register their own email sender to use their preferred email service and styling.
-// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location for logging)
-type EmailSenderFunc func(reqID, to, subject, textBody, htmlBody, loc string) error
+// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location), emailType (template type)
+type EmailSenderFunc func(reqID, to, subject, textBody, htmlBody, loc, emailType string) error
 
 // customEmailSender holds the registered custom email sender function.
 // If nil, the default SMTP sender is used.
@@ -47,13 +54,14 @@ func SetEmailSender(sender EmailSenderFunc) {
 }
 
 // SendMail sends an email using either the custom sender (if registered) or default SMTP.
+// The emailType parameter identifies the template type (use EmailType* constants).
 // Example usage:
 //
-//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC")
-func SendMail(reqID, to, subject, textBody, htmlBody string, loc string) error {
+//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC", EmailTypeVerification)
+func SendMail(reqID, to, subject, textBody, htmlBody, loc, emailType string) error {
 	// Use custom sender if registered
 	if customEmailSender != nil {
-		return customEmailSender(reqID, to, subject, textBody, htmlBody, loc)
+		return customEmailSender(reqID, to, subject, textBody, htmlBody, loc, emailType)
 	}
 
 	// Fall back to default SMTP sender

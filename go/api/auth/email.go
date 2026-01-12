@@ -254,7 +254,7 @@ func sendVerificationEmail(reqID string, to string, url string) error {
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_351"})
 
-	return ApiUtils.SendMail(reqID, to, subject, textBody, htmlBody, "SHD_EML_284")
+	return ApiUtils.SendMail(reqID, to, subject, textBody, htmlBody, "SHD_EML_284", ApiUtils.EmailTypeVerification)
 }
 
 func HandleEmailVerify(c echo.Context) error {
@@ -747,7 +747,7 @@ func HandleForgotPasswordBase(
         <p><a href="%s">%s</a></p>
     `, user.UserName, resetURL, resetURL)
 	textBody := fmt.Sprintf("Hi %s,\n\nClick the link below to reset your password:\n%s", user.UserName, resetURL)
-	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", textBody, htmlBody, "SHD_EML_732")
+	go ApiUtils.SendMail(reqID, req.Email, "Password Reset", textBody, htmlBody, "SHD_EML_732", ApiUtils.EmailTypePasswordReset)
 
 	log_id := sysdatastores.NextActivityLogID()
 	msg := fmt.Sprintf("reset link sent to email:%s", req.Email)

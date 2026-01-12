@@ -179,7 +179,7 @@ func (e *echoContext) VerifyUserPassword(reqID string, email, password string) (
 		textBody := fmt.Sprintf("Please click the link below to reset your password:\n%s", url)
 
 		log.Printf("[req=%s] %s (SHD_EML_227)", reqID, error_msg)
-		ApiUtils.SendMail(reqID, email, subject, textBody, htmlBody, "SHD_RCE_154")
+		ApiUtils.SendMail(reqID, email, subject, textBody, htmlBody, "SHD_RCE_154", ApiUtils.EmailTypePasswordReset)
 
 		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email:%s. "+
 			"Please check your email and click the link to set your password (SHD_EML_135)", email)
