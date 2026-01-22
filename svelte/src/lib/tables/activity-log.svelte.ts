@@ -15,13 +15,11 @@ interface ActivityLogStore {
 }
 
 function createActivityLogStore(): ActivityLogStore {
-  // Initialize state from current PocketBase auth store
   let isLoggedIn = $state<boolean>(false);
   let user = $state<UserInfo | null>(null);
   let error_msg = $state<string | null>(null);
   let status = $state<'login' | 'register' | 'forgot' | 'loggedin' | 'error' | 'pending'>('login');
 
-  // Subscribe to PocketBase auth changes once, globally
   function setUserInfo(userInfo: UserInfo | null) {
     user = userInfo;
     if (user === null) {
@@ -90,7 +88,7 @@ function createActivityLogStore(): ActivityLogStore {
     },
     get isAdmin() {
       if (!user) return false;
-      return user.user_name === 'admin';
+      return user.admin? true : false;
     },
     setUserInfo,
     register,
@@ -98,4 +96,4 @@ function createActivityLogStore(): ActivityLogStore {
 }
 
 // Export a singleton instance of the auth store
-export const authStore = createActivityLogStore();
+export const activityLogStore = createActivityLogStore();

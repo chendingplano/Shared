@@ -89,4 +89,32 @@ const (
 	CustomHttpStatus_ServerException   int = 555
 	CustomHttpStatus_KeyNotUnique      int = 556
 	CustomHttpStatus_NotLoggedIn       int = 557
+	CustomHttpStatus_PasswordNotSet    int = 558
+)
+
+// Resource Operators
+type RscOpr string
+
+const (
+	RscOpr_BulkUpdate    RscOpr = "bulk_update"
+	RscOpr_BulkAddValues RscOpr = "bulk_add_values"
+	RscOpr_Content       RscOpr = "content"
+	RscOpr_Create        RscOpr = "create"
+	RscOpr_Delete        RscOpr = "delete"
+	RscOpr_List          RscOpr = "list"
+	RscOpr_ListWithConds RscOpr = "list_with_conds"
+	RscOpr_Move          RscOpr = "move"
+	RscOpr_Preview       RscOpr = "preview"
+	RscOpr_Read          RscOpr = "read"
+	RscOpr_ReadWithConds RscOpr = "read_with_conds"
+	RscOpr_Update        RscOpr = "update"
+	RscOpr_UpdateSingle  RscOpr = "update_single"
+	RscOpr_Upload        RscOpr = "upload"
+)
+
+// Resource Types
+type RscType string
+
+const (
+	RscType_Table RscType = "table"
 )

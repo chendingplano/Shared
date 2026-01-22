@@ -80,13 +80,13 @@ export const TableUsersFieldDefs: Record<string, unknown>[] =
             "element_type": ""
         },
         {
-            "field_name": "is_admin",
+            "field_name": "admin",
             "required": false,
             "read_only": false,
             "data_type": "bool",
         },
         {
-            "field_name": "emailVisibility",
+            "field_name": "email_visibility",
             "required": false,
             "read_only": false,
             "data_type": "bool",
@@ -143,7 +143,7 @@ export type UsersResponse<Texpand = unknown> = Required<UserInfo> & AuthSystemFi
 export const UsersAllFieldNames = [
     "user_id", "user_name", "user_password", "user_id_type", "firstName", 
     "lastName", "email", "user_mobile", "user_address", "verified",
-    "is_admin", "emailVisibility", "user_type", "user_status", "avatar",
+    "admin", "email_visibility", "user_type", "user_status", "avatar",
     "locale", "userToken", "created", "updated"
 ]
 

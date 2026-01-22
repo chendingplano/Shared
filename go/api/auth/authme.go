@@ -3,48 +3,38 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"os"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/RequestHandlers"
+	"github.com/chendingplano/shared/go/api/EchoFactory"
+	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 func HandleAuthMe(c echo.Context) error {
-	rc := RequestHandlers.NewFromEcho(c)
+	rc := EchoFactory.NewFromEcho(c, "SHD_ATM_017")
 	reqID := rc.ReqID()
 	status_code, resp := HandleAuthMeBase(rc, reqID)
 	c.JSON(status_code, resp)
 	return nil
 }
 
-func HandleAuthMePocket(e *core.RequestEvent) error {
-	log.Printf("AuthMe (SHD_ATH_025)")
-	rc := RequestHandlers.NewFromPocket(e)
-	reqID := rc.ReqID()
-	status_code, resp := HandleAuthMeBase(rc, reqID)
-	e.JSON(status_code, resp)
-	return nil
-}
-
 func HandleAuthMeBase(
-	rc RequestHandlers.RequestContext,
+	rc ApiTypes.RequestContext,
 	reqID string) (int, ApiTypes.JimoResponse) {
 	// This function is called by the route "/auth/me" (in Shared/go/api/auth/router.go)
-	user_info, err := rc.IsAuthenticated(reqID, "SHD_AME_014")
+	logger := rc.GetLogger()
+	user_info, err := rc.IsAuthenticated()
 	if err != nil {
 		error_msg := fmt.Sprintf("auth failed, err:%v", err)
-		/*
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				ActivityName: ApiTypes.ActivityName_Auth,
-				ActivityType: ApiTypes.ActivityType_UserNotAuthed,
-				AppName:      ApiTypes.AppName_Auth,
-				ModuleName:   ApiTypes.ModuleName_AuthMe,
-				ActivityMsg:  &error_msg,
-				CallerLoc:    "SHD_ATM_075"})
-		*/
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_UserNotAuthed,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_AuthMe,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_ATM_048"})
 
 		var resp = ApiTypes.JimoResponse{
 			Status:   false,
@@ -52,31 +42,26 @@ func HandleAuthMeBase(
 			Loc:      "SHD_AME_029",
 		}
 
-		log.Printf("AuthMe, user not logged in:%s (SHD_AME_034)", error_msg)
+		logger.Warn("user not logged in", "error", err)
 		return ApiTypes.CustomHttpStatus_NotLoggedIn, resp
 	}
 
-	/*
-		msg := fmt.Sprintf("user is logged in:%s", user_info["user_name"])
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_UserIsLoggedIn,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_AuthMe,
-			ActivityMsg:  &msg,
-			CallerLoc:    "SHD_AME_042"})
-	*/
-
 	user_info_str, _ := json.Marshal(user_info)
+	base_url := os.Getenv("APP_DOMAIN_NAME")
 	var resp = ApiTypes.JimoResponse{
 		Status:     true,
 		ErrorMsg:   "",
 		Results:    string(user_info_str),
 		ResultType: "json",
+		BaseURL:    base_url,
 		Loc:        "SHD_AME_047",
 	}
 
-	log.Printf("AuthMe success, email:%s (SHD_AME_033)", user_info.Email)
+	logger.Info("AuthMe success",
+		"email", user_info.Email,
+		"status", user_info.UserStatus,
+		"user_id", user_info.UserId,
+		"is_admin", user_info.Admin)
 	return http.StatusOK, resp
 }
 

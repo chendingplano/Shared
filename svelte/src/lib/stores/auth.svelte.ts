@@ -27,11 +27,21 @@ interface AuthStoreState {
   error_msg:        string;
   user:             UserInfo | null;
   isAdmin:          boolean;
+  isOwner:          boolean;
+  baseURL:          string;
   isImpersonating:  boolean;
   impersonatedClientId: string | null;
+  impersonatedClientName: string | null;
 }
 
 export type LoginResults = {
+  status:           boolean
+  error_msg:        string
+  redirect_url:     string
+  LOC:              string
+}
+
+export type VerifyEmailResults = {
   status:           boolean
   error_msg:        string
   redirect_url:     string
@@ -45,6 +55,7 @@ interface AuthStore {
   login:            (email: string, password: string) => Promise<LoginResults>;
   logout:           () => void;
   register: (userData: {
+    user_id:          string;
     email:            string;
     password:         string;
     passwordConfirm:  string;
@@ -52,17 +63,22 @@ interface AuthStore {
     last_name:        string;
     is_admin:         boolean;
   }) => Promise<void>;
+  verifyEmail:      (token: string, loc: string) => Promise<VerifyEmailResults>;
+  checkAuthStatus:  () => Promise<void>;
   // Add methods to check authentication state
   subscribe:        (run: (value: AuthStoreState) => void) => () => void;
   getIsLoggedIn:    () => boolean;
   getUser:          () => UserInfo | null;
   getIsAdmin:       () => boolean;
+  getIsOwner:       () => boolean;
+  getBaseURL:       () => string;
   ready:            () => Promise<void>;
   // Impersonation methods
-  startImpersonation: (clientId: string) => void;
+  startImpersonation: (clientId: string, clientName: string) => void;
   stopImpersonation:  () => void;
   getIsImpersonating: () => boolean;
   getImpersonatedClientId: () => string | null;
+  getImpersonatedClientName: () => string | null;
 }
 
 function createAuthStore(): AuthStore {
@@ -86,8 +102,11 @@ function createAuthStore(): AuthStore {
         error_msg:    '',
         user:         null,
         isAdmin:      false,
+        isOwner:      false,
+        baseURL:      '',
         isImpersonating: false,
         impersonatedClientId: null,
+        impersonatedClientName: null,
     });
 
     // Method to set user info
@@ -95,8 +114,9 @@ function createAuthStore(): AuthStore {
         update(currentState => ({
             ...currentState,
             user: userInfo,
-            isLoggedIn: userInfo !== null && userInfo.user_status === 'login',
+            isLoggedIn: userInfo !== null && userInfo.user_status === 'active',
             isAdmin: userInfo?.admin?? false,
+            isOwner: userInfo?.is_owner?? false,
         }));
     };
 
@@ -107,8 +127,11 @@ function createAuthStore(): AuthStore {
         error_msg:      '',
         user:           null,
         isAdmin:        false,
+        isOwner:        false,
+        baseURL:        '',
         isImpersonating: false,
         impersonatedClientId: null,
+        impersonatedClientName: null,
     };
 
     // Subscribe to state changes to keep currentState updated
@@ -128,8 +151,22 @@ function createAuthStore(): AuthStore {
         return currentState.isAdmin;
     };
 
+    const getIsOwner = (): boolean => {
+        return currentState.isOwner;
+    };
+
+    const getBaseURL = (): string => {
+        return currentState.baseURL;
+    };
+
     // ✅ NEW: Check if user is already logged in (via session/cookie)
     const checkAuthStatus = async () => {
+        // If already logged in with user info, skip the check
+        if (currentState.isLoggedIn && currentState.user) {
+            console.log("Already logged in (SHD_ATH_141), skipping auth check");
+            return;
+        }
+
         try {
             console.log("Fetch /auth/me (SHD_ATH_089)")
             const response = await fetch('/auth/me', {
@@ -143,19 +180,27 @@ function createAuthStore(): AuthStore {
                 console.log("Fetch /auth/me (SHD_ATH_134)")
                 const resp_json = JSON.parse(resp_text) as JimoResponse
                 const results_str = resp_json.results as string
+                const base_url = resp_json.base_url
+                if (base_url === null || base_url === "") {
+                    alert('missing base_url (ARX_ATH_185')
+                    console.error('missing base_url (ARX_ATH_185')
+                }
                 if (typeof results_str === 'string' && results_str.length > 0) {
                     const userInfo = JSON.parse(results_str) as UserInfo;
 
-                    console.log("Fetch /auth/me success (SHD_ATH_102), user_name:" + userInfo.user_name +
-                        "user name:" + userInfo.firstName+ " " + userInfo.lastName)
+                    console.log("Fetch /auth/me success (SHD_ATH_102), user_name:" + userInfo.name +
+                        "user name:" + userInfo.first_name+ " " + userInfo.last_name)
                     update(() => ({
                         isLoggedIn: !!userInfo,
                         status: 'success',
                         error_msg: '',
                         user: userInfo,
                         isAdmin: userInfo?.admin ?? false,
+                        isOwner: userInfo?.is_owner ?? false,
+                        baseURL: base_url ,
                         isImpersonating: false,
                         impersonatedClientId: null,
+                        impersonatedClientName: null,
                     }));
                 } else {
                     alert("User info is empty:" + resp_text)
@@ -169,8 +214,11 @@ function createAuthStore(): AuthStore {
                     user: null,
                     error_msg: 'failed check login',
                     isAdmin: false,
+                    isOwner: false,
+                    baseURL: '',
                     isImpersonating: false,
                     impersonatedClientId: null,
+                    impersonatedClientName: null,
                 }));
             }
         } catch (error) {
@@ -181,8 +229,11 @@ function createAuthStore(): AuthStore {
                 user: null,
                 error_msg: 'check login, exception occurred',
                 isAdmin: false,
+                isOwner: false,
+                baseURL: '',
                 isImpersonating: false,
                 impersonatedClientId: null,
+                impersonatedClientName: null,
             }));
         } finally {
             // 👇 Resolve the ready promise regardless of success/failure
@@ -238,6 +289,7 @@ function createAuthStore(): AuthStore {
                 user: userInfo,
                 isLoggedIn: userInfo !== null,
                 isAdmin: userInfo?.admin ?? false,
+                isOwner: userInfo?.is_owner?? false,
                 status: 'success',
               }
             });
@@ -261,6 +313,7 @@ function createAuthStore(): AuthStore {
               user: null,
               isLoggedIn: false,
               isAdmin: false,
+              isOwner: false,
             }));
 
             return {
@@ -275,11 +328,9 @@ function createAuthStore(): AuthStore {
     async function logout(): Promise<void> {
         try {
             const user = currentState.user;
-            const user_name = user ? user.user_name:''
+            const user_name = user ? user.name:''
             const email = user ? user.email : ''
             console.log("user_name (SHD_AST_218):", user_name, "email:", email)
-            alert("UserName1:" + user_name)
-            alert("Email1:" + email)
             const response = await fetch('/auth/logout', {
               method: 'POST',
               headers: { "Content-Type": "application/json" },
@@ -298,6 +349,7 @@ function createAuthStore(): AuthStore {
                 user: null,
                 isLoggedIn: false,
                 isAdmin: false,
+                isOwner: false,
               }));
             }
 
@@ -311,6 +363,7 @@ function createAuthStore(): AuthStore {
     }
 
     async function register(userData: {
+        user_id: string;
         email: string;
         password: string;
         passwordConfirm: string;
@@ -319,6 +372,7 @@ function createAuthStore(): AuthStore {
         is_admin: boolean;
     }): Promise<void> {
     try {
+        const user_id = userData.user_id
         const email = userData.email
         const password = userData.password
         const first_name = userData.first_name
@@ -330,17 +384,19 @@ function createAuthStore(): AuthStore {
             status: 'error',
             error_msg: 'Passwords do not match',
             user: {
-              user_name: email,
+              id: user_id,
+              userName: email,
               password: password,
               firstName: first_name,
               lastName: last_name,
               email: email,
-              user_type: "email",
+              authType: "email",
               admin: is_admin,
-              user_status: "signup"
+              userStatus: "signup"
             },
             isLoggedIn: false,
             isAdmin: false,
+            isOwner: false,
           }));
         }
 
@@ -374,12 +430,90 @@ function createAuthStore(): AuthStore {
     }
   }
 
+  async function verifyEmail(token: string, loc: string): Promise<VerifyEmailResults> {
+    try {
+        console.log("Verify email with token (SHD_ATH_383), caller:" + loc)
+        const response = await fetch(`/auth/email/verify?token=${token}`, {
+            method: 'GET',
+            credentials: 'include', // Important: include cookies
+        });
+
+        const resp_text = await response.text();
+        if (!response.ok) {
+            console.error('Email verification failed:', resp_text);
+            return {
+                status: false,
+                error_msg: resp_text || 'Email verification failed',
+                redirect_url: '',
+                LOC: 'SHD_ATH_395'
+            };
+        }
+
+        // Parse the JSON response which contains user_info and redirect_url
+        const resp_json = JSON.parse(resp_text);
+        const base_url = resp_json.base_url
+        if (base_url === null || base_url === '') {
+            alert(`missing base_url (ARX_ATH_447)`)
+            console.error(`missing base_url (ARX_ATH_447)`)
+        }
+        console.log("Email verify response (SHD_ATH_400):", resp_json);
+
+        const redirect_url = resp_json.redirect_url || '/dashboard';
+        const user_info_str = resp_json.user_info;
+
+        if (typeof user_info_str === 'string' && user_info_str.length > 0) {
+            const userInfo = JSON.parse(user_info_str) as UserInfo;
+
+            update(() => ({
+                isLoggedIn: true,
+                status: 'success',
+                error_msg: '',
+                user: userInfo,
+                isAdmin: userInfo?.admin ?? false,
+                isOwner: userInfo?.is_owner?? false,
+                baseURL: base_url,
+                isImpersonating: false,
+                impersonatedClientId: null,
+                impersonatedClientName: null,
+            }));
+
+            console.log("Email verification successful (SHD_ATH_424)");
+            return {
+                status: true,
+                error_msg: '',
+                redirect_url: redirect_url,
+                LOC: 'SHD_ATH_428'
+            };
+        }
+
+        // user_info not present in response, verification succeeded but can't update store
+        console.warn('Email verified but user_info missing in response (SHD_ATH_438)');
+        return {
+            status: false,
+            error_msg: 'Email verified but failed to get user info',
+            redirect_url: '',
+            LOC: 'SHD_ATH_438'
+        };
+    } catch (error) {
+        const error_msg = error instanceof Error ? error.message : "Unknown error";
+        console.error('Email verification error:', error_msg);
+
+        return {
+            status: false,
+            error_msg: error_msg,
+            redirect_url: '',
+            LOC: 'SHD_ATH_448'
+        };
+    }
+  }
+
   // Impersonation methods
-  const startImpersonation = (clientId: string): void => {
+  const startImpersonation = (clientId: string, clientName: string): void => {
       update(current => ({
           ...current,
           isImpersonating: true,
           impersonatedClientId: clientId,
+          impersonatedClientName: clientName,
       }));
   };
 
@@ -388,6 +522,7 @@ function createAuthStore(): AuthStore {
           ...current,
           isImpersonating: false,
           impersonatedClientId: null,
+          impersonatedClientName: null,
       }));
   };
 
@@ -399,20 +534,29 @@ function createAuthStore(): AuthStore {
       return currentState.impersonatedClientId;
   };
 
+  const getImpersonatedClientName = (): string | null => {
+      return currentState.impersonatedClientName;
+  };
+
   return {
       setUserInfo,
       login,
       logout,
       register,
+      verifyEmail,
+      checkAuthStatus,
       subscribe, // Expose the subscribe method
       getIsLoggedIn,
       getUser,
       getIsAdmin,
+      getIsOwner,
+      getBaseURL,
       ready: (): Promise<void> => readyPromise,
       startImpersonation,
       stopImpersonation,
       getIsImpersonating,
       getImpersonatedClientId,
+      getImpersonatedClientName,
   };
 }
 

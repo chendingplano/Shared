@@ -9,9 +9,11 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
+	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/chendingplano/shared/go/api/auth"
 	"github.com/chendingplano/shared/go/api/stores"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
+	"github.com/chendingplano/shared/go/authmiddleware"
 	"github.com/spf13/viper"
 )
 
@@ -49,6 +51,7 @@ func InitLib(ctx context.Context, config_path string) {
 	log.Printf("Lib Config, email_store:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
 	log.Printf("Lib Config, test:%s", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
 
+	authmiddleware.Init()
 	auth.SetAuthInfo(ApiTypes.GetDBType(),
 		ApiUtils.GetDefahotHomeURL(),
 		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions,
@@ -82,8 +85,9 @@ func InitLib(ctx context.Context, config_path string) {
 		db)
 
 	// 1. Upsert the activity_log id record
-	new_ctx := ApiUtils.AddCallFlow(ctx, "SHD_LMG_087")
-	err := sysdatastores.UpsertActivityLogIDDef(new_ctx)
+	rc := EchoFactory.NewRCAsAdmin("SHD_LMG_089")
+	defer rc.Close()
+	err := sysdatastores.UpsertActivityLogIDDef(rc)
 	if err != nil {
 		log.Printf("Failed upsert the system id record (SHD_LMG_021), err:%v", err)
 		os.Exit(1)

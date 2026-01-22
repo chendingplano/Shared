@@ -3,24 +3,22 @@ package ApiUtils
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"net/smtp"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
 )
-
-var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 func GenerateSecureToken(length int) string {
 	bytes := make([]byte, length)
@@ -39,8 +37,14 @@ const (
 
 // EmailSenderFunc is the signature for custom email sender functions.
 // Apps can register their own email sender to use their preferred email service and styling.
-// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location), emailType (template type)
-type EmailSenderFunc func(reqID, to, subject, textBody, htmlBody, loc, emailType string) error
+// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location for logging)
+type EmailSenderFunc func(
+	rc ApiTypes.RequestContext,
+	to string,
+	subject string,
+	textBody string,
+	htmlBody string,
+	emailType string) error
 
 // customEmailSender holds the registered custom email sender function.
 // If nil, the default SMTP sender is used.
@@ -50,31 +54,37 @@ var customEmailSender EmailSenderFunc
 // Call this during app initialization to use your own email service (e.g., Resend).
 func SetEmailSender(sender EmailSenderFunc) {
 	customEmailSender = sender
-	logger.Info("Custom email sender registered")
 }
 
 // SendMail sends an email using either the custom sender (if registered) or default SMTP.
 // The emailType parameter identifies the template type (use EmailType* constants).
 // Example usage:
 //
-//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC", EmailTypeVerification)
-func SendMail(reqID, to, subject, textBody, htmlBody, loc, emailType string) error {
+//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC")
+func SendMail(rc ApiTypes.RequestContext, to, subject, textBody, htmlBody string, emailType string) error {
 	// Use custom sender if registered
 	if customEmailSender != nil {
-		return customEmailSender(reqID, to, subject, textBody, htmlBody, loc, emailType)
+		return customEmailSender(rc, to, subject, textBody, htmlBody, emailType)
 	}
 
 	// Fall back to default SMTP sender
-	return sendMailSMTP(reqID, to, subject, textBody, htmlBody, loc)
+	return sendMailSMTP(rc, to, subject, textBody, htmlBody)
 }
 
 // sendMailSMTP is the default SMTP-based email sender using Gmail.
-func sendMailSMTP(reqID, to, subject, textBody, htmlBody string, loc string) error {
+func sendMailSMTP(
+	rc ApiTypes.RequestContext,
+	to string,
+	subject string,
+	textBody string,
+	htmlBody string) error {
 	// ⚙️ SMTP server configuration from environment variables
 	from := os.Getenv("SMTP_FROM")
+	logger := rc.GetLogger()
 	if from == "" {
 		error_msg := "Missing SMTP_FROM environment variable"
-		logger.Error("***** Alarm", "error", error_msg)
+		logger.Error(error_msg,
+			"action", "default to chending1111@gmail.com")
 		from = "chending1111@gmail.com" // fallback
 	}
 
@@ -137,8 +147,9 @@ func sendMailSMTP(reqID, to, subject, textBody, htmlBody string, loc string) err
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
-	fmt.Printf("[req=%s] (SHD_AUT_036:%s) Email sent successfully to %s, subject:%s\n",
-		reqID, loc, to, subject)
+	logger.Info("Email sent successfully",
+		"to", to,
+		"subject", subject)
 	return nil
 }
 
@@ -240,172 +251,8 @@ func CheckFileExists(filename string) (bool, error) {
 	return !info.IsDir(), nil
 }
 
-func IsValidSessionPG(reqID string, session_id string) (ApiTypes.UserInfo, bool, error) {
-	// This function checks whether 'session_id' is valid in the sessions table.
-	// If valid, return user_name.
-	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
-
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
-		query = fmt.Sprintf("SELECT user_name FROM %s WHERE session_id = ? AND expires_at > NOW() LIMIT 1", table_name)
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
-		query = fmt.Sprintf("SELECT user_name FROM %s WHERE session_id = $1 AND expires_at > NOW() LIMIT 1", table_name)
-
-	default:
-		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-		logger.Error("***** Alarm", "req", reqID, "error", error_msg.Error())
-		return ApiTypes.UserInfo{}, false, error_msg
-	}
-
-	var user_name sql.NullString
-	err := db.QueryRow(query, session_id).Scan(&user_name)
-	if err != nil || !user_name.Valid {
-		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("user not found:%s (SHD_DBS_333)", user_name.String)
-			logger.Warn("+++++ WARN", "req", reqID, "error", error_msg)
-			return ApiTypes.UserInfo{}, false, nil
-
-		}
-
-		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_240): %w", err)
-		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
-		return ApiTypes.UserInfo{}, false, error_msg
-	}
-
-	logger.Info("Check session (SHD_DBS_271)", "req", reqID, "stmt", query, "user_name", user_name.String)
-
-	const selected_fields = "user_id, user_name, user_id_type, first_name, last_name," +
-		"email, user_mobile, user_address, verified, is_admin, " +
-		"emailVisibility, user_type, user_status, avatar, locale"
-
-	table_name = ApiTypes.LibConfig.SystemTableNames.TableNameUsers
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
-		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_name = ? LIMIT 1",
-			selected_fields, table_name)
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
-		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_name = $1 LIMIT 1",
-			selected_fields, table_name)
-
-	default:
-		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-		logger.Error("***** Alarm", "req", reqID, "error", error_msg.Error())
-		return ApiTypes.UserInfo{}, false, error_msg
-	}
-
-	var user_info ApiTypes.UserInfo
-	var user_mobile, user_address, user_id, user_id_type,
-		first_name, last_name, avatar, locale,
-		email, verified, admin, emailVisibility,
-		user_type, user_status sql.NullString
-	err = db.QueryRow(query, user_name).Scan(
-		&user_id,
-		&user_name,
-		&user_id_type,
-		&first_name,
-		&last_name,
-		&email,
-		&user_mobile,
-		&user_address,
-		&verified,
-		&admin,
-		&emailVisibility,
-		&user_type,
-		&user_status,
-		&avatar,
-		&locale)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("user not found:%s (SHD_DBS_243)", user_name.String)
-			logger.Warn("+++++ WARN", "req", reqID, "error", error_msg)
-			return ApiTypes.UserInfo{}, false, nil
-		}
-
-		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_248): %w", err)
-		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
-		return ApiTypes.UserInfo{}, false, error_msg
-	}
-
-	if user_id.Valid {
-		user_info.UserId = user_id.String
-	}
-
-	if user_name.Valid {
-		user_info.UserName = user_name.String
-	}
-
-	if user_id_type.Valid {
-		user_info.UserIdType = user_id_type.String
-	}
-
-	if first_name.Valid {
-		user_info.FirstName = first_name.String
-	}
-
-	if last_name.Valid {
-		user_info.LastName = last_name.String
-	}
-
-	if user_mobile.Valid {
-		user_info.UserMobile = user_mobile.String
-	}
-
-	if user_address.Valid {
-		user_info.UserAddress = user_address.String
-	}
-
-	if avatar.Valid {
-		user_info.Avatar = avatar.String
-	}
-
-	if locale.Valid {
-		user_info.Locale = locale.String
-	}
-
-	if email.Valid {
-		user_info.Email = email.String
-	}
-
-	if verified.Valid {
-		/*
-			if b, err := strconv.ParseBool(verified.String); err == nil {
-				user_info.Verified = b
-			} else {
-				// Handle invalid boolean string
-				log.Printf("invalid boolean string %q in verified column", verified.String)
-				user_info.Verified = false // or return error
-			}
-		*/
-		user_info.Verified = verified.String == "true"
-	}
-
-	if admin.Valid {
-		user_info.Admin = admin.String == "true"
-	}
-
-	if emailVisibility.Valid {
-		user_info.EmailVisibility = emailVisibility.String == "true"
-	}
-
-	if user_type.Valid {
-		user_info.AuthType = user_type.String
-	}
-
-	if user_status.Valid {
-		user_info.UserStatus = user_status.String
-	}
-
-	return user_info, true, nil
+func ComposeMsg(reqID string, msg string) string {
+	return fmt.Sprintf("[req=%s] %s", reqID, msg)
 }
 
 func IsSecure() bool {
@@ -414,15 +261,16 @@ func IsSecure() bool {
 }
 
 func GetOAuthRedirectURL(
-	reqID string,
+	rc ApiTypes.RequestContext,
 	token string,
 	user_name string) string {
-	// Redirect to port 8090 (backend) 5173 (vite dev server)
+	// Redirect to backend (vite dev server)
 	// This ensures the pb_auth cookie is set on the correct domain
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	logger := rc.GetLogger()
 	if home_domain == "" {
-		error_msg := fmt.Sprintf("missing APP_DOMAIN_NAME env var, set to:%s", home_domain)
-		logger.Error("***** Alarm", "req", reqID, "error", error_msg)
+		error_msg := "missing APP_DOMAIN_NAME env var"
+		logger.Error(error_msg)
 	}
 
 	// Ensure home_domain has a scheme (http:// or https://)
@@ -460,16 +308,20 @@ func GenerateRequestID(key string) string {
 }
 
 func GetDefahotHomeURL() string {
-	var url = fmt.Sprintf("%s%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_ENDPOINT"))
+	var url = fmt.Sprintf("%s/%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_APP"))
 	return url
 }
 
 // GeneratePassword creates a cryptographically secure random password
 // with the specified length using letters, numbers, and special characters
-func GeneratePassword(length int) string {
+func GeneratePassword(
+	rc ApiTypes.RequestContext,
+	length int) string {
+	logger := rc.GetLogger()
 	if length <= 0 {
-		logger.Error("***** Alarm", "invalid length", length,
-			"default to", "12", "loc", " (SHD_UTL_419)")
+		logger.Error("invalid length",
+			"length", length,
+			"action", "default to 12")
 		length = 12
 	}
 
@@ -492,7 +344,9 @@ func GeneratePassword(length int) string {
 		// Generate a random index within the charset range
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
 		if err != nil {
-			logger.Error("***** Alarm", "failed to generate random number", err)
+			logger.Error(
+				"failed to generate random number",
+				"error", err)
 			// Create a new *big.Int from the fallback value
 			randomIndex = big.NewInt(int64(i % charsetLength))
 		}
@@ -503,18 +357,25 @@ func GeneratePassword(length int) string {
 }
 
 // GeneratePasswordCustom allows custom character sets and length
-func GeneratePasswordCustom(length int, charset string) string {
+func GeneratePasswordCustom(
+	rc ApiTypes.RequestContext,
+	length int,
+	charset string) string {
+	logger := rc.GetLogger()
 	if length <= 0 {
-		logger.Error("***** Alarm", "invalid length", length,
-			"default to", "12", "loc", "SHD_UTL_453")
+		logger.Error(
+			"invalid length",
+			"length", length,
+			"action", "default to 12")
 		length = 12
 	}
 
 	if len(charset) == 0 {
-		logger.Error("***** Alarm", "invalid charset", length,
+		logger.Error(
+			"***** Alarm", "invalid charset", length,
 			"default to", "12", "loc", "SHD_UTL_458")
 		length = 12
-		return GeneratePassword(length)
+		return GeneratePassword(rc, length)
 	}
 
 	charsetLength := len(charset)
@@ -523,7 +384,8 @@ func GeneratePasswordCustom(length int, charset string) string {
 	for i := 0; i < length; i++ {
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLength)))
 		if err != nil {
-			logger.Error("***** Alarm", "failed to generate random number", err,
+			logger.Error(
+				"***** Alarm", "failed to generate random number", err,
 				"loc", "SHD_UTL_468")
 			// Create a new *big.Int from the fallback value
 			randomIndex = big.NewInt(int64(i % charsetLength))
@@ -532,4 +394,46 @@ func GeneratePasswordCustom(length int, charset string) string {
 	}
 
 	return string(password)
+}
+
+func ParseTimestamp(s string) (time.Time, error) {
+	// Code generated by LLM on 2026/01/14 by Chen Ding
+	// IMPORTANT: It is highly discouraged to use this function unless
+	// you have to. When reading data from databases, for instance,
+	// you should use a variable with type time.Time and scan it
+	// into this time.Time variable. This can avoid parsing the string.
+	// This code is only a best effort. Different string formats may
+	// break it!
+	//
+	// Note: this function is kind of specific to PostgreSQL. If you
+	// are using other databases, please verify it before using it!
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	// Try common PostgreSQL formats
+	layouts := []string{
+		"2006-01-02 15:04:05.999999-07:00",
+		"2006-01-02 15:04:05.999999-07",
+		"2006-01-02 15:04:05.999999 MST",
+		"2006-01-02 15:04:05.999999",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05-07",
+		"2006-01-02 15:04:05 MST",
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+		time.RFC3339Nano,
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unable to parse timestamp: %s", s)
+}
+
+func GenerateUUID() string {
+	return uuid.NewString()
 }

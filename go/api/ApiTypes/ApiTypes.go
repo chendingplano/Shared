@@ -1,9 +1,13 @@
 package ApiTypes
 
 import (
+	"context"
 	"database/sql"
+	"io"
+	"net/http"
 	"time"
 
+	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/shopspring/decimal"
 )
 
@@ -25,8 +29,8 @@ type IDRecordDef struct {
 
 type ContextKey string
 
-const CallFlowKey ContextKey = "call_flow"
-const RequestIDKey ContextKey = "reqID"
+const CallFlowKey = "jimo_call_flow"
+const RequestIDKey = "jimo_req_id"
 
 type LibConfigDef struct {
 	IDStartValue int `mapstructure:"id_start_value"`
@@ -294,6 +298,7 @@ type JimoResponse struct {
 	ResultType string      `json:"result_type"`
 	NumRecords int         `json:"num_records"`
 	TableName  string      `json:"table_name"`
+	BaseURL    string      `json:"base_url,omitempty"`
 	Results    interface{} `json:"results"`
 	ErrorCode  int         `json:"error_code"`
 	Loc        string      `json:"loc,omitempty"`
@@ -363,26 +368,31 @@ type UserAccount struct {
 
 // Make sure this struct syncs with Shared/svelte/src/lib/types/CommonTypes.ts::UserInfo
 type UserInfo struct {
-	UserId                string `json:"user_id"`
-	UserName              string `json:"user_name"`
-	Password              string `json:"password"`
-	UserIdType            string `json:"user_id_type"`
-	FirstName             string `json:"firstName"`
-	LastName              string `json:"lastName"`
-	Email                 string `json:"email"`
-	UserMobile            string `json:"user_mobile,omitempty"`
-	UserAddress           string `json:"user_address"`
-	Verified              bool   `json:"verfied"`
-	Admin                 bool   `json:"admin"`
-	EmailVisibility       bool   `json:"emailVisibility"`
-	AuthType              string `json:"auth_type"`
-	UserStatus            string `json:"user_status"`
-	Avatar                string `json:"avatar"`
-	Locale                string `json:"locale"`
-	VToken                string `json:"v_token"`
-	OutlookRefreshToken   string `json:"outlookRefreshToken"`
-	OutlookAccessToken    string `json:"outlookAccessToken"`
-	OutlookTokenExpiresAt string `json:"outlookTokenExpiresAt"`
+	UserId                string    `json:"id"`
+	UserName              string    `json:"name"`
+	Password              string    `json:"password"`
+	UserIdType            string    `json:"user_id_type"`
+	FirstName             string    `json:"first_name"`
+	LastName              string    `json:"last_name"`
+	Email                 string    `json:"email"`
+	UserMobile            string    `json:"user_mobile,omitempty"`
+	UserAddress           string    `json:"user_address"`
+	Verified              bool      `json:"verfied"`
+	Admin                 bool      `json:"admin"`
+	IsOwner               bool      `json:"is_owner"`
+	EmailVisibility       bool      `json:"email_visibility"`
+	AuthType              string    `json:"auth_type"`
+	UserStatus            string    `json:"user_status"`
+	Avatar                string    `json:"avatar"`
+	Locale                string    `json:"locale"`
+	OutlookRefreshToken   string    `json:"outlook_refresh_token"`
+	OutlookAccessToken    string    `json:"outlook_access_token"`
+	OutlookTokenExpiresAt time.Time `json:"outlook_token_expires_at"`
+	OutlookSubID          string    `json:"outlook_sub_id"`
+	OutlookSubExpiresAt   time.Time `json:"outlook_sub_expires_at"`
+	VToken                string    `json:"v_token"`
+	Created               time.Time `json:"created"`
+	Updated               time.Time `json:"updated"`
 }
 
 // Make sure this struct syncs with tax/web/src/lib/pocketbas-types.ts::UsersRecord
@@ -400,4 +410,64 @@ type UserInfoPocket struct {
 	Password        string `json:"password"`
 	TokenKey        string `json:"tokenKey"`
 	Verified        bool   `json:"verfied"`
+}
+
+// RequestContext is a framework-agnostic wrapper for request-scoped data
+type RequestContext interface {
+	// Context returns the underlying Go context (for deadlines, cancellation, values)
+	Context() context.Context
+	GetLogger() *loggerutil.JimoLogger
+
+	// ReqID returns a unique request ID (guaranteed non-empty)
+	ReqID() string
+	Close()
+
+	// SetReqID stores the reqID in the context (idempotent)
+	SetReqID(reqID string)
+
+	GetCookie(name string) string
+	SetCookie(session_id string)
+	GetUserID() string
+	IsAuthenticated() (*UserInfo, error)
+	FormValue(name string) string
+	GetBody() io.ReadCloser
+	GetRequest() *http.Request
+	Bind(v interface{}) error
+	QueryParam(key string) string
+	GetUserInfoByEmail(email string) (*UserInfo, bool)
+	GetUserInfoByToken(token string) (*UserInfo, bool)
+	GetUserInfoByUserID(user_id string) (*UserInfo, bool)
+	MarkUserVerified(email string) error
+	UpdateTokenByEmail(email string, token string) error
+	VerifyUserPassword(email string, plaintextPassword string) (bool, int, string)
+	UpdatePassword(email string, plaintextPassword string) (bool, int, string)
+	SendHTMLResp(html_str string) error
+	SendJSONResp(status_code int, json_resp map[string]interface{}) error
+	JSON(status_code int, json_resp map[string]interface{}) error
+	GenerateAuthToken(email string) (string, error)
+	Redirect(redirect_url string, status_code int) error
+	IsAuthed() bool
+	GetCallFlow() string
+	PushCallFlow(loc string) string
+	PopCallFlow() string
+
+	UpsertUser(
+		user_info *UserInfo,
+		plain_password string,
+		verified bool,
+		admin bool,
+		is_owner bool,
+		email_visibility bool,
+		is_update bool) (*UserInfo, error)
+
+	SaveSession(
+		login_method string,
+		session_id string,
+		auth_token string,
+		user_name string,
+		user_name_type string,
+		user_reg_id string,
+		user_email string,
+		expiry time.Time,
+		need_update_user bool) error
 }

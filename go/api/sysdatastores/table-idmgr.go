@@ -1,7 +1,6 @@
 package sysdatastores
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -60,7 +59,7 @@ func CreateIDMgrTable(
 	return nil
 }
 
-func AddOneID(record IDMgrDef) error {
+func AddOneID(rc ApiTypes.RequestContext, record IDMgrDef) error {
 	var stmt string
 	var db *sql.DB
 	db_type := ApiTypes.GetDBType()
@@ -96,16 +95,16 @@ func AddOneID(record IDMgrDef) error {
 	return nil
 }
 
-func UpsertActivityLogIDDef(ctx context.Context) error {
+func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 	// 2. Insert a record to id_mgr for activity_log id.
 	field_names := "id_name, crt_value, id_desc, caller_loc"
+	logger := rc.GetLogger()
 	var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr
 	if table_name == "" {
-		call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-		error_msg := fmt.Sprintf("IDMgr table name is empty (%s->SHD_IMG_200)", call_flow)
-		log.Printf("***** Alarm: %s", error_msg)
+		error_msg := "IDMgr table name is empty (SHD_IMG_200)"
+		logger.Error("IDMgr table name is empty")
 		return fmt.Errorf("%s", error_msg)
 	}
 
@@ -125,14 +124,14 @@ func UpsertActivityLogIDDef(ctx context.Context) error {
 	default:
 		// SHOULD NEVER HAPPEN!!!
 		error_msg := fmt.Sprintf("unrecognized db_type:%s (SHD_IMG_033)", db_type)
-		log.Printf("***** Alarm: %s", error_msg)
+		logger.Error("db_type not supported", "db_type", db_type)
 		return fmt.Errorf("%s", error_msg)
 	}
 
 	_, err := db.Exec(stmt, "activity_log_id", 10000, "activity_log_id", "SHD_IMG_043")
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to insert activity_log_id record (SHD_IMG_126): %v, stmt:%s", err, stmt)
-		log.Printf("***** Alarm %s", error_msg)
+		logger.Error("failed inserting record", "error", err, "stmt", stmt)
 		return fmt.Errorf("%s", error_msg)
 	}
 

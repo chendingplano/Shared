@@ -11,6 +11,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // Define the Cache.
@@ -27,6 +28,7 @@ type ActivityLogCache struct {
 	activity_log_insert_fieldnames string
 	done                           chan struct{}  // Signals shutdown
 	wg                             sync.WaitGroup // Tracks background goroutine
+	logger                         *loggerutil.JimoLogger
 }
 
 // Global singleton instance and initialization guard
@@ -130,6 +132,10 @@ func (c *ActivityLogCache) StopActivityLogCache() {
 func newActivityLogCache(db_type string,
 	table_name string,
 	db *sql.DB) *ActivityLogCache {
+	logger := loggerutil.CreateLogger2(
+		loggerutil.ContextTypeBackground,
+		loggerutil.LogHandlerTypeDefault,
+		10000)
 	return &ActivityLogCache{
 		db:                             db,
 		db_type:                        db_type,
@@ -138,6 +144,7 @@ func newActivityLogCache(db_type string,
 		crt_log_id:                     -1,
 		num_log_ids:                    0,
 		id_name:                        "activity_log_id",
+		logger:                         logger,
 		activity_log_insert_fieldnames: "log_id, activity_name, activity_type, app_name, module_name, activity_msg, activity_notes, caller_loc",
 	}
 }
@@ -158,14 +165,17 @@ func (c *ActivityLogCache) nextLogID() int64 {
 	if c.num_log_ids <= 0 {
 		// Need to fetch a new block of IDs
 		block_size := 1000
+
 		start_id, err := NextIDBlock(c.id_name, block_size)
 		if err != nil {
-			log.Printf("***** Alarm: failed to get next ID block for activity_log_id: %v (SHD_ALG_141)", err)
+			c.logger.Error("failed to get next ID block for activity_log_id", "error", err)
 			return -1
 		}
 		c.crt_log_id = start_id - 1
 		c.num_log_ids = block_size
-		log.Printf("Fetched new activity_log_id block: start_id:%d, size:%d (SHD_ALG_148)", start_id, block_size)
+		c.logger.Info("Fetched new activity_log_id block",
+			"start_id", start_id,
+			"size", block_size)
 	}
 	id := c.crt_log_id
 	c.crt_log_id++
@@ -191,7 +201,7 @@ func (c *ActivityLogCache) flushLoop() {
 
 			if len(records) > 0 {
 				if err := c.insertRecords(records); err != nil {
-					log.Printf("Flush failed (ticker): %v. Records may be lost.", err)
+					c.logger.Error("flush failed (ticker). Records may be lost.", "error", err)
 				}
 			}
 		case <-c.done:
@@ -203,7 +213,7 @@ func (c *ActivityLogCache) flushLoop() {
 
 			if len(records) > 0 {
 				if err := c.insertRecords(records); err != nil {
-					log.Printf("Final flush failed: %v. Records may be lost.", err)
+					c.logger.Error("Final flush failed. Records may be lost.", "error", err)
 				}
 			}
 			return // Exit loop
@@ -223,13 +233,13 @@ func (c *ActivityLogCache) insertRecords(records []ApiTypes.ActivityLogDef) erro
 		return nil
 	}
 
-	log.Printf("Flush records, len:%d (SHD_ALG_162)", len(records))
+	// c.logger.Info("Flush records", "len", len(records))
 
 	// Start transaction
 	tx, err := c.db.Begin()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to begin transaction: %v (SHD_ALG_163)", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		c.logger.Error("failed to begin transaction", "error", err)
 		return fmt.Errorf("%s", error_msg)
 	}
 
@@ -238,7 +248,7 @@ func (c *ActivityLogCache) insertRecords(records []ApiTypes.ActivityLogDef) erro
 		if tx != nil && err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				error_msg := fmt.Sprintf("original error: %v; rollback failed: %v (SHD_ALG_169)", err, rollbackErr)
-				log.Printf("***** Alarm:%s", error_msg)
+				c.logger.Error("rollback error", "error", rollbackErr)
 				err = fmt.Errorf("%s", error_msg)
 			}
 		}
@@ -253,14 +263,14 @@ func (c *ActivityLogCache) insertRecords(records []ApiTypes.ActivityLogDef) erro
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, c.table_name, c.activity_log_insert_fieldnames)
 
 	default:
-		log.Printf("***** Alarm unrecognized database type (SHD_ALG_220):%s", c.db_type)
+		c.logger.Error("unrecognized database type (SHD_ALG_220)", "db_type", c.db_type)
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, c.table_name, c.activity_log_insert_fieldnames)
 	}
 
 	stmt1, err := tx.Prepare(stmt)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to prepare statement: %v, stmt:%s (SHD_ALG_189)", err, stmt)
-		log.Printf("***** Alarm:%s", error_msg)
+		c.logger.Error("failed to prepare statement", "error", err, "stmt", stmt)
 		return fmt.Errorf("%s", error_msg)
 	}
 
@@ -283,7 +293,7 @@ func (c *ActivityLogCache) insertRecords(records []ApiTypes.ActivityLogDef) erro
 			record.CallerLoc)
 		if err != nil {
 			error_msg := fmt.Sprintf("record %d (log_id=%d) insert failed: %v (SHD_ALG_230)", i, record.LogID, err)
-			log.Printf("***** Alarm:%s", error_msg)
+			c.logger.Error("database error", "error", err, "stmt", stmt)
 			return fmt.Errorf("%s", error_msg)
 		}
 	}
@@ -291,7 +301,7 @@ func (c *ActivityLogCache) insertRecords(records []ApiTypes.ActivityLogDef) erro
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		error_msg := fmt.Sprintf("failed to commit transaction: %v (SHD_ALG_236)", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		c.logger.Error("failed to commit", "error", err)
 		return fmt.Errorf("%s", error_msg)
 	}
 	return nil

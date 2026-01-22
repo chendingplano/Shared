@@ -1,9 +1,11 @@
-import type { IsoAutoDateString } from "./DatabaseTypes";
+import type { IsoAutoDateString, IsoDateString } from "./DatabaseTypes";
 
 export interface EmailSignupResponse {
     message: string;
     loc:     string;
 }
+
+export type FileNameString = string & { readonly filename: unique symbol }
 
 // Make sure it syncs with go/api/ApiTypes/enums.go:
 export enum RequestType {
@@ -157,6 +159,7 @@ export type JimoResponse = {
     result_type:    string;
     error_code:     number;
     table_name:     string;
+    base_url:       string;
     num_records:    number;
     results:        JsonObjectOrArray | string;
 	loc:            string;
@@ -186,24 +189,37 @@ export type ResourceDef = {
 } & Record<string, unknown>;
 
 // Make sure this struct syncs with Shared/go/api/ApiTypes/ApiTypes.go::UserInfo
-export interface UserInfo {
-    user_id?:           string;
-    user_name:          string;
-	password:           string;
-    user_id_type?:      string;
-    firstName?:         string;
-    lastName?:          string;
-    email?:             string;
-    user_mobile?:       string;
-    user_address?:      string;
-    verified?:          boolean;
-    admin:              boolean;
-    emailVisibility?:   boolean;
-    user_type:          string;
-    user_status:        string;
-    avatar?:            string;
-    locale?:            string;
-    v_token?:           string;
-    created?:           IsoAutoDateString;
-    updated?:           IsoAutoDateString;
+export type UserInfo = {
+	id:                 string
+	name?:              string 
+	password?:          string
+	user_id_type?:      string 
+	first_name?:        string
+	last_name?:         string
+	email:              string
+	user_mobile?:       string
+	user_address?:      string 
+	verified?:          boolean
+	admin?:             boolean
+	is_owner?:          boolean
+	email_visibility?:  boolean
+	auth_type?:         string
+	user_status?:       string
+	avatar?:            FileNameString
+	locale?:            string
+	outlook_refresh_token?: string
+	outlook_access_token?:string
+	outlook_token_expires_at?: IsoDateString
+	outlook_sub_id?:    string
+	outlook_sub_expires_at?: IsoDateString
+	v_token?:           string
+	created?:           IsoAutoDateString
+	updated?:           IsoAutoDateString
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
 }

@@ -100,7 +100,7 @@ func GetResourceStoreTableDesc() string {
 // Resources are identified by resource_name and resource_opr.
 // Returns error if not found or other errors.
 // Otherwise returns the resource record.
-func GetResourceByName(resource_name string, resource_action string) (ApiTypes.ResourceDef, error) {
+func GetResourceByName(rc ApiTypes.RequestContext, resource_name string, resource_action string) (ApiTypes.ResourceDef, error) {
 	// This function retrieves a prompt record by prompt_name.
 	var query string
 	var db *sql.DB

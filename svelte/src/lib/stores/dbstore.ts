@@ -1,6 +1,3 @@
-import (
-    "os"
-)
 
 import { z, ZodType, ZodObject, type ZodRawShape } from "zod"
 import type {
@@ -17,9 +14,9 @@ import type {
             QueryResults,
             UpdateWithCondDef, 
             UpdateDef} from '$lib/types/CommonTypes';
-import {ParseObjectOrArray} from '$lib/utils/UtilFuncs'
 import {CustomHttpStatus, RequestType} from '$lib/types/CommonTypes';
 import { StatusCodes } from 'http-status-codes';
+import ( "os")
 
 export type QueryResult = {
     valid:          boolean,
@@ -34,6 +31,7 @@ export const EmptyJimoResponse: JimoResponse = {
     req_id:         '',
     result_type:    'none',
     table_name:     '',
+    base_url:       '',
     num_records:    0,
     results:        '',
     loc:            'SHD_DST_029'
@@ -144,23 +142,34 @@ async function handleResp(resp: Response): Promise<JimoResponse> {
 // The function updateRecord implements the UPDATE-like operation.
 // The function deleteRecord implements the DELETE-like operation.
 class DBStore {
-    private domain_name: string;
+    private home_url: string;
+    private data_home: string;
+    private file_dir: string;
 
-    constructor(domain_name: string = '') {
-        this.domain_name = domain_name
+    constructor() {
+        this.home_url = "http://localhost:5173"
+        this.data_home = "Data"
+        this.file_dir = "CustomerFiles"
     }
 
-    getFileURL(user_name: string, filename: string, token: string): string {
+    getFileURLByUserId(
+        user_id: string, 
+        filename: string, 
+        file_prefix: string,
+        token: string): string {
         // The URL for a file is composed:
-        // 'http://<domain_name>:<port>/<data_dir>/<username>/<filename>
-        // TBD: will use config!!!
-        if (typeof filename === "string" && filename.length > 0) {
-            if (!this.domain_name) {
-                console.error("missing env var (SHD_DST_212)")
-                return ""
-            }
+        // '<home_url>/<data_home>/<file_dir>/<user_id>/<filename>
+        // If filename starts with 'https://', return it directly
+        if (filename.startsWith("https://") || filename.startsWith("http://")) {
+            return filename
+        }
 
-            return `${this.domain_name}/data/custom_files/${user_name}/${filename}`
+        if (typeof filename === "string" && filename.length > 0) {
+            if (file_prefix != "") {
+                return `/api/files/${this.data_home}/${this.file_dir}/${user_id}/${file_prefix}_${filename}`
+            } else {
+                return `/api/files/${this.data_home}/${this.file_dir}/${user_id}/${filename}`
+            }
         }
         console.log('invalid filename:' + filename)
         return ""
@@ -308,6 +317,7 @@ class DBStore {
                     result_type:    'exception',
                     error_code:     CustomHttpStatus.ServerException,
                     table_name:     table_name,
+                    base_url:       '',
                     num_records:    0,
                     results:        '',
                     loc:            'SHD_DST_176'
@@ -331,6 +341,7 @@ class DBStore {
             error_msg:      error_msg,
             result_type:    'exception',
             table_name:     table_name,
+            base_url:       '',
             num_records:    0,
             results:        '',
             error_code:     CustomHttpStatus.ServerException,
@@ -485,6 +496,7 @@ class DBStore {
                     result_type:    'exception',
                     error_code:     500,
                     table_name:     table_name,
+                    base_url:       '',
                     num_records:    0,
                     results:        '',
                     loc:            'SHD_DST_176'
@@ -509,6 +521,7 @@ class DBStore {
             result_type:    'exception',
             num_records:    0,
             table_name:     table_name,
+            base_url:       '',
             results:        '',
             error_code:     500,
             loc:            'SHD_DST_196'
@@ -560,6 +573,7 @@ class DBStore {
                     error_msg:      error_msg,
                     result_type:    'exception',
                     table_name:     table_name,
+                    base_url:       '',
                     num_records:    0,
                     results:        '',
                     error_code:     CustomHttpStatus.ServerException,
@@ -573,15 +587,12 @@ class DBStore {
                     result_type:    'exception',
                     num_records:    0,
                     table_name:     table_name,
+                    base_url:       '',
                     results:        '',
                     error_code:     CustomHttpStatus.ServerException,
                     loc:            'SHD_DST_464'
             }
         } 
-    }
-
-    setDomainName(domain_name: string) {
-        this.domain_name = domain_name
     }
 
     async getToken() : Promise<[string, number, string]> {

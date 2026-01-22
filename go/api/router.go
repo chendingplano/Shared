@@ -6,8 +6,6 @@ import (
 	"github.com/chendingplano/shared/go/api/RequestHandlers"
 	"github.com/chendingplano/shared/go/api/auth"
 	"github.com/labstack/echo/v4"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 func RegisterRoutes(e *echo.Echo) {
@@ -49,6 +47,9 @@ func RegisterRoutes(e *echo.Echo) {
 	log.Println("Register /auth/email/verify route (SHD_RTR_052)")
 	e.POST("/auth/email/verify", auth.HandleEmailVerify)
 
+	log.Println("Register /auth/email/verify route (SHD_RTR_052)")
+	e.GET("/auth/email/verify", auth.HandleEmailVerify)
+
 	log.Println("Register /auth/email/forgot route (SHD_RTR_055)")
 	e.POST("/auth/email/forgot", auth.HandleForgotPassword)
 
@@ -65,6 +66,7 @@ func RegisterRoutes(e *echo.Echo) {
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 }
 
+/*
 func RegisterRoutesPocket(router *router.Router[*core.RequestEvent]) {
 	log.Println("Register /auth/google/login route (SHD_RTR_068)")
 	router.GET("/auth/google/login", func(e *core.RequestEvent) error {
@@ -91,10 +93,10 @@ func RegisterRoutesPocket(router *router.Router[*core.RequestEvent]) {
 		return auth.HandleEmailLoginPocket(e)
 	})
 
-	log.Println("Register /auth/me route (SHD_RTR_093)")
-	router.GET("/auth/me", func(e *core.RequestEvent) error {
-		return auth.HandleAuthMePocket(e)
-	})
+	// log.Println("Register /auth/me route (SHD_RTR_093)")
+	// router.GET("/auth/me", func(e *core.RequestEvent) error {
+	// 	return auth.HandleAuthMePocket(e)
+	// })
 
 	log.Println("Register /auth/email/signup route (SHD_RTR_098)")
 	router.POST("/auth/email/signup", func(e *core.RequestEvent) error {
@@ -126,3 +128,4 @@ func RegisterRoutesPocket(router *router.Router[*core.RequestEvent]) {
 		return auth.HandleResetPasswordConfirmPocket(e) // user submits new password
 	})
 }
+*/

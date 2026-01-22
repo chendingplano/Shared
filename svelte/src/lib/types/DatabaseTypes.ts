@@ -1,5 +1,6 @@
 export type RecordIdString = string
 export type IsoAutoDateString = string & { readonly autodate: unique symbol }
+export type IsoDateString = string
 
 export enum DBNames {
 	DB_Tax 			= "tax",

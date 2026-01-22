@@ -259,34 +259,37 @@ func StrPtr(s string) *string {
 }
 
 func UpdateVTokenByEmail(
+	rc ApiTypes.RequestContext,
 	db_type string,
 	table_name string,
 	user_email string,
 	token string) error {
+	logger := rc.GetLogger()
 	var db *sql.DB
 	var stmt string
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET v_token = ? WHERE user_email = ?", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = ? WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.PG_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET v_token = $1 WHERE user_email = $2", table_name)
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = $1 WHERE email = $2", table_name)
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_DBS_504): %s", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
+		logger.Error("db_type not supported", "db_type", db_type)
 		return err
 	}
 
 	_, err := db.Exec(stmt, token, user_email)
 	if err != nil {
 		error_msg := fmt.Errorf("failed to update table (SHD_DBS_511), stmt:%s, err: %w", stmt, err)
-		log.Printf("***** Alarm:%s", error_msg.Error())
+		logger.Error("failed updating user", "error", err, "stmt", stmt)
 		return error_msg
 	}
-	log.Printf("Update token success (SHD_DBS_515), user_email:%s, token:%s", user_email, token)
+
+	logger.Info("Update token success", "email", user_email, "token", token)
 	return nil
 }
 

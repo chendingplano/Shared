@@ -12,10 +12,9 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
-	"github.com/chendingplano/shared/go/api/RequestHandlers"
+	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
-	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 )
@@ -47,7 +46,13 @@ func HandleGitHubLogin(c echo.Context) error {
 	return c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
-func HandleGitHubLoginPocket(e *core.RequestEvent) error {
+func HandleGitHubLoginPocket(e echo.Context) error {
+	rc := EchoFactory.NewFromEcho(e, "ARX_GHB_050")
+	defer rc.Close()
+	logger := rc.GetLogger()
+	path := e.Path()
+	logger.Info("Handle request", "path", path)
+
 	url := githubOauthConfig.AuthCodeURL(githubOauthStateString)
 	msg := fmt.Sprintf("Github Login, url:%s", url)
 	log.Printf("%s (SHD_GHB_032)", msg)
@@ -60,18 +65,19 @@ func HandleGitHubLoginPocket(e *core.RequestEvent) error {
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_GHB_041"})
 
-	http.Redirect(e.Response, e.Request, url, http.StatusTemporaryRedirect)
+	http.Redirect(e.Response(), e.Request(), url, http.StatusTemporaryRedirect)
 	return nil
 }
 
 func HandleGitHubCallback(c echo.Context) error {
-	rc := RequestHandlers.NewFromEcho(c)
+	rc := EchoFactory.NewFromEcho(c, "SHD_GHB_068")
 	reqID := rc.ReqID()
 	status_code, msg := HandleGitHubCallbackBase(rc, reqID)
 	c.String(status_code, msg)
 	return nil
 }
 
+/*
 func HandleGitHubCallbackPocket(e *core.RequestEvent) error {
 	rc := RequestHandlers.NewFromPocket(e)
 	reqID := rc.ReqID()
@@ -79,9 +85,10 @@ func HandleGitHubCallbackPocket(e *core.RequestEvent) error {
 	e.String(status_code, msg)
 	return nil
 }
+*/
 
 func HandleGitHubCallbackBase(
-	rc RequestHandlers.RequestContext,
+	rc ApiTypes.RequestContext,
 	reqID string) (int, string) {
 	log.Printf("Github Login Callback (MID_GHB_032)")
 	state := rc.FormValue("state")
@@ -169,14 +176,18 @@ func HandleGitHubCallbackBase(
 	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
+	authToken, err := rc.GenerateAuthToken(user_info.Email)
 	err1 := sysdatastores.SaveSession(
+		rc,
 		"github_login",
 		sessionID,
+		authToken,
 		user_info.Name,
 		"github",
 		user_info.Login,
 		user_info.Email,
-		expired_time)
+		expired_time,
+		true)
 	if err1 != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("failed to save session, error:%v, log_id:%d (MID_GHB_094)", err1, log_id)

@@ -91,6 +91,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
 )
@@ -111,7 +112,7 @@ const (
 )
 
 func HandleJimoRequestEcho(c echo.Context) error {
-	rc := NewFromEcho(c)
+	rc := EchoFactory.NewFromEcho(c, "SHD_HJR_114")
 	ctx := c.Request().Context()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey)
 	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
@@ -131,11 +132,11 @@ func HandleJimoRequestEcho(c echo.Context) error {
 
 func handleJimoRequestPriv(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	body []byte) (int, ApiTypes.JimoResponse) {
 	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	user_info, err := rc.IsAuthenticated(reqID, "SHD_RHD_126")
+	user_info, err := rc.IsAuthenticated()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_135", call_flow))
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
@@ -229,7 +230,7 @@ func handleJimoRequestPriv(
 
 func HandleDBQuery(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
@@ -586,7 +587,7 @@ func buildJoinClauses(
 // create the table dynamically as a generic table.
 func HandleDBInsert(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
@@ -754,7 +755,7 @@ func HandleDBInsert(
 //	 FieldDefs               string  	`json:"field_defs"`
 func HandleDBUpdate(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
@@ -978,7 +979,7 @@ func HandleDBUpdate(
 //	 FieldDefs               string  	`json:"field_defs"`
 func HandleDBDelete(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
 
@@ -1177,7 +1178,7 @@ const (
 // RunQuery executes the given query and returns the results as JSON string
 func RunQuery(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	req ApiTypes.QueryRequest,
 	db *sql.DB,
 	query string,
@@ -1366,7 +1367,7 @@ func convertValueByType(value interface{}, dataType string) interface{} {
 
 func GetFieldStrValue(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) (string, error) {
@@ -1394,7 +1395,7 @@ func GetFieldStrValue(
 
 func GetFieldStrArrayValue(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]string, error) {
@@ -1429,7 +1430,7 @@ func GetFieldStrArrayValue(
 
 func GetFieldAnyArrayValue(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]interface{}, error) {
@@ -1454,7 +1455,7 @@ func GetFieldAnyArrayValue(
 
 func GetTableName(
 	ctx context.Context,
-	rc RequestContext,
+	rc ApiTypes.RequestContext,
 	resource_def map[string]interface{},
 	resource_name string) (string, string, error) {
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)

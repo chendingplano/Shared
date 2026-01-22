@@ -2,7 +2,6 @@ package auth
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -10,15 +9,16 @@ import (
 )
 
 func GetRedirectURL(
-	reqID string,
+	rc ApiTypes.RequestContext,
 	email string,
 	is_admin bool,
 	domain_name_only bool) string {
+	logger := rc.GetLogger()
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
 		error_msg := fmt.Sprintf("missing APP_DOMAIN_NAME env var, email:%s, default to:%s",
 			email, home_domain)
-		log.Printf("[req=%s] ***** Alarm:%s (SHD_ATL_015)", reqID, error_msg)
+		logger.Error("missing APP_DOMAIN_NAME")
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -42,7 +42,7 @@ func GetRedirectURL(
 			redirect_url += "admin/dashboard"
 			error_msg := fmt.Sprintf("missing APP_DEFAULT_ADMIN_APP env var, email:%s, default to:%s",
 				email, redirect_url)
-			log.Printf("[req=%s] ***** Alarm:%s (SHD_ATL_027)", reqID, error_msg)
+			logger.Error("missing APP_DEFAULT_ADMIN_APP")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				ActivityName: ApiTypes.ActivityName_Auth,
@@ -60,7 +60,7 @@ func GetRedirectURL(
 			redirect_url += "dashboard"
 			error_msg := fmt.Sprintf("missing APP_DEFAULT_APP env var, email:%s, default to:%s",
 				email, redirect_url)
-			log.Printf("[req=%s] ***** Alarm:%s (SHD_ATL_037)", reqID, error_msg)
+			logger.Error("missing APP_DEFAULT_APP")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				ActivityName: ApiTypes.ActivityName_Auth,
@@ -71,5 +71,7 @@ func GetRedirectURL(
 				CallerLoc:    "SHD_ATL_064"})
 		}
 	}
+
+	logger.Info("get redirect_url", "redirect_url", redirect_url)
 	return redirect_url
 }
