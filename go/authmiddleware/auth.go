@@ -302,7 +302,7 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 			})
 		*/
 		rc.SetCookie(cookie)
-		return nil, fmt.Errorf("cookie invalid, cookie removed (SHD_MAT_112)")
+		return nil, nil
 	}
 
 	// 2. Try token-based auth (for API clients)
@@ -321,7 +321,7 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 	*/
 
 	logger.Warn("isAuthenticated failed")
-	return nil, fmt.Errorf("user not logged in (SHD_MAT_131)")
+	return nil, nil
 }
 
 // isHTMLRequest checks if the client expects an HTML response (browser)

@@ -68,10 +68,9 @@ func (m *AccCtrlMgr) RequirePermission(
 	logger := m.logger
 
 	// Authenticate the user first
-	userInfo, err := rc.IsAuthenticated()
-	if err != nil {
+	userInfo := rc.IsAuthenticated()
+	if userInfo == nil {
 		logger.Error("authentication failed during permission check",
-			"error", err,
 			"rsc_type", rsc_type,
 			"rsc_id", rsc_id,
 			"rsc_opr", rsc_opr)

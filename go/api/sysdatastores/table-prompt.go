@@ -212,8 +212,8 @@ func GetPromptStatus(rc ApiTypes.RequestContext, prompt_name string) string {
 
 /*
 func AddPromptFromFrontend(c echo.Context) error {
-    user_info, err := middleware.IsAuthenticated(c, "SHD_PST_221")
-    if err != nil {
+    user_info := middleware.IsAuthenticated(c, "SHD_PST_221")
+    if user_info == nil {
 	    log_id := NextActivityLogID()
 		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d (SHD_PST_224)", err, log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{

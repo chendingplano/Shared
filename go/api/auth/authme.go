@@ -2,7 +2,6 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 
@@ -25,9 +24,9 @@ func HandleAuthMeBase(
 	reqID string) (int, ApiTypes.JimoResponse) {
 	// This function is called by the route "/auth/me" (in Shared/go/api/auth/router.go)
 	logger := rc.GetLogger()
-	user_info, err := rc.IsAuthenticated()
-	if err != nil {
-		error_msg := fmt.Sprintf("auth failed, err:%v", err)
+	user_info := rc.IsAuthenticated()
+	if user_info == nil {
+		error_msg := "auth failed"
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
 			ActivityType: ApiTypes.ActivityType_UserNotAuthed,
@@ -42,7 +41,7 @@ func HandleAuthMeBase(
 			Loc:      "SHD_AME_029",
 		}
 
-		logger.Warn("user not logged in", "error", err)
+		logger.Warn("user not logged in")
 		return ApiTypes.CustomHttpStatus_NotLoggedIn, resp
 	}
 

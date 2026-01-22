@@ -166,8 +166,8 @@ func GetResourceByName(rc ApiTypes.RequestContext, resource_name string, resourc
 
 /*
 func AddResourceFromFrontend(c echo.Context) error {
-    user_info, err := middleware.IsAuthenticated(c, "SHD_PSC_221")
-    if err != nil {
+    user_info := middleware.IsAuthenticated(c, "SHD_PSC_221")
+    if user_info == nil {
 	    log_id := NextActivityLogID()
 		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d (SHD_RSC_224)", err, log_id)
 		AddActivityLog(ApiTypes.ActivityLogDef{

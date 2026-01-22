@@ -428,7 +428,7 @@ type RequestContext interface {
 	GetCookie(name string) string
 	SetCookie(session_id string)
 	GetUserID() string
-	IsAuthenticated() (*UserInfo, error)
+	IsAuthenticated() *UserInfo
 	FormValue(name string) string
 	GetBody() io.ReadCloser
 	GetRequest() *http.Request

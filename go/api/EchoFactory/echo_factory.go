@@ -34,7 +34,8 @@ import (
 // This allows dependency injection to avoid import cycles.
 type AuthenticatorFunc func(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error)
 
-// DefaultAuthenticator is set by auth-middleware package during init.
+// DefaultAuthenticator is set by auth-middleware package during init
+// (shared/go/api/authmiddleware/auth.go)
 // This breaks the import cycle by using runtime registration instead of compile-time imports.
 var DefaultAuthenticator AuthenticatorFunc
 
@@ -108,7 +109,7 @@ func (e *echoContext) GetUserID() string {
 		return ""
 	}
 
-	e.user_info, _ = e.IsAuthenticated()
+	e.user_info = e.IsAuthenticated()
 	e.user_checked = true
 	if e.user_info != nil {
 		return e.user_info.UserId
@@ -576,24 +577,26 @@ func (e *echoContext) UpsertUser(
 	return e.user_info, nil
 }
 
-func (e *echoContext) IsAuthenticated() (*ApiTypes.UserInfo, error) {
+func (e *echoContext) IsAuthenticated() *ApiTypes.UserInfo {
 	if e.user_info != nil {
-		return e.user_info, nil
+		return e.user_info
 	}
 
 	if e.user_checked {
-		return nil, fmt.Errorf("user not authed")
+		return nil
 	}
 
 	logger := e.logger
 	if DefaultAuthenticator == nil {
-		error_msg := "DefaultAuthenticator not set - auth-middleware not initialized"
 		logger.Error("Default authenticator not set - auth middleware not initalized")
-		return nil, fmt.Errorf("%s", error_msg)
+		return nil
 	}
 
 	// Note: DefaultAuthenticator(...) is a function pointer.
 	// It is set to auth.go::IsAuthenticated(...) (due to circular importing)
+	// 	- user_info not null: user logged in
+	//	- user_info is null and err == nil: user not logged in
+	//	- user_info is null and err != nil: error
 	user_info, err := DefaultAuthenticator(e)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
@@ -608,11 +611,16 @@ func (e *echoContext) IsAuthenticated() (*ApiTypes.UserInfo, error) {
 			CallerLoc:    "SHD_RHD_065"})
 
 		e.logger.Error("auth failed", "error", err, "log_id", log_id)
-		return nil, fmt.Errorf("%s", error_msg)
+		return nil
 	}
+
+	if user_info == nil {
+		logger.Warn("user not logged in")
+	}
+
 	e.user_info = user_info
 	e.user_checked = true
-	return e.user_info, nil
+	return e.user_info
 }
 
 func (e *echoContext) SendHTMLResp(errorHTML string) error {

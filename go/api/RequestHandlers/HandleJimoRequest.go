@@ -136,11 +136,11 @@ func handleJimoRequestPriv(
 	body []byte) (int, ApiTypes.JimoResponse) {
 	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	user_info, err := rc.IsAuthenticated()
+	user_info := rc.IsAuthenticated()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_135", call_flow))
-	if err != nil {
+	if user_info == nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("auth failed, err:%v, log_id:%d", err, log_id)
+		error_msg := fmt.Sprintf("auth failed, log_id:%d", log_id)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_139", call_flow)
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
