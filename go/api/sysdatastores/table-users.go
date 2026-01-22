@@ -14,6 +14,9 @@ import (
 	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
+// To generate short UUID
+// "github.com/lithammer/shortuuid/v4"
+
 var Users_selected_field_names = "id, " +
 	"name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
@@ -199,9 +202,14 @@ func GetUserInfoByUserID(
 	user_info := new(ApiTypes.UserInfo)
 	err := scanUserRecord(row, user_info)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			logger.Warn("user not found", "user_id", user_id)
+			return nil, err
+		}
 		logger.Error("failed scanning user record", "error", err)
 		return nil, err
 	}
+
 	logger.Info("User info retrieved",
 		"status", user_info.UserStatus,
 		"user_id", user_id,

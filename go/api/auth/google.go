@@ -280,7 +280,7 @@ func HandleGoogleCallbackBase(
 
 	user_info.VToken = auth_token
 	user_info, err = rc.UpsertUser(user_info, "", true, false, false, true, false)
-	logger.Info("upsert user", "found", found, "auth_token", auth_token, "avatar", user_info.Avatar)
+	logger.Info("upsert user", "found", found, "auth_token", auth_token)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed creating user, email:%s, err:%s (SHD_GGL_125)", googleUserInfo.Email, err)
 		logger.Error("failed creating user",

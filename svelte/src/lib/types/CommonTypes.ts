@@ -216,10 +216,3 @@ export type UserInfo = {
 	created?:           IsoAutoDateString
 	updated?:           IsoAutoDateString
 }
-
-export interface AdminUser {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-}

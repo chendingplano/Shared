@@ -24,7 +24,6 @@ export {
     type JoinDef,
     type UpdateDef,
     type UserInfo,
-    type AdminUser,
     type FieldDef,
     CustomHttpStatus,
     type UpdateWithCondDef } from './types/CommonTypes';

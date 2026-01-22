@@ -241,16 +241,15 @@ function createAuthStore(): AuthStore {
         }
     };
 
-    // DISABLED: Auto-check is causing infinite loop when /auth/me endpoint doesn't exist
-    // This will be re-enabled when migrating from PocketBase to PostgreSQL
-    // For now, consuming apps should manually call checkAuthStatus() if needed
+    // Auto-check auth status on store creation (browser only)
     if (typeof window === 'undefined') {
         // SSR: resolve immediately (no auth check possible)
         readyResolve();
+    } else {
+        // Browser: check auth status via /auth/me endpoint
+        // This will call readyResolve() when complete
+        checkAuthStatus();
     }
-
-    // Temporary: Always resolve immediately without auth check
-    readyResolve();
 
     async function login(email: string, password: string): Promise<LoginResults> {
         try {
