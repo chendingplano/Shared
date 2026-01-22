@@ -188,7 +188,7 @@ export type ResourceDef = {
     field_defs:         Record<string, unknown>[]
 } & Record<string, unknown>;
 
-// Make sure this struct syncs with Shared/go/api/ApiTypes/ApiTypes.go::UserInfo
+// Make sure this struct syncs with shared/go/api/ApiTypes/ApiTypes.go::UserInfo
 export type UserInfo = {
 	id:                 string
 	name?:              string 
