@@ -45,6 +45,10 @@ func CreateLogger(
 		reqID:  generateRequestID("e")}
 }
 
+func CreateDefaultLogger() *JimoLogger {
+	return CreateLogger2(ContextTypeBackground, LogHandlerTypeDefault, 10000)
+}
+
 func CreateLogger2(
 	contextType string,
 	loggerType string,

@@ -1,67 +1,65 @@
 package api
 
 import (
-	"log"
-
 	"github.com/chendingplano/shared/go/api/RequestHandlers"
 	"github.com/chendingplano/shared/go/api/auth"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/labstack/echo/v4"
 )
 
+var logger = loggerutil.CreateDefaultLogger()
+
 func RegisterRoutes(e *echo.Echo) {
-	log.Println("Register /auth/google/login route (SHD_RTR_010)")
+	logger.Info("Register /auth/google/login route")
 	e.GET("/auth/google/login", func(c echo.Context) error {
 		return auth.HandleGoogleLogin(c)
 	})
 
-	log.Println("Register /auth/google/callback route (SHD_RTR_016)")
+	logger.Info("Register /auth/google/callback route")
 	e.GET("/auth/google/callback", func(c echo.Context) error {
 		return auth.HandleGoogleCallback(c)
 	})
 
-	log.Println("Register /auth/github/login route (SHD_RTR_022)")
+	logger.Info("Register /auth/github/login route")
 	e.GET("/auth/github/login", func(c echo.Context) error {
 		return auth.HandleGitHubLogin(c)
 	})
 
-	log.Println("Register /auth/github/callback route (SHD_RTR_028)")
+	logger.Info("Register /auth/github/callback route")
 	e.GET("/auth/github/callback", func(c echo.Context) error {
 		return auth.HandleGitHubCallback(c)
 	})
 
-	log.Println("Register /auth/email/login route (SHD_RTR_034)")
+	logger.Info("Register /auth/email/login route")
 	e.POST("/auth/email/login", func(c echo.Context) error {
 		return auth.HandleEmailLogin(c)
 	})
 
-	log.Println("Register /auth/me route (SHD_RTR_040)")
+	logger.Info("Register /auth/me route")
 	e.GET("/auth/me", func(c echo.Context) error {
 		return auth.HandleAuthMe(c)
 	})
 
-	log.Println("Register /auth/email/signup route (SHD_RTR_046)")
+	logger.Info("Register /auth/email/signup route")
 	e.POST("/auth/email/signup", func(c echo.Context) error {
 		return auth.HandleEmailSignup(c)
 	})
 
-	log.Println("Register /auth/email/verify route (SHD_RTR_052)")
+	logger.Info("Register /auth/email/verify route")
 	e.POST("/auth/email/verify", auth.HandleEmailVerifyPost)
 
-	log.Println("Register /auth/email/verify route (SHD_RTR_052)")
+	logger.Info("Register /auth/email/verify route")
 	e.GET("/auth/email/verify", auth.HandleEmailVerify)
 
-	log.Println("Register /auth/email/forgot route (SHD_RTR_055)")
+	logger.Info("Register /auth/email/forgot route")
 	e.POST("/auth/email/forgot", auth.HandleForgotPassword)
 
-	log.Println("Register /auth/email/reset route (SHD_RTR_058)")
+	logger.Info("Register /auth/email/reset route")
 	e.GET("/auth/email/reset", auth.HandleResetLink) // user clicks link in email
 
-	log.Println("Register /auth/email/confirm route (SHD_RTR_061)")
+	logger.Info("Register /auth/email/confirm route")
 	e.POST("/auth/email/reset/confirm", auth.HandleResetPasswordConfirm) // user submits new password
 
-	// log.Println("Register /shared_api/v1/add_prompt (SHD_RTR_067)")
-	// e.POST("/shared_api/v1/add_prompt", sysdatastores.AddPromptFromFrontend)
-
-	log.Println("Register /shared_api/v1/jimo_req (SHD_RTR_062)")
+	logger.Info("Register /shared_api/v1/jimo_req")
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 }
