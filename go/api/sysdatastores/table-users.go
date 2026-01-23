@@ -132,6 +132,10 @@ func scanUserRecord(
 	)
 }
 
+// GetUserInfoByEmail retrieves UserInfo by email.
+// IMPORTANT: if the user does not exist, it returns nil, nil
+// The caller MUST check whether user_info is valid, even if
+// err is nil!!!
 func GetUserInfoByEmail(
 	rc ApiTypes.RequestContext,
 	user_email string) (*ApiTypes.UserInfo, error) {
@@ -161,9 +165,9 @@ func GetUserInfoByEmail(
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			logger.Warn("user not found", "email", user_email)
-		} else {
-			logger.Error("failed scanning user record", "error", err)
+			return nil, nil
 		}
+		logger.Error("failed scanning user record", "error", err)
 		return nil, err
 	}
 
@@ -860,7 +864,7 @@ func UpdateAuthTokenByEmail(
 		logger.Error("no user found with email", "email", email)
 		return error_msg
 	}
-	logger.Info("Update auth token success", "email", email)
+	logger.Info("Update auth token success", "email", email, "token", auth_token)
 	return nil
 }
 

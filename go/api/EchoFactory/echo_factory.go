@@ -212,17 +212,16 @@ func (e *echoContext) UpdatePassword(
 }
 
 func (e *echoContext) VerifyUserPassword(
-	email string,
+	userInfo *ApiTypes.UserInfo,
 	password string) (bool, int, string) {
 
-	user_info, found := e.GetUserInfoByEmail(email)
 	logger := e.logger
-	if !found {
-		logger.Warn("No user found", "email", email)
-		return false, http.StatusNotFound, "email not found (SHD_RCE_131)"
+	if userInfo == nil {
+		logger.Warn("userInfo is nil")
+		return false, http.StatusNotFound, "userInfo is nil (SHD_RCE_131)"
 	}
 
-	if user_info.Password == "" {
+	if userInfo.Password == "" {
 		home_domain := os.Getenv("APP_DOMAIN_NAME")
 		if home_domain == "" {
 			logger.Error("missing APP_DOMAIN_NAME env var")
@@ -230,11 +229,11 @@ func (e *echoContext) VerifyUserPassword(
 		token := uuid.NewString()
 		url := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
 		logger.Warn("user not set password yet. Sent reset password email",
-			"email", email,
+			"email", userInfo.Email,
 			"token", token,
 			"url", url)
 		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, email:%s, token:%s",
-			email, token, url)
+			userInfo.Email, token, url)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -244,7 +243,7 @@ func (e *echoContext) VerifyUserPassword(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_RCE_216"})
 
-		e.UpdateTokenByEmail(email, token)
+		e.UpdateTokenByEmail(userInfo.Email, token)
 
 		subject := "Reset your password"
 		htmlBody := fmt.Sprintf(`
@@ -253,23 +252,23 @@ func (e *echoContext) VerifyUserPassword(
 		textBody := fmt.Sprintf("Please click the link below to reset your password:\n%s", url)
 
 		e.logger.Info("user not set password yet",
-			"sent email to", email,
+			"sent email to", userInfo.Email,
 			"token", token,
 			"url", url)
 		e.PushCallFlow("SHD_RCP_192")
-		ApiUtils.SendMail(e, email, subject, textBody, htmlBody, ApiUtils.EmailTypePasswordReset)
+		ApiUtils.SendMail(e, userInfo.Email, subject, textBody, htmlBody, ApiUtils.EmailTypePasswordReset)
 		e.PopCallFlow()
 
 		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email: %s. "+
-			"Please check your email and click the link to set your password (SHD_EML_135)", email)
+			"Please check your email and click the link to set your password (SHD_EML_135)", userInfo.Email)
 		return false, ApiTypes.CustomHttpStatus_PasswordNotSet, msg
 	}
 
 	// Hash password
-	err := bcrypt.CompareHashAndPassword([]byte(user_info.Password), []byte(password))
+	err := bcrypt.CompareHashAndPassword([]byte(userInfo.Password), []byte(password))
 	if err != nil {
-		error_msg := fmt.Sprintf("invalid password, email:%s", email)
-		logger.Error("invalid password", "email", email)
+		error_msg := fmt.Sprintf("invalid password, email:%s", userInfo.Email)
+		logger.Error("invalid password", "email", userInfo.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -282,7 +281,7 @@ func (e *echoContext) VerifyUserPassword(
 		return false, http.StatusUnauthorized, error_msg
 	}
 
-	logger.Info("varify user password success", "email", email)
+	logger.Info("varify user password success", "email", userInfo.Email)
 	return true, 0, ""
 }
 
@@ -327,6 +326,11 @@ func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool
 
 		// Real database error
 		e.logger.Error("failed get user by email", "error", err, "email", email)
+		return nil, false
+	}
+
+	if user_info == nil {
+		e.logger.Warn("No user found", "email", email)
 		return nil, false
 	}
 
@@ -541,6 +545,10 @@ func (e *echoContext) UpsertUser(
 			}
 		}
 	} else {
+		if plain_password != "" {
+			hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(plain_password), bcrypt.DefaultCost)
+			user_info.Password = string(hashedPwd)
+		}
 		is_dirty = true
 	}
 

@@ -432,7 +432,7 @@ function createAuthStore(): AuthStore {
   async function verifyEmail(token: string, loc: string): Promise<VerifyEmailResults> {
     try {
         console.log("Verify email with token (SHD_ATH_383), caller:" + loc)
-        const response = await fetch(`/auth/email/verify?token=${token}`, {
+        const response = await fetch(`/auth/email/verify?token=${token}&type=auth`, {
             method: 'GET',
             credentials: 'include', // Important: include cookies
         });

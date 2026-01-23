@@ -138,7 +138,7 @@ func HandleEmailLoginBase(
 		}
 	}
 
-	status, status_code, msg := rc.VerifyUserPassword(req.Email, req.Password)
+	status, status_code, msg := rc.VerifyUserPassword(user_info, req.Password)
 	if !status {
 		if status_code == ApiTypes.CustomHttpStatus_PasswordNotSet {
 			return status_code, map[string]string{
@@ -213,6 +213,12 @@ func HandleEmailLoginBase(
 		ExpiresAt:    &expired_time_str,
 	})
 
+	rc.SetCookie(sessionID)
+
+	logger.Info("Email login success",
+		"email", user_info.Email,
+		"cookie set/session_id", sessionID)
+
 	// Construct redirect URL with Pocketbase auth token (like Google OAuth)
 	user_name := user_info.FirstName + " " + user_info.LastName
 	redirect_url := ApiUtils.GetOAuthRedirectURL(rc, auth_token, user_name)
@@ -270,6 +276,13 @@ func sendVerificationEmail(
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_351"})
 
+	logger.Info(
+		"Send verification email",
+		"to", to,
+		"url", url,
+		"testBody", textBody,
+		"htmlBody", htmlBody)
+
 	rc.PushCallFlow("SHD_EML_275")
 	err := ApiUtils.SendMail(rc, to, subject, textBody, htmlBody, ApiUtils.EmailTypeVerification)
 	rc.PopCallFlow()
@@ -279,56 +292,72 @@ func sendVerificationEmail(
 func HandleEmailVerify(c echo.Context) error {
 	rc := EchoFactory.NewFromEcho(c, "SHD_EML_272")
 	logger := rc.GetLogger()
-	logger.Info("Handle Email Verify")
+	logger.Info("Handle Email Verify (GET)")
 
 	is_post := false
-	status_code, msg, resp := HandleEmailVerifyBase(rc, is_post)
-	if msg == "" {
-		// Success case: return JSON with user info and redirect URL
-		// Frontend will handle the redirect after updating auth store
-		logger.Info("email verify success", "redirect_url", resp["redirect_url"])
-		return c.JSON(status_code, resp)
-	} else {
-		// Error case: return error message
-		logger.Error("failed verify", "error", msg)
-		return c.String(status_code, msg)
-	}
-}
-
-/*
-func HandleEmailVerifyPocket(e *core.RequestEvent) error {
-	rc := RequestHandlers.NewFromPocket(e)
-	reqID := rc.ReqID()
-
-	is_post := false
-	status_code, msg, resp := HandleEmailVerifyBase(rc, reqID, is_post)
-	if msg == "" {
-		// Success case: redirect to frontend callback with token in URL
-		// This matches the OAuth flow pattern
-		if authToken, ok := resp["auth_token"]; ok {
-			// Get the frontend URL from redirect_url (which contains the full domain)
-			frontendDomain := GetRedirectURL(reqID, "", false, true) // domain_name_only = true
-			callbackURL := fmt.Sprintf("%s/auth/email/verify/callback?token=%s", frontendDomain, authToken)
-			if name, ok := resp["name"]; ok && name != "" {
-				callbackURL += fmt.Sprintf("&name=%s", name)
-			}
-			log.Printf("[req=%s] Redirecting to callback (SHD_EML_289): %s", reqID, callbackURL)
-			e.Redirect(http.StatusSeeOther, callbackURL)
-		} else {
-			// Fallback: if no auth_token, return JSON
-			e.JSON(status_code, resp)
-		}
-	} else {
-		// Error case: return error message
-		e.String(status_code, msg)
-	}
+	HandleEmailVerifyCommon(rc, c, is_post)
 	return nil
 }
-*/
 
+func HandleEmailVerifyPost(c echo.Context) error {
+	// It supports two URL params:
+	//	?token=<token>
+	//	?type=<type>
+	// Currently, it supports only type:'auth'
+	rc := EchoFactory.NewFromEcho(c, "SHD_EML_272")
+	logger := rc.GetLogger()
+	logger.Info("Handle Email Verify (POST)")
+
+	is_post := true
+	HandleEmailVerifyCommon(rc, c, is_post)
+	return nil
+}
+
+func HandleEmailVerifyCommon(
+	rc ApiTypes.RequestContext,
+	c echo.Context,
+	is_post bool) {
+
+	logger := rc.GetLogger()
+
+	status_code, resp, err := HandleEmailVerifyBase(rc, is_post)
+	if err == nil {
+		// Verify success. Retrieve the query parm 'type'
+		verifyType := c.QueryParam("type") // "auth"
+		if verifyType == "auth" {
+			// It needs to return the response
+			c.JSON(status_code, resp)
+			return
+		}
+
+		// Success case: redirect to the dashboard
+		// Cookie was already set in HandleEmailVerifyBase
+		redirectURL := resp["redirect_url"]
+		if len(redirectURL) <= 0 {
+			redirectURL = os.Getenv("APP_DOMAIN_NAME") + "/login"
+			logger.Error("missing redirectURL",
+				"status_code", status_code,
+				"rediect_url", redirectURL,
+				"is_post", is_post)
+			c.Redirect(http.StatusSeeOther, redirectURL)
+			return
+		}
+
+		logger.Info("email verify success, redirecting", "redirect_url", redirectURL)
+		c.Redirect(http.StatusSeeOther, redirectURL)
+		return
+	}
+
+	// Error case: return error message
+	logger.Error("failed verify", "error", err)
+	c.JSON(status_code, resp)
+}
+
+// HandleEmailVerifyBase handles email verification.
+// Returns: (status_code, resp, error)
 func HandleEmailVerifyBase(
 	rc ApiTypes.RequestContext,
-	is_post bool) (int, string, map[string]string) {
+	is_post bool) (int, map[string]string, error) {
 	logger := rc.GetLogger()
 	logger.Info("Handle email verify request")
 
@@ -350,8 +379,13 @@ func HandleEmailVerifyBase(
 				ActivityMsg:  &error_msg,
 				CallerLoc:    "SHD_EML_369"})
 
-			e_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_EML_361)", log_id)
-			return http.StatusBadRequest, e_msg, nil
+			e_msg := fmt.Sprintf("invalid request body, log_id:%d (SHD_EML_365)", log_id)
+			resp := map[string]string{
+				"status":    "failed",
+				"error_msg": e_msg,
+				"loc":       "SHD_EML_369",
+			}
+			return http.StatusBadRequest, resp, fmt.Errorf("%s", e_msg)
 		}
 		token = req.Token
 	} else {
@@ -372,7 +406,12 @@ func HandleEmailVerifyBase(
 				CallerLoc:    "SHD_EML_400"})
 
 			e_msg := fmt.Sprintf("failed retrieving token, log_id:%d (SHD_EML_393)", log_id)
-			return http.StatusBadRequest, e_msg, nil
+			resp := map[string]string{
+				"status":    "failed",
+				"error_msg": e_msg,
+				"loc":       "SHD_EML_395",
+			}
+			return http.StatusBadRequest, resp, fmt.Errorf("%s", e_msg)
 		}
 	}
 
@@ -402,7 +441,12 @@ func HandleEmailVerifyBase(
 			CallerLoc:    "SHD_EML_429"})
 
 		e_msg := fmt.Sprintf("invalid or expired email verification, log_id:%d (SHD_EML_431)", log_id)
-		return http.StatusBadRequest, e_msg, nil
+		resp := map[string]string{
+			"status":    "failed",
+			"error_msg": e_msg,
+			"loc":       "SHD_EML_430",
+		}
+		return http.StatusBadRequest, resp, fmt.Errorf("%s", e_msg)
 	}
 
 	// Mark user as verified first
@@ -424,7 +468,13 @@ func HandleEmailVerifyBase(
 			ModuleName:   ApiTypes.ModuleName_EmailAuth,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_468"})
-		return http.StatusInternalServerError, error_msg, nil
+
+		resp := map[string]string{
+			"status":    "failed",
+			"error_msg": error_msg,
+			"loc":       "SHD_EML_458",
+		}
+		return http.StatusInternalServerError, resp, fmt.Errorf("%s", error_msg)
 	}
 
 	// Generate Pocketbase auth token (not session ID)
@@ -445,7 +495,13 @@ func HandleEmailVerifyBase(
 			ModuleName:   ApiTypes.ModuleName_EmailAuth,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_438"})
-		return http.StatusInternalServerError, error_msg, nil
+
+		resp := map[string]string{
+			"status":    "failed",
+			"error_msg": error_msg,
+			"loc":       "SHD_EML_485",
+		}
+		return http.StatusInternalServerError, resp, fmt.Errorf("%s", error_msg)
 	}
 
 	// Generate a secure random session ID for logging purposes
@@ -483,11 +539,11 @@ func HandleEmailVerifyBase(
 		ExpiresAt:    &expired_time_str,
 	})
 
+	rc.SetCookie(sessionID)
+
 	logger.Info("Email verification success",
 		"email", user_info.Email,
-		"session_id", sessionID)
-
-	rc.SetCookie(sessionID)
+		"cookie set/session_id", sessionID)
 
 	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true", sessionID)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -527,7 +583,7 @@ func HandleEmailVerifyBase(
 		"auth_token":   authToken, // Return token to be set by frontend
 		"loc":          "SHD_EML_210",
 	}
-	return http.StatusOK, "", response
+	return http.StatusOK, response, nil
 }
 
 func HandleEmailSignup(c echo.Context) error {
@@ -597,6 +653,27 @@ func HandleEmailSignupBase(
 			ModuleName:   ApiTypes.ModuleName_EmailAuth,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_548"})
+
+		return http.StatusBadRequest, resp
+	}
+
+	if len(req.Password) <= 0 {
+		log_id := sysdatastores.NextActivityLogID()
+		error_msg := fmt.Sprintf("missing password, email:%s, log_id:%d (SHD_EML_614)", req.Email, log_id)
+		resp := EmailSignupResponse{
+			Message: error_msg,
+			LOC:     "SHD_EML_617",
+		}
+
+		logger.Warn("missing password", "log_id", log_id, "email", req.Email)
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidEmail,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_628"})
 
 		return http.StatusBadRequest, resp
 	}

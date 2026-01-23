@@ -439,7 +439,7 @@ type RequestContext interface {
 	GetUserInfoByUserID(user_id string) (*UserInfo, bool)
 	MarkUserVerified(email string) error
 	UpdateTokenByEmail(email string, token string) error
-	VerifyUserPassword(email string, plaintextPassword string) (bool, int, string)
+	VerifyUserPassword(userInfo *UserInfo, plaintextPassword string) (bool, int, string)
 	UpdatePassword(email string, plaintextPassword string) (bool, int, string)
 	SendHTMLResp(html_str string) error
 	SendJSONResp(status_code int, json_resp map[string]interface{}) error

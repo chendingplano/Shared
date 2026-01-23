@@ -140,12 +140,17 @@ func IsValidSessionPG(
 
 	user_info, err := sysdatastores.GetUserInfoByEmail(rc, user_email.String)
 	if err == nil {
-		logger.Info("valid session",
-			"email", user_email,
-			"is_admin", user_info.Admin,
-			"status", user_info.UserStatus,
-			"user_id", user_info.UserId)
-		return user_info, true, nil
+		if user_info != nil {
+			logger.Info("valid session",
+				"email", user_email,
+				"is_admin", user_info.Admin,
+				"status", user_info.UserStatus,
+				"user_id", user_info.UserId)
+			return user_info, true, nil
+		}
+
+		logger.Info("invalid session, user not logged in", "email", user_email)
+		return nil, false, nil
 	}
 
 	logger.Error("failed retrieving user", "error", err, "email", user_email)
