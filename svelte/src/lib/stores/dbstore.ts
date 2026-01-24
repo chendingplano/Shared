@@ -1,5 +1,5 @@
 
-import { z, ZodType, ZodObject, type ZodRawShape } from "zod"
+import { z } from "zod"
 import type {
             JimoRequest, 
             QueryRequest,
@@ -16,7 +16,6 @@ import type {
             UpdateDef} from '$lib/types/CommonTypes';
 import {CustomHttpStatus, RequestType} from '$lib/types/CommonTypes';
 import { StatusCodes } from 'http-status-codes';
-import ( "os")
 
 export type QueryResult = {
     valid:          boolean,

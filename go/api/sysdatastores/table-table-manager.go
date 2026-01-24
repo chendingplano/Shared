@@ -7,9 +7,10 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-func CreateTableManagerTable() error {
+func CreateTableManagerTable(logger *loggerutil.JimoLogger) error {
     db_type := ApiTypes.DatabaseInfo.DBType
     table_name := ApiTypes.LibConfig.SystemTableNames.TableNameTableManager
     var stmt string
@@ -50,6 +51,7 @@ func CreateTableManagerTable() error {
         return err1
     }
 
-    log.Printf("Create table '%s' success (MID_TMG_054)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
+
     return nil
 }

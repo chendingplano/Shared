@@ -33,11 +33,13 @@ const CallFlowKey = "jimo_call_flow"
 const RequestIDKey = "jimo_req_id"
 
 type LibConfigDef struct {
-	IDStartValue int `mapstructure:"id_start_value"`
-	IDIncValue   int `mapstructure:"id_inc_value"`
+	IDStartValue int    `mapstructure:"id_start_value"`
+	IDIncValue   int    `mapstructure:"id_inc_value"`
+	DataHomeDir  string `mapstructure:"data_home_dir"`
 
-	SystemTableNames SystemTableNames `mapstructure:"system_table_names"`
-	SystemIDs        SystemIDs        `mapstructure:"system_ids"`
+	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
+	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
+	IconServiceConf  IconServiceConfig `mapstructure:"icon_service"`
 }
 
 type SystemTableNames struct {
@@ -56,6 +58,11 @@ type SystemTableNames struct {
 type SystemIDs struct {
 	ActivityLogID string `mapstructure:"activity_log_id"`
 	PromptStoreID string `mapstructure:"prompt_store_id"`
+}
+
+type IconServiceConfig struct {
+	EnableIconService string `mapstructure:"enable_icon_service"`
+	IconDataDir       string `mapstructure:"icon_data_dir"`
 }
 
 const (

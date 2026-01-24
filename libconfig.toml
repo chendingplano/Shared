@@ -2,6 +2,7 @@
 id_start_value              = 10000
 id_inc_value                = 1000
 allow_dynamic_tables        = true
+data_home_dir               = "~/Workspace/Data"
 
 [system_table_names]
 table_name_test             = "test"
@@ -18,3 +19,7 @@ table_name_table_manager    = "table_manager"
 [system_ids]
 activity_log_id             = "IDs for activity log"
 prompt_store_id             = "IDs for prompt store"
+
+[icon_service]
+enable_icon_service         = "enabled"
+icon_data_dir               = "icons"

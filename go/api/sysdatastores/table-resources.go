@@ -8,6 +8,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 const (
@@ -35,10 +36,11 @@ const (
 )
 
 func CreateResourcesTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
-	log.Printf("To create resource table")
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	fields_1 := "resource_name 		VARCHAR(128)    NOT NULL, " +
 		"resource_opr 		VARCHAR(32)     NOT NULL, " +
@@ -87,7 +89,7 @@ func CreateResourcesTable(
 		databaseutil.ExecuteStatement(db, idx1)
 	}
 
-	log.Printf("Create table '%s' success (SHD_RSC_188)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 const (
@@ -69,9 +70,11 @@ type AddPromptResponse struct {
 }
 
 func CreatePromptStoreTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	fields_1 := fmt.Sprintf(
 		"prompt_name 		VARCHAR(256)    NOT NULL, " +
@@ -120,7 +123,7 @@ func CreatePromptStoreTable(
 		databaseutil.ExecuteStatement(db, idx1)
 	}
 
-	log.Printf("Create table '%s' success (SHD_PST_188)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 
 	return nil
 }

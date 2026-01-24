@@ -3,7 +3,6 @@ package sysdatastores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/loggerutil"
@@ -25,17 +24,15 @@ func CreateTables(logger *loggerutil.JimoLogger) error {
 		return fmt.Errorf("***** Unrecognized database type (MID_DBS_124): %s", database_type)
 	}
 
-	log.Printf("LoginSessions:%s", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
-	log.Printf("EmailStore:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
-
-	CreateLoginSessionsTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
+	CreateLoginSessionsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 	CreateUsersTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameUsers)
-	CreateIDMgrTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr)
-	CreateActivityLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog)
-	CreateSessionLogTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog)
-	CreateEmailStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
-	CreatePromptStoreTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore)
-	CreateResourcesTable(db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
-	CreateTableManagerTable()
+	CreateIDMgrTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr)
+	CreateActivityLogTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog)
+	CreateSessionLogTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog)
+	CreateEmailStoreTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
+	CreatePromptStoreTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore)
+	CreateResourcesTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
+	CreateTableManagerTable(logger)
+	CreateIconsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
 	return nil
 }

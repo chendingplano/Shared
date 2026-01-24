@@ -8,6 +8,7 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 var emailstore_selected_field_names = "email_id, full_email, email_source, email_status, domain_name, " +
@@ -53,9 +54,11 @@ type EmailInfo struct {
 }
 
 func CreateEmailStoreTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	fields := fmt.Sprintf("email_id       BIGINT          NOT NULL, " +
 		"full_email     VARCHAR(256)    NOT NULL PRIMARY KEY," +
@@ -95,7 +98,7 @@ func CreateEmailStoreTable(
 		databaseutil.ExecuteStatement(db, idx1)
 	}
 
-	log.Printf("Create table '%s' success (SHD_EST_188)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 
 	return nil
 }

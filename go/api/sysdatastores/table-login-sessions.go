@@ -8,12 +8,15 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 func CreateLoginSessionsTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -66,7 +69,7 @@ func CreateLoginSessionsTable(
 		databaseutil.ExecuteStatement(db, idx2)
 	}
 
-	log.Printf("Create table '%s' success (MID_CTB_129)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 	return nil
 }
 

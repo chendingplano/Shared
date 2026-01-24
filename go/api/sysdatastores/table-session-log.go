@@ -10,6 +10,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type SessionLogDef struct {
@@ -52,9 +53,11 @@ var (
 )
 
 func CreateSessionLogTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	const common_fields = "login_method 	VARCHAR(32) 	NOT NULL, " +
 		"session_id 	VARCHAR(256) 	NOT NULL, " +
@@ -100,7 +103,7 @@ func CreateSessionLogTable(
 		databaseutil.ExecuteStatement(db, idx2)
 	}
 
-	log.Printf("Create table '%s' success (SHD_SLG_129)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 	return nil
 }
 

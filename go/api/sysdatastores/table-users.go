@@ -37,6 +37,9 @@ func CreateUsersTable(
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	
+	logger.Info("Create table", "table_name", table_name)
+
 	var stmt string
 	fields :=
 		"id      VARCHAR(64) PRIMARY KEY DEFAULT gen_random_uuid()::text, " +

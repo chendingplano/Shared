@@ -38,6 +38,7 @@ var (
 )
 
 func CreateActivityLogTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
@@ -52,6 +53,8 @@ func CreateActivityLogTable(
 			"activity_notes     TEXT DEFAULT NULL, " +
 			"caller_loc         VARCHAR(20) NOT NULL, " +
 			"created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+
+	logger.Info("Create table", "table_name", table_name)
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -80,7 +83,7 @@ func CreateActivityLogTable(
 		databaseutil.ExecuteStatement(db, idx1)
 	}
 
-	log.Printf("Create table '%s' success (SHD_ALG_188)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 
 	return nil
 }

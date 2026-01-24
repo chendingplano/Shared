@@ -7,6 +7,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type IDMgrDef struct {
@@ -21,9 +22,11 @@ type IDMgrDef struct {
 const id_mgr_insert_fieldnames = "id_name, crt_value, id_desc, caller_loc"
 
 func CreateIDMgrTable(
+	logger *loggerutil.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
+	logger.Info("Create table", "table_name", table_name)
 	var stmt string
 	fields :=
 		"id_name            VARCHAR(128) NOT NULL PRIMARY KEY, " +
@@ -54,7 +57,7 @@ func CreateIDMgrTable(
 		return error_msg
 	}
 
-	log.Printf("Create table '%s' success (SHD_IMG_188)", table_name)
+	logger.Info("Create table success", "table_name", table_name)
 
 	return nil
 }

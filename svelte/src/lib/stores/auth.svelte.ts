@@ -82,8 +82,6 @@ interface AuthStore {
 }
 
 function createAuthStore(): AuthStore {
-    console.log("Create AuthStore (SHD_ATH_067)")
-
     // 👇 CLEAN UP previous subscription if this is re-run (e.g., HMR)
     if (internalUnsubscribe) {
         internalUnsubscribe();

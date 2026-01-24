@@ -62,4 +62,13 @@ func RegisterRoutes(e *echo.Echo) {
 
 	logger.Info("Register /shared_api/v1/jimo_req")
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
+
+	// Icon service routes
+	logger.Info("Register /shared_api/v1/icons routes")
+	e.GET("/shared_api/v1/icons", RequestHandlers.HandleListIcons)
+	e.GET("/shared_api/v1/icons/categories", RequestHandlers.HandleGetCategories)
+	e.GET("/shared_api/v1/icons/:id", RequestHandlers.HandleGetIcon)
+	e.POST("/shared_api/v1/icons", RequestHandlers.HandleUploadIcon)
+	e.DELETE("/shared_api/v1/icons/:id", RequestHandlers.HandleDeleteIcon)
+	e.GET("/shared_api/v1/icons/file/:category/:filename", RequestHandlers.HandleServeIconFile)
 }

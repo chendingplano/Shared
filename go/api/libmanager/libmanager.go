@@ -3,7 +3,6 @@ package libmanager
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 	"os"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/chendingplano/shared/go/api/auth"
+	"github.com/chendingplano/shared/go/api/icons"
 	"github.com/chendingplano/shared/go/api/stores"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/chendingplano/shared/go/authmiddleware"
@@ -47,9 +47,12 @@ func LoadLibConfig(ctx context.Context, config_path string) {
 }
 
 func InitLib(ctx context.Context, config_path string) {
-	log.Printf("Lib Config, sessions:%s", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
-	log.Printf("Lib Config, email_store:%s", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
-	log.Printf("Lib Config, test:%s", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
+	admin_rc := EchoFactory.NewRCAsAdmin("SHD_LMG_050")
+	defer admin_rc.Close()
+	logger := admin_rc.GetLogger()
+	logger.Info("Lib Config", "sessions", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
+	logger.Info("Lib Config", "email_store", ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)
+	logger.Info("Lib Config", "test", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
 
 	authmiddleware.Init()
 	auth.SetAuthInfo(ApiTypes.GetDBType(),
@@ -67,14 +70,12 @@ func InitLib(ctx context.Context, config_path string) {
 		db = ApiTypes.PG_DB_miner
 
 	default:
-		error_msg := fmt.Sprintf("Unrecognized database type (SHD_LMG_026):%s", db_type)
-		log.Printf("***** Alarm:%s", error_msg)
+		logger.Error("db_type not supported", "db_type", db_type)
 		os.Exit(1)
 	}
 
 	if db == nil {
-		error_msg := "'db' is nil (SHD_LMG_071)"
-		log.Printf("***** Alarm:%s", error_msg)
+		logger.Error("db is not set")
 		os.Exit(1)
 	}
 
@@ -95,6 +96,9 @@ func InitLib(ctx context.Context, config_path string) {
 
 	// 2. Init SessionLog
 	sysdatastores.InitSessionLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
+
+	// 3. Init the icon service
+	icons.InitIconService(admin_rc)
 }
 
 func ExitLib() {
