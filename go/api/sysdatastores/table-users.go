@@ -108,7 +108,10 @@ func CreateUsersTable(
 func scanUserRecord(
 	row *sql.Row,
 	user_info *ApiTypes.UserInfo) error {
-	return row.Scan(
+	// Use sql.NullTime for nullable timestamp columns to handle NULL values
+	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
+
+	err := row.Scan(
 		&user_info.UserId,
 		&user_info.UserName,
 		&user_info.Password,
@@ -128,14 +131,36 @@ func scanUserRecord(
 		&user_info.Locale,
 		&user_info.OutlookRefreshToken,
 		&user_info.OutlookAccessToken,
-		&user_info.OutlookTokenExpiresAt,
+		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
-		&user_info.OutlookSubExpiresAt,
+		&outlookSubExpiresAt,
 		&user_info.VToken,
-		&user_info.VTokenExpiresAt,
-		&user_info.Created,
-		&user_info.Updated,
+		&vTokenExpiresAt,
+		&created,
+		&updated,
 	)
+	if err != nil {
+		return err
+	}
+
+	// Copy valid timestamps to UserInfo (zero value if NULL)
+	if outlookTokenExpiresAt.Valid {
+		user_info.OutlookTokenExpiresAt = outlookTokenExpiresAt.Time
+	}
+	if outlookSubExpiresAt.Valid {
+		user_info.OutlookSubExpiresAt = outlookSubExpiresAt.Time
+	}
+	if vTokenExpiresAt.Valid {
+		user_info.VTokenExpiresAt = vTokenExpiresAt.Time
+	}
+	if created.Valid {
+		user_info.Created = created.Time
+	}
+	if updated.Valid {
+		user_info.Updated = updated.Time
+	}
+
+	return nil
 }
 
 // GetUserInfoByEmail retrieves UserInfo by email.
@@ -388,7 +413,10 @@ func GetUserInfoByUserName(
 func scanUserRecordFromRows(
 	rows *sql.Rows,
 	user_info *ApiTypes.UserInfo) error {
-	return rows.Scan(
+	// Use sql.NullTime for nullable timestamp columns to handle NULL values
+	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
+
+	err := rows.Scan(
 		&user_info.UserId,
 		&user_info.UserName,
 		&user_info.Password,
@@ -408,14 +436,36 @@ func scanUserRecordFromRows(
 		&user_info.Locale,
 		&user_info.OutlookRefreshToken,
 		&user_info.OutlookAccessToken,
-		&user_info.OutlookTokenExpiresAt,
+		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
-		&user_info.OutlookSubExpiresAt,
+		&outlookSubExpiresAt,
 		&user_info.VToken,
-		&user_info.VTokenExpiresAt,
-		&user_info.Created,
-		&user_info.Updated,
+		&vTokenExpiresAt,
+		&created,
+		&updated,
 	)
+	if err != nil {
+		return err
+	}
+
+	// Copy valid timestamps to UserInfo (zero value if NULL)
+	if outlookTokenExpiresAt.Valid {
+		user_info.OutlookTokenExpiresAt = outlookTokenExpiresAt.Time
+	}
+	if outlookSubExpiresAt.Valid {
+		user_info.OutlookSubExpiresAt = outlookSubExpiresAt.Time
+	}
+	if vTokenExpiresAt.Valid {
+		user_info.VTokenExpiresAt = vTokenExpiresAt.Time
+	}
+	if created.Valid {
+		user_info.Created = created.Time
+	}
+	if updated.Valid {
+		user_info.Updated = updated.Time
+	}
+
+	return nil
 }
 
 func GetAllUsers(rc ApiTypes.RequestContext) ([]*ApiTypes.UserInfo, error) {
