@@ -22,7 +22,7 @@ var Users_selected_field_names = "id, " +
 	"name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
-	"locale, outlook_token_expires_at, " +
+	"locale, outlook_refresh_token, outlook_access_token, outlook_token_expires_at, " +
 	"outlook_sub_id, outlook_sub_expires_at, " +
 	"v_token_expires_at, created, updated"
 
@@ -110,6 +110,8 @@ func scanUserRecord(
 	user_info *ApiTypes.UserInfo) error {
 	// Use sql.NullTime for nullable timestamp columns to handle NULL values
 	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
+	// Use sql.NullString for nullable token columns
+	var outlookRefreshToken, outlookAccessToken sql.NullString
 
 	err := row.Scan(
 		&user_info.UserId,
@@ -129,6 +131,8 @@ func scanUserRecord(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
+		&outlookRefreshToken,
+		&outlookAccessToken,
 		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
 		&outlookSubExpiresAt,
@@ -138,6 +142,14 @@ func scanUserRecord(
 	)
 	if err != nil {
 		return err
+	}
+
+	// Copy valid OAuth tokens to UserInfo (empty string if NULL)
+	if outlookRefreshToken.Valid {
+		user_info.OutlookRefreshToken = outlookRefreshToken.String
+	}
+	if outlookAccessToken.Valid {
+		user_info.OutlookAccessToken = outlookAccessToken.String
 	}
 
 	// Copy valid timestamps to UserInfo (zero value if NULL)
@@ -412,6 +424,8 @@ func scanUserRecordFromRows(
 	user_info *ApiTypes.UserInfo) error {
 	// Use sql.NullTime for nullable timestamp columns to handle NULL values
 	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
+	// Use sql.NullString for nullable token columns
+	var outlookRefreshToken, outlookAccessToken sql.NullString
 
 	err := rows.Scan(
 		&user_info.UserId,
@@ -431,6 +445,8 @@ func scanUserRecordFromRows(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
+		&outlookRefreshToken,
+		&outlookAccessToken,
 		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
 		&outlookSubExpiresAt,
@@ -440,6 +456,14 @@ func scanUserRecordFromRows(
 	)
 	if err != nil {
 		return err
+	}
+
+	// Copy valid OAuth tokens to UserInfo (empty string if NULL)
+	if outlookRefreshToken.Valid {
+		user_info.OutlookRefreshToken = outlookRefreshToken.String
+	}
+	if outlookAccessToken.Valid {
+		user_info.OutlookAccessToken = outlookAccessToken.String
 	}
 
 	// Copy valid timestamps to UserInfo (zero value if NULL)
