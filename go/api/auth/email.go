@@ -840,6 +840,18 @@ func HandleForgotPassword(c echo.Context) error {
 	rc := EchoFactory.NewFromEcho(c, "SHD_EML_664")
 	logger := rc.GetLogger()
 
+	// SECURITY: Rate limiting to prevent abuse
+	clientIP := c.RealIP()
+	allowed, _, retryAfter := CheckPasswordResetRateLimit(clientIP)
+	if !allowed {
+		logger.Warn("Rate limit exceeded for password reset", "ip", clientIP)
+		return c.JSON(http.StatusTooManyRequests, map[string]string{
+			"status":  "error",
+			"message": "Too many password reset attempts. Please try again later.",
+			"loc":     "SHD_EML_RATE_002",
+		})
+	}
+
 	// SECURITY: Validate request origin to prevent CSRF attacks
 	if !IsSafeOrigin(c) {
 		logger.Warn("CSRF protection: rejected cross-origin request",
@@ -851,6 +863,7 @@ func HandleForgotPassword(c echo.Context) error {
 			"loc":     "SHD_EML_CSRF_003",
 		})
 	}
+	_ = retryAfter // Used for Retry-After header if needed
 
 	reqID := rc.ReqID()
 	status_code, resp := HandleForgotPasswordBase(rc, reqID)
@@ -924,13 +937,17 @@ func HandleForgotPasswordBase(
 		}
 	}
 
-	// 1. Check if email already exists
+	// SECURITY: Always return the same response to prevent user enumeration.
+	// Log internally whether user exists, but don't reveal this to the client.
+	successMsg := "If an account exists with this email, a password reset link has been sent."
+
 	user, exist := rc.GetUserInfoByEmail(req.Email)
 	if !exist {
+		// SECURITY: Log internally but return success to prevent enumeration
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("user not found, email:%s, log_id:%d (SHD_EML_676)",
+		error_msg := fmt.Sprintf("password reset requested for non-existent email:%s, log_id:%d",
 			req.Email, log_id)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		log.Printf("[req=%s] %s (SHD_EML_676)", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -941,10 +958,11 @@ func HandleForgotPasswordBase(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_EML_731"})
 
-		return http.StatusNotFound, map[string]string{
-			"status": "error",
-			"error":  error_msg,
-			"loc":    "SHD_EML_710",
+		// Return success to prevent user enumeration
+		return http.StatusOK, map[string]string{
+			"status":  "ok",
+			"message": successMsg,
+			"loc":     "SHD_EML_742",
 		}
 	}
 
@@ -972,16 +990,16 @@ func HandleForgotPasswordBase(
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		LogID:        log_id,
 		ActivityName: ApiTypes.ActivityName_Auth,
-		ActivityType: ApiTypes.ActivityType_UserNotFound,
+		ActivityType: ApiTypes.ActivityType_SentEmail,
 		AppName:      ApiTypes.AppName_Auth,
 		ModuleName:   ApiTypes.ModuleName_EmailAuth,
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_775"})
 
 	return http.StatusOK, map[string]string{
-		"message": msg,
-		"loc":     "SHD_EML_742",
 		"status":  "ok",
+		"message": successMsg,
+		"loc":     "SHD_EML_742",
 	}
 }
 
