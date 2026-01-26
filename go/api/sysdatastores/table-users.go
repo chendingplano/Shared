@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	"github.com/chendingplano/shared/go/api/loggerutil"
 )
@@ -23,14 +24,14 @@ var Users_selected_field_names = "id, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
 	"locale, outlook_refresh_token, outlook_access_token, outlook_token_expires_at, " +
 	"outlook_sub_id, outlook_sub_expires_at, " +
-	"v_token, created, updated"
+	"v_token, v_token_expires_at, created, updated"
 
 var Users_insert_field_names = "name, " +
 	"password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
 	"locale, outlook_refresh_token, outlook_access_token, outlook_sub_id, " +
-	"outlook_sub_expires_at, outlook_token_expires_at, v_token"
+	"outlook_sub_expires_at, outlook_token_expires_at, v_token, v_token_expires_at"
 
 func CreateUsersTable(
 	logger *loggerutil.JimoLogger,
@@ -65,6 +66,7 @@ func CreateUsersTable(
 			"outlook_sub_id 		VARCHAR(64) 	DEFAULT NULL, " +
 			"outlook_sub_expires_at TIMESTAMP 		DEFAULT NULL, " +
 			"v_token      			VARCHAR(128) 	DEFAULT NULL, " +
+			"v_token_expires_at		TIMESTAMP 		DEFAULT NULL, " +
 			"created        		TIMESTAMP 		DEFAULT CURRENT_TIMESTAMP, " +
 			"updated        		TIMESTAMP 		DEFAULT CURRENT_TIMESTAMP "
 
@@ -130,6 +132,7 @@ func scanUserRecord(
 		&user_info.OutlookSubID,
 		&user_info.OutlookSubExpiresAt,
 		&user_info.VToken,
+		&user_info.VTokenExpiresAt,
 		&user_info.Created,
 		&user_info.Updated,
 	)
@@ -225,6 +228,63 @@ func GetUserInfoByUserID(
 	return user_info, nil
 }
 
+// ErrTokenExpired is returned when a password reset token has expired
+var ErrTokenExpired = errors.New("password reset token has expired")
+
+// MigrateUsersTable_AddVTokenExpiresAt adds the v_token_expires_at column
+// to existing users tables. This migration is idempotent - safe to run multiple times.
+func MigrateUsersTable_AddVTokenExpiresAt(
+	logger *loggerutil.JimoLogger,
+	db *sql.DB,
+	db_type string,
+	table_name string) error {
+	logger.Info("Running migration: add v_token_expires_at column", "table_name", table_name)
+
+	var stmt string
+	switch db_type {
+	case ApiTypes.MysqlName:
+		// MySQL: Check if column exists before adding
+		stmt = fmt.Sprintf(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_NAME = '%s' AND COLUMN_NAME = 'v_token_expires_at'
+		`, table_name)
+		var count int
+		err := db.QueryRow(stmt).Scan(&count)
+		if err != nil {
+			logger.Error("failed to check column existence", "error", err)
+			return fmt.Errorf("migration check failed (SHD_MIG_001): %w", err)
+		}
+		if count > 0 {
+			logger.Info("Column v_token_expires_at already exists, skipping migration")
+			return nil
+		}
+		stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN v_token_expires_at TIMESTAMP DEFAULT NULL", table_name)
+
+	case ApiTypes.PgName:
+		// PostgreSQL: Use IF NOT EXISTS (available in PG 9.6+)
+		stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS v_token_expires_at TIMESTAMP DEFAULT NULL", table_name)
+
+	default:
+		err := fmt.Errorf("unsupported database type (SHD_MIG_002): %s", db_type)
+		logger.Error("db_type not supported", "db_type", db_type)
+		return err
+	}
+
+	err := databaseutil.ExecuteStatement(db, stmt)
+	if err != nil {
+		// For MySQL, check if the error is "duplicate column" (already exists)
+		if db_type == ApiTypes.MysqlName && strings.Contains(err.Error(), "Duplicate column") {
+			logger.Info("Column v_token_expires_at already exists, skipping")
+			return nil
+		}
+		logger.Error("migration failed", "error", err, "stmt", stmt)
+		return fmt.Errorf("migration failed (SHD_MIG_003): %w", err)
+	}
+
+	logger.Info("Migration completed: v_token_expires_at column added", "table_name", table_name)
+	return nil
+}
+
 func GetUserInfoByToken(
 	rc ApiTypes.RequestContext,
 	token string) (*ApiTypes.UserInfo, error) {
@@ -262,6 +322,14 @@ func GetUserInfoByToken(
 				"token", token)
 		}
 		return nil, err
+	}
+
+	// SECURITY: Check if token has expired (24-hour validity)
+	if !user_info.VTokenExpiresAt.IsZero() && time.Now().After(user_info.VTokenExpiresAt) {
+		logger.Warn("password reset token expired",
+			"email", user_info.Email,
+			"expired_at", user_info.VTokenExpiresAt)
+		return nil, ErrTokenExpired
 	}
 
 	logger.Info("User info retrieved",
@@ -344,6 +412,7 @@ func scanUserRecordFromRows(
 		&user_info.OutlookSubID,
 		&user_info.OutlookSubExpiresAt,
 		&user_info.VToken,
+		&user_info.VTokenExpiresAt,
 		&user_info.Created,
 		&user_info.Updated,
 	)
@@ -867,7 +936,7 @@ func UpdateAuthTokenByEmail(
 		logger.Error("no user found with email", "email", email)
 		return error_msg
 	}
-	logger.Info("Update auth token success", "email", email, "token", auth_token)
+	logger.Info("Update auth token success", "email", email, "token", ApiUtils.MaskToken(auth_token))
 	return nil
 }
 

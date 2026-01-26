@@ -72,6 +72,21 @@ func HandleEmailLogin(c echo.Context) error {
 	defer rc.Close()
 	logger := rc.GetLogger()
 
+	// SECURITY: Rate limiting to prevent brute-force attacks
+	clientIP := c.RealIP()
+	allowed, remaining, retryAfter := CheckLoginRateLimit(clientIP)
+	if !allowed {
+		logger.Warn("Rate limit exceeded for login",
+			"ip", clientIP,
+			"retry_after", retryAfter.String())
+		return c.JSON(http.StatusTooManyRequests, map[string]string{
+			"status":  "error",
+			"message": "Too many login attempts. Please try again later.",
+			"loc":     "SHD_EML_RATE_001",
+		})
+	}
+	_ = remaining // Used for X-RateLimit-Remaining header if needed
+
 	// SECURITY: Validate request origin to prevent CSRF attacks
 	if !IsSafeOrigin(c) {
 		logger.Warn("CSRF protection: rejected cross-origin request",
@@ -87,7 +102,7 @@ func HandleEmailLogin(c echo.Context) error {
 	body, _ := io.ReadAll(c.Request().Body)
 	path := c.Path()
 	logger.Info("Handle request", "path", path)
-	status_code, msg := HandleEmailLoginBase(rc, body)
+	status_code, msg := HandleEmailLoginBase(rc, body, clientIP)
 	c.JSON(status_code, msg)
 	return nil
 }
@@ -96,11 +111,17 @@ func HandleEmailLogin(c echo.Context) error {
 // It returns (status_code, json).
 //   - When success, json = {"status":"ok", "redirect_url": "...", "loc": "..."}.
 //   - When failure, json = {"status":"error", "message": "...", "loc": "..."}.
+// The clientIP parameter is used to reset rate limiting on successful login.
 func HandleEmailLoginBase(
 	rc ApiTypes.RequestContext,
-	body []byte) (int, map[string]string) {
+	body []byte,
+	clientIP string) (int, map[string]string) {
 	logger := rc.GetLogger()
 	logger.Info("HandleEmailLogin called")
+
+	// SECURITY: Generic error message to prevent user enumeration
+	// We return the same message whether email doesn't exist or password is wrong
+	genericAuthError := "Invalid email or password"
 
 	var req EmailLoginRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -143,11 +164,23 @@ func HandleEmailLoginBase(
 
 	user_info, exist := rc.GetUserInfoByEmail(req.Email)
 	if !exist {
-		// The user (email) already exists.
-		return http.StatusNotFound, map[string]string{
+		// SECURITY: Log the actual reason internally but return generic message
+		error_msg := fmt.Sprintf("login failed: email not found, email:%s", req.Email)
+		logger.Warn("login attempt for non-existent email", "email", req.Email)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_AuthFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_131"})
+
+		// Return generic error to prevent user enumeration
+		return http.StatusUnauthorized, map[string]string{
 			"status":  "error",
-			"message": "email not found (SHD_EML_131)",
-			"loc":     "SHD_EML_131",
+			"message": genericAuthError,
+			"loc":     "SHD_EML_AUTH",
 		}
 	}
 
@@ -161,11 +194,18 @@ func HandleEmailLoginBase(
 			}
 		}
 
-		return status_code, map[string]string{
+		// SECURITY: Return generic error for invalid password
+		logger.Warn("login failed: invalid password", "email", req.Email)
+		return http.StatusUnauthorized, map[string]string{
 			"status":  "error",
-			"message": msg,
-			"loc":     "SHD_EML_154",
+			"message": genericAuthError,
+			"loc":     "SHD_EML_AUTH",
 		}
+	}
+
+	// SECURITY: Reset rate limit on successful login
+	if clientIP != "" {
+		ResetLoginRateLimit(clientIP)
 	}
 
 	// Generate Pocketbase auth token (similar to Google OAuth flow)
@@ -783,7 +823,7 @@ func HandleEmailSignupBase(
 	}
 
 	msg := fmt.Sprintf("user signup success, user_name:%s, email:%s, token:%s",
-		user_name, req.Email, token)
+		user_name, req.Email, ApiUtils.MaskToken(token))
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		LogID:        log_id,
@@ -967,11 +1007,11 @@ func HandleResetLinkBase(
 	rc ApiTypes.RequestContext,
 	reqID string) (int, string) {
 	token := rc.QueryParam("token")
-	log.Printf("[req=%s] Handle reset link (SHD_EML_257), token:%s", reqID, token)
+	log.Printf("[req=%s] Handle reset link (SHD_EML_257), token:%s", reqID, ApiUtils.MaskToken(token))
 	_, exist := rc.GetUserInfoByToken(token)
 	if !exist {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed retrieving user by token:%s (SHD_EML_201).", token)
+		error_msg := fmt.Sprintf("failed retrieving user by token:%s (SHD_EML_201).", ApiUtils.MaskToken(token))
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{

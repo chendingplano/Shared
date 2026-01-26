@@ -125,28 +125,62 @@ func CSRFProtectedHandler(
 
 // IsSafeOrigin checks if the request origin is from a trusted domain.
 // This is an additional layer of CSRF protection.
+//
+// SECURITY: This function is strict about requiring Origin or Referer headers
+// for state-changing requests. Requests without these headers are only allowed
+// if they appear to be same-origin (checking other indicators).
 func IsSafeOrigin(c echo.Context) bool {
 	origin := c.Request().Header.Get("Origin")
-	if origin == "" {
-		// No origin header - could be same-origin or non-browser
-		// Check Referer as fallback
-		referer := c.Request().Header.Get("Referer")
-		if referer == "" {
-			// No origin or referer - might be same-origin request
-			// This is common for API calls from the same domain
-			return true
-		}
-		origin = referer
-	}
+	referer := c.Request().Header.Get("Referer")
 
 	// Get allowed domain from environment
 	appDomain := os.Getenv("APP_DOMAIN_NAME")
 	if appDomain == "" {
-		// If no domain configured, reject cross-origin requests
-		return false
+		// If no domain configured, reject all cross-origin requests in production
+		if os.Getenv("ENV") == "production" {
+			return false
+		}
+		// In development without domain configured, be permissive
+		return true
 	}
 
-	// Check if origin matches our app domain
+	// If we have an Origin header, validate it
+	if origin != "" {
+		return isOriginAllowed(origin, appDomain)
+	}
+
+	// No Origin header - check Referer as fallback
+	if referer != "" {
+		return isOriginAllowed(referer, appDomain)
+	}
+
+	// No Origin or Referer header
+	// This could be:
+	// 1. Same-origin request (browsers don't always send Origin for same-origin)
+	// 2. Non-browser client (curl, Postman, etc.)
+	// 3. Privacy extension blocking headers
+	//
+	// SECURITY: In production, we're stricter - check for other same-origin indicators
+	if os.Getenv("ENV") == "production" {
+		// Check if this looks like a fetch/XHR request (has typical headers)
+		// Same-origin requests from modern browsers typically have these
+		contentType := c.Request().Header.Get("Content-Type")
+		accept := c.Request().Header.Get("Accept")
+
+		// If it's a JSON API request without origin headers, it's suspicious
+		if strings.Contains(contentType, "application/json") ||
+			strings.Contains(accept, "application/json") {
+			// Require at least one origin indicator for JSON requests
+			return false
+		}
+	}
+
+	// In development, allow requests without origin headers
+	return os.Getenv("ENV") != "production"
+}
+
+// isOriginAllowed checks if the given origin matches the allowed domain
+func isOriginAllowed(origin string, appDomain string) bool {
 	// Strip protocol for comparison
 	origin = strings.TrimPrefix(origin, "http://")
 	origin = strings.TrimPrefix(origin, "https://")

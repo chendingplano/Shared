@@ -86,9 +86,13 @@ func IsValid(tokenStr string) bool {
 	return false
 }
 
+// SessionTokenExpiry is the default expiry for session tokens (72 hours).
+// SECURITY: This should match the cookie MaxAge in SetCookie.
+const SessionTokenExpiry = 72 * time.Hour
+
 // GenerateToken creates a new JWT token with the given claims.
 // Automatically adds iat (issued at) and exp (expiration) claims.
-// Default expiration is 24 hours.
+// Default expiration is 72 hours (aligned with session cookie).
 func GenerateToken(claims map[string]interface{}, expiration time.Duration) (string, error) {
 	key, err := getJWTKey()
 	if err != nil {
@@ -96,7 +100,7 @@ func GenerateToken(claims map[string]interface{}, expiration time.Duration) (str
 	}
 
 	if expiration == 0 {
-		expiration = 24 * time.Hour
+		expiration = SessionTokenExpiry // 72 hours, aligned with cookie
 	}
 
 	now := time.Now()

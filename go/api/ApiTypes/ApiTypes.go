@@ -398,6 +398,7 @@ type UserInfo struct {
 	OutlookSubID          string    `json:"outlook_sub_id"`
 	OutlookSubExpiresAt   time.Time `json:"outlook_sub_expires_at"`
 	VToken                string    `json:"v_token"`
+	VTokenExpiresAt       time.Time `json:"v_token_expires_at"`
 	Created               time.Time `json:"created"`
 	Updated               time.Time `json:"updated"`
 }

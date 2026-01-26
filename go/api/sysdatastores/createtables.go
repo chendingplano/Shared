@@ -34,5 +34,28 @@ func CreateTables(logger *loggerutil.JimoLogger) error {
 	CreateResourcesTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
 	CreateTableManagerTable(logger)
 	CreateIconsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
+
+	// Run migrations for existing tables
+	RunMigrations(logger, db, database_type)
+
 	return nil
+}
+
+// RunMigrations applies schema migrations to existing tables.
+// Each migration is idempotent - safe to run multiple times.
+func RunMigrations(logger *loggerutil.JimoLogger, db *sql.DB, db_type string) {
+	logger.Info("Running database migrations")
+
+	// Migration: Add v_token_expires_at column to users table
+	err := MigrateUsersTable_AddVTokenExpiresAt(
+		logger,
+		db,
+		db_type,
+		ApiTypes.LibConfig.SystemTableNames.TableNameUsers,
+	)
+	if err != nil {
+		logger.Error("Migration failed", "migration", "AddVTokenExpiresAt", "error", err)
+	}
+
+	logger.Info("Database migrations completed")
 }
