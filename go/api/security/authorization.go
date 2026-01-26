@@ -88,18 +88,16 @@ func (m *AccCtrlMgr) RequirePermission(
 		return nil
 	}
 
-	// TODO: Implement more granular permission checking based on rsc_id
-	return nil
-	/*
-		// For now, non-admin/non-owner users are denied access to admin-only resources
-		logger.Warn("permission denied",
-			"user_id", userInfo.UserId,
-			"rsc_type", rsc_type,
-			"rsc_id", rsc_id,
-			"rsc_opr", rsc_opr,
-			"admin", userInfo.Admin,
-			"is_owner", userInfo.IsOwner)
+	// SECURITY FIX: Deny access by default for non-admin/non-owner users
+	// This follows the principle of least privilege - grant only what is explicitly allowed
+	// TODO: Implement granular permission checking when role-based access is needed
+	logger.Warn("permission denied - non-admin/non-owner access attempt",
+		"user_id", userInfo.UserId,
+		"rsc_type", rsc_type,
+		"rsc_id", rsc_id,
+		"rsc_opr", rsc_opr,
+		"admin", userInfo.Admin,
+		"is_owner", userInfo.IsOwner)
 
-		return fmt.Errorf("permission denied for resource: %s", rsc_id)
-	*/
+	return fmt.Errorf("permission denied: insufficient privileges for resource %s", rsc_id)
 }

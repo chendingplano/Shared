@@ -189,16 +189,18 @@ export type ResourceDef = {
 } & Record<string, unknown>;
 
 // Make sure this struct syncs with shared/go/api/ApiTypes/ApiTypes.go::UserInfo
+// SECURITY: Sensitive fields (password, tokens) are excluded from API responses via json:"-" in Go
+// These fields are intentionally NOT included in the TypeScript type as they should never be sent to the client
 export type UserInfo = {
 	id:                 string
-	name?:              string 
-	password?:          string
-	user_id_type?:      string 
+	name?:              string
+	// password - EXCLUDED: Never sent to client (json:"-" in Go)
+	user_id_type?:      string
 	first_name?:        string
 	last_name?:         string
 	email:              string
 	user_mobile?:       string
-	user_address?:      string 
+	user_address?:      string
 	verified?:          boolean
 	admin?:             boolean
 	is_owner?:          boolean
@@ -207,12 +209,13 @@ export type UserInfo = {
 	user_status?:       string
 	avatar?:            FileNameString
 	locale?:            string
-	outlook_refresh_token?: string
-	outlook_access_token?:string
+	// outlook_refresh_token - EXCLUDED: Never sent to client (json:"-" in Go)
+	// outlook_access_token - EXCLUDED: Never sent to client (json:"-" in Go)
 	outlook_token_expires_at?: IsoDateString
 	outlook_sub_id?:    string
 	outlook_sub_expires_at?: IsoDateString
-	v_token?:           string
+	// v_token - EXCLUDED: Never sent to client (json:"-" in Go)
+	v_token_expires_at?: IsoDateString
 	created?:           IsoAutoDateString
 	updated?:           IsoAutoDateString
 }

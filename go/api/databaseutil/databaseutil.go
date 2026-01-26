@@ -88,8 +88,9 @@ func CreatePGDBMiner(config ApiTypes.DBConfig) error {
 	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
 		host, port, username, password, dbname)
 
-	log.Printf("Connect to PG (SHD_DBS_089), host:%s, port:%d, username:%s, password:%s, dbname:%s",
-		host, port, username, password, dbname)
+	// SECURITY: Don't log credentials
+	log.Printf("Connect to PG (SHD_DBS_089), host:%s, port:%d, username:%s, dbname:%s",
+		host, port, username, dbname)
 
 	ApiTypes.PG_DB_miner, err = sql.Open("postgres", connStr)
 	if err != nil {
@@ -98,8 +99,9 @@ func CreatePGDBMiner(config ApiTypes.DBConfig) error {
 
 	// Test the connection
 	if err = ApiTypes.PG_DB_miner.Ping(); err != nil {
-		log.Printf("***** Alarm: Failed conneting PostgreSQL (SHD_DBS_055), err:%s, conn:%s, user:%s, pwd:%s, dbname:%s",
-			err, connStr, username, password, dbname)
+		// SECURITY: Don't log connection string or credentials
+		log.Printf("***** Alarm: Failed connecting PostgreSQL (SHD_DBS_055), err:%s, host:%s, dbname:%s",
+			err, host, dbname)
 	} else {
 		log.Printf("PostgreSQL created (SHD_DBS_058), dbname:%s, user:%s", dbname, username)
 	}
@@ -128,7 +130,8 @@ func AosCreateMySqlDBMiner(config ApiTypes.DBConfig) error {
 
 	// Test the connection
 	if err = ApiTypes.MySql_DB_miner.Ping(); err != nil {
-		log.Printf("***** Alarm: Failed to ping MySQL (SHD_DBS_090), err:%s, connStr:%s:", err, connStr)
+		// SECURITY: Don't log connection string (contains credentials)
+		log.Printf("***** Alarm: Failed to ping MySQL (SHD_DBS_090), err:%s, host:%s, db:%s", err, host, db_name)
 		return err
 	}
 
@@ -152,10 +155,12 @@ func HandleSelect(c echo.Context,
 	// ...
 	// IMPORTANT: This function assumes the query conditions are
 	// passed through the query portion of the URL (from echo.Context)
+	//
+	// SECURITY: Uses parameterized queries to prevent SQL injection.
+	// User input (val) is NEVER interpolated into the query string.
 
 	log.Printf("To retrieve data for Documents (SHD_DBS_024)")
 
-	var args_str string
 	i := 0
 	for {
 		log.Printf("Processing filter index: %d (SHD_DBS_178)", i)
@@ -180,25 +185,26 @@ func HandleSelect(c echo.Context,
 			return nil, error_msg
 		}
 
-		if i > 0 && !AllowedOps[op] {
+		if !AllowedOps[op] {
 			error_msg := fmt.Errorf("invalid operator (SHD_DBS_188):%s", op)
 			return nil, error_msg
 		}
 
 		val := c.QueryParam(fmt.Sprintf("val_%d", i))
-		whereClauses = append(whereClauses, fmt.Sprintf("%s %s ?", field, op))
-		args = append(args, val)
-		args_str += fmt.Sprintf(", %s", val)
-		log.Printf("Received filter - field: %s, op: %s, val: %s, logic_opr: %s (SHD_001_035)", field, op, val, logic_opr)
-		if i == 0 {
-			base_stmt += " WHERE "
+
+		// SECURITY: Build WHERE clause with placeholders only - never interpolate val
+		if i > 0 {
+			whereClauses = append(whereClauses, fmt.Sprintf("%s %s %s ?", logic_opr, field, op))
 		} else {
-			base_stmt += " " + logic_opr + " "
+			whereClauses = append(whereClauses, fmt.Sprintf("%s %s ?", field, op))
 		}
-		base_stmt += fmt.Sprintf(" %s %s '%s' ", field, op, val)
+		args = append(args, val)
+
+		log.Printf("Received filter - field: %s, op: %s, logic_opr: %s (SHD_001_035)", field, op, logic_opr)
 		i++
 	}
 
+	// SECURITY: Construct query using parameterized placeholders only
 	query := base_stmt
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " ")
@@ -211,7 +217,7 @@ func HandleSelect(c echo.Context,
 	log.Printf("Constructed query: %s (SHD_DBS_215)", query)
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		error_msg := fmt.Errorf("select failed (SHD_DBS_217), err:%v, query:%s, args:%s", err, query, args_str)
+		error_msg := fmt.Errorf("select failed (SHD_DBS_217), err:%v, query:%s", err, query)
 		log.Printf("***** Alarm %s", error_msg.Error())
 		return nil, error_msg
 	}

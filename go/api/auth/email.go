@@ -17,7 +17,15 @@ import (
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// SECURITY: Dummy hash for timing-safe comparison when user doesn't exist.
+// This prevents timing attacks that could enumerate valid email addresses.
+var dummyPasswordHash = func() []byte {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("dummy_password_for_timing_safety"), bcrypt.DefaultCost)
+	return hash
+}()
 
 type User struct {
 	Name     string `json:"name"`
@@ -162,9 +170,36 @@ func HandleEmailLoginBase(
 		}
 	}
 
+	// SECURITY: Check per-account rate limiting to prevent distributed brute-force attacks.
+	// This protects against attackers using multiple IPs to attack a single account.
+	accountAllowed, _, accountRetryAfter := CheckAccountLockout(req.Email)
+	if !accountAllowed {
+		logger.Warn("Account locked due to too many failed attempts",
+			"email", req.Email,
+			"retry_after", accountRetryAfter.String())
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_AuthFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  func() *string { s := fmt.Sprintf("Account locked due to rate limiting: %s", req.Email); return &s }(),
+			CallerLoc:    "SHD_EML_ACCT_LOCK"})
+
+		return http.StatusTooManyRequests, map[string]string{
+			"status":  "error",
+			"message": "This account is temporarily locked due to too many failed login attempts. Please try again later.",
+			"loc":     "SHD_EML_ACCT_LOCK",
+		}
+	}
+
 	user_info, exist := rc.GetUserInfoByEmail(req.Email)
 	if !exist {
-		// SECURITY: Log the actual reason internally but return generic message
+		// SECURITY: Perform dummy bcrypt comparison to prevent timing attacks.
+		// This ensures response time is similar whether email exists or not,
+		// preventing attackers from enumerating valid emails via timing analysis.
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(req.Password))
+
 		error_msg := fmt.Sprintf("login failed: email not found, email:%s", req.Email)
 		logger.Warn("login attempt for non-existent email", "email", req.Email)
 
@@ -203,9 +238,9 @@ func HandleEmailLoginBase(
 		}
 	}
 
-	// SECURITY: Reset rate limit on successful login
+	// SECURITY: Reset both IP and account rate limits on successful login
 	if clientIP != "" {
-		ResetLoginRateLimit(clientIP)
+		ResetLoginRateLimits(clientIP, req.Email)
 	}
 
 	// Generate Pocketbase auth token (similar to Google OAuth flow)
@@ -473,11 +508,7 @@ func HandleEmailVerifyBase(
 		"db_type", ApiTypes.DatabaseInfo.DBType,
 		"tablename", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 
-	// TODO (Chen Ding, 2025/11/03)
-	// Add timeout or rate-limiting to prevent abuse of this endpoint.
-	// Validate token format early (e.g., check length, character set).
-	// Use HTTPS in production — tokens in request bodies are still sensitive.
-
+	// SECURITY: Validate token and check expiration
 	user_info, exist := rc.GetUserInfoByToken(token)
 	if !exist {
 		log_id := sysdatastores.NextActivityLogID()
@@ -498,6 +529,33 @@ func HandleEmailVerifyBase(
 			"status":    "failed",
 			"error_msg": e_msg,
 			"loc":       "SHD_EML_430",
+		}
+		return http.StatusBadRequest, resp, fmt.Errorf("%s", e_msg)
+	}
+
+	// SECURITY: Explicit token expiration check (defense in depth)
+	if !user_info.VTokenExpiresAt.IsZero() && time.Now().After(user_info.VTokenExpiresAt) {
+		log_id := sysdatastores.NextActivityLogID()
+		error_msg := fmt.Sprintf("email verification token expired, email:%s, log_id:%d", user_info.Email, log_id)
+		logger.Warn("email verification token expired",
+			"email", user_info.Email,
+			"expired_at", user_info.VTokenExpiresAt,
+			"log_id", log_id)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			LogID:        log_id,
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidToken,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_TOKEN_EXP"})
+
+		e_msg := fmt.Sprintf("email verification link has expired, log_id:%d (SHD_EML_TOKEN_EXP)", log_id)
+		resp := map[string]string{
+			"status":    "failed",
+			"error_msg": e_msg,
+			"loc":       "SHD_EML_TOKEN_EXP",
 		}
 		return http.StatusBadRequest, resp, fmt.Errorf("%s", e_msg)
 	}
@@ -1203,6 +1261,12 @@ func HandleResetPasswordConfirmBase(
 	status, status_code, msg := rc.UpdatePassword(user_info.Email, req.Password)
 	if !status {
 		return status_code, msg
+	}
+
+	// SECURITY: Clear the reset token to prevent reuse
+	if err := sysdatastores.ClearVTokenByEmail(rc, user_info.Email); err != nil {
+		log.Printf("[req=%s] Warning: failed to clear reset token: %v", reqID, err)
+		// Continue anyway - password was successfully updated
 	}
 
 	log.Printf("[req=%s] Update password success (SHD_EML_259), email:%s", reqID, user_info.Email)

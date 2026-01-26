@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -19,13 +20,27 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
-var domain_name = os.Getenv("APP_DOMAIN_NAME")
-var githubOauthConfig = &oauth2.Config{
-	ClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
-	ClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),
-	RedirectURL:  domain_name + "/auth/github/callback",
-	Scopes:       []string{"user:email"},
-	Endpoint:     github.Endpoint,
+// SECURITY: OAuth config is initialized lazily to ensure environment variables
+// are available at runtime, not just at module initialization time.
+var (
+	githubOauthConfig     *oauth2.Config
+	githubOauthConfigOnce sync.Once
+)
+
+// getGitHubOAuthConfig returns the GitHub OAuth config, initializing it on first use.
+// This ensures environment variables are read at runtime rather than module init time.
+func getGitHubOAuthConfig() *oauth2.Config {
+	githubOauthConfigOnce.Do(func() {
+		domainName := os.Getenv("APP_DOMAIN_NAME")
+		githubOauthConfig = &oauth2.Config{
+			ClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
+			ClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),
+			RedirectURL:  domainName + "/auth/github/callback",
+			Scopes:       []string{"user:email"},
+			Endpoint:     github.Endpoint,
+		}
+	})
+	return githubOauthConfig
 }
 
 func HandleGitHubLogin(c echo.Context) error {
@@ -38,7 +53,7 @@ func HandleGitHubLogin(c echo.Context) error {
 		return c.String(http.StatusServiceUnavailable, "Service temporarily unavailable. Please try again.")
 	}
 
-	url := githubOauthConfig.AuthCodeURL(nonce)
+	url := getGitHubOAuthConfig().AuthCodeURL(nonce)
 	msg := fmt.Sprintf("Github Login, url:%s", url)
 	log.Printf("%s (SHD_GHB_032)", msg)
 
@@ -70,7 +85,7 @@ func HandleGitHubLoginPocket(e echo.Context) error {
 		return nil
 	}
 
-	url := githubOauthConfig.AuthCodeURL(nonce)
+	url := getGitHubOAuthConfig().AuthCodeURL(nonce)
 	msg := fmt.Sprintf("Github Login, url:%s", url)
 	log.Printf("%s (SHD_GHB_032)", msg)
 
@@ -171,7 +186,7 @@ func HandleGitHubCallbackBase(
 		return http.StatusBadRequest, error_msg
 	}
 	code := rc.FormValue("code")
-	token, err := githubOauthConfig.Exchange(context.Background(), code)
+	token, err := getGitHubOAuthConfig().Exchange(context.Background(), code)
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("code exchange failed, code:%s, log_id:%d (MID_GHB_042)", code, log_id)
@@ -189,7 +204,7 @@ func HandleGitHubCallbackBase(
 		return http.StatusInternalServerError, error_msg
 	}
 
-	client := githubOauthConfig.Client(context.Background(), token)
+	client := getGitHubOAuthConfig().Client(context.Background(), token)
 	rr, err := client.Get("https://api.github.com/user")
 	if err != nil {
 		log_id := sysdatastores.NextActivityLogID()

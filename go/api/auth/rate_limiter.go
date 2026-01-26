@@ -4,6 +4,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,9 +46,15 @@ func StrictRateLimitConfig() RateLimitConfig {
 // defaultKeyFunc uses IP address as the rate limit key
 func defaultKeyFunc(c echo.Context) string {
 	// Try X-Forwarded-For first (for proxied requests)
+	// SECURITY: X-Forwarded-For can contain multiple IPs when there are multiple proxies.
+	// Format: "client, proxy1, proxy2, ..." - we want only the first (client) IP.
 	xff := c.Request().Header.Get("X-Forwarded-For")
 	if xff != "" {
-		return xff
+		// Extract only the first IP (the original client)
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
 	}
 	// Fall back to remote address
 	return c.RealIP()
@@ -87,9 +94,14 @@ func (rl *RateLimiter) cleanup() {
 		rl.mu.Lock()
 		now := time.Now()
 		for key, entry := range rl.entries {
-			// Remove entries that are past their block duration and window
-			if now.Sub(entry.blockedAt) > rl.config.BlockDuration &&
-				now.Sub(entry.windowStart) > rl.config.WindowDuration {
+			// Check if window has expired
+			windowExpired := now.Sub(entry.windowStart) > rl.config.WindowDuration
+
+			// Check if block has expired (or was never blocked)
+			blockExpired := entry.blockedAt.IsZero() || now.Sub(entry.blockedAt) > rl.config.BlockDuration
+
+			// Remove entry if both conditions are met
+			if windowExpired && blockExpired {
 				delete(rl.entries, key)
 			}
 		}
@@ -152,7 +164,11 @@ var (
 	loginRateLimiter         *RateLimiter
 	signupRateLimiter        *RateLimiter
 	passwordResetRateLimiter *RateLimiter
-	rateLimiterOnce          sync.Once
+	// SECURITY: Per-account rate limiter to prevent distributed brute-force attacks.
+	// Even if an attacker uses multiple IPs, they can only attempt a limited number
+	// of logins per account.
+	accountLockoutRateLimiter *RateLimiter
+	rateLimiterOnce           sync.Once
 )
 
 // initRateLimiters initializes the global rate limiters
@@ -166,6 +182,15 @@ func initRateLimiters() {
 			KeyFunc:        defaultKeyFunc,
 		})
 		passwordResetRateLimiter = NewRateLimiter(StrictRateLimitConfig())
+		// SECURITY: Per-account lockout - more lenient than IP-based since
+		// legitimate users may forget passwords, but strict enough to prevent
+		// brute-force attacks on specific accounts.
+		accountLockoutRateLimiter = NewRateLimiter(RateLimitConfig{
+			MaxAttempts:    10,               // 10 attempts per account
+			WindowDuration: 30 * time.Minute, // within 30 minutes
+			BlockDuration:  30 * time.Minute, // lock account for 30 minutes
+			KeyFunc:        defaultKeyFunc,   // Not used for account lockout (uses email directly)
+		})
 	})
 }
 
@@ -223,4 +248,49 @@ func CheckPasswordResetRateLimit(ip string) (bool, int, time.Duration) {
 func GetLoginRateLimiter() *RateLimiter {
 	initRateLimiters()
 	return loginRateLimiter
+}
+
+// CheckAccountLockout checks if a specific account (email) has exceeded login attempts.
+// SECURITY: This protects against distributed brute-force attacks where an attacker
+// uses multiple IPs to attack a single account.
+// Returns (allowed, remainingAttempts, retryAfterDuration)
+func CheckAccountLockout(email string) (bool, int, time.Duration) {
+	initRateLimiters()
+	// Normalize email to lowercase for consistent rate limiting
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	return accountLockoutRateLimiter.Allow(normalizedEmail)
+}
+
+// ResetAccountLockout resets the per-account rate limit after successful login
+func ResetAccountLockout(email string) {
+	initRateLimiters()
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	accountLockoutRateLimiter.Reset(normalizedEmail)
+}
+
+// CheckLoginRateLimits checks both IP-based and account-based rate limits.
+// SECURITY: This provides defense in depth against brute-force attacks.
+// - IP-based: Prevents a single IP from attempting many logins
+// - Account-based: Prevents distributed attacks against a single account
+// Returns (allowed, retryAfterDuration, reason)
+func CheckLoginRateLimits(ip string, email string) (bool, time.Duration, string) {
+	// Check IP-based rate limit first
+	ipAllowed, _, ipRetryAfter := CheckLoginRateLimit(ip)
+	if !ipAllowed {
+		return false, ipRetryAfter, "ip_blocked"
+	}
+
+	// Check account-based rate limit
+	accountAllowed, _, accountRetryAfter := CheckAccountLockout(email)
+	if !accountAllowed {
+		return false, accountRetryAfter, "account_locked"
+	}
+
+	return true, 0, ""
+}
+
+// ResetLoginRateLimits resets both IP and account rate limits after successful login
+func ResetLoginRateLimits(ip string, email string) {
+	ResetLoginRateLimit(ip)
+	ResetAccountLockout(email)
 }

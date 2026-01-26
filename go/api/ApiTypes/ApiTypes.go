@@ -297,7 +297,7 @@ type AddPromptResponse struct {
 	Loc      string `json:"loc,omitempty"`
 }
 
-// Maks ure it syncs with svelte/src/lib/types/CommonTypes.ts::JimoResponse
+// Make sure it syncs with svelte/src/lib/types/CommonTypes.ts::JimoResponse
 type JimoResponse struct {
 	Status     bool        `json:"status"`
 	ErrorMsg   string      `json:"error_msg"`
@@ -374,17 +374,18 @@ type UserAccount struct {
 }
 
 // Make sure this struct syncs with Shared/svelte/src/lib/types/CommonTypes.ts::UserInfo
+// SECURITY: Sensitive fields use json:"-" to prevent exposure in API responses
 type UserInfo struct {
 	UserId                string    `json:"id"`
 	UserName              string    `json:"name"`
-	Password              string    `json:"password"`
+	Password              string    `json:"-"` // SECURITY: Never expose password hash in API responses
 	UserIdType            string    `json:"user_id_type"`
 	FirstName             string    `json:"first_name"`
 	LastName              string    `json:"last_name"`
 	Email                 string    `json:"email"`
 	UserMobile            string    `json:"user_mobile,omitempty"`
 	UserAddress           string    `json:"user_address"`
-	Verified              bool      `json:"verfied"`
+	Verified              bool      `json:"verified"`
 	Admin                 bool      `json:"admin"`
 	IsOwner               bool      `json:"is_owner"`
 	EmailVisibility       bool      `json:"email_visibility"`
@@ -392,18 +393,19 @@ type UserInfo struct {
 	UserStatus            string    `json:"user_status"`
 	Avatar                string    `json:"avatar"`
 	Locale                string    `json:"locale"`
-	OutlookRefreshToken   string    `json:"outlook_refresh_token"`
-	OutlookAccessToken    string    `json:"outlook_access_token"`
+	OutlookRefreshToken   string    `json:"-"` // SECURITY: Never expose OAuth tokens in API responses
+	OutlookAccessToken    string    `json:"-"` // SECURITY: Never expose OAuth tokens in API responses
 	OutlookTokenExpiresAt time.Time `json:"outlook_token_expires_at"`
 	OutlookSubID          string    `json:"outlook_sub_id"`
 	OutlookSubExpiresAt   time.Time `json:"outlook_sub_expires_at"`
-	VToken                string    `json:"v_token"`
+	VToken                string    `json:"-"` // SECURITY: Never expose verification tokens in API responses
 	VTokenExpiresAt       time.Time `json:"v_token_expires_at"`
 	Created               time.Time `json:"created"`
 	Updated               time.Time `json:"updated"`
 }
 
-// Make sure this struct syncs with tax/web/src/lib/pocketbas-types.ts::UsersRecord
+// Make sure this struct syncs with tax/web/src/lib/pocketbase-types.ts::UsersRecord
+// SECURITY: Sensitive fields use json:"-" to prevent exposure in API responses
 type UserInfoPocket struct {
 	UserId          string `json:"id"`
 	Email           string `json:"email"`
@@ -415,9 +417,9 @@ type UserInfoPocket struct {
 	FirstName       string `json:"firstName"`
 	LastName        string `json:"lastName"`
 	IsOwner         bool   `json:"isOwner"`
-	Password        string `json:"password"`
-	TokenKey        string `json:"tokenKey"`
-	Verified        bool   `json:"verfied"`
+	Password        string `json:"-"` // SECURITY: Never expose password hash in API responses
+	TokenKey        string `json:"-"` // SECURITY: Never expose token key in API responses
+	Verified        bool   `json:"verified"`
 }
 
 // RequestContext is a framework-agnostic wrapper for request-scoped data

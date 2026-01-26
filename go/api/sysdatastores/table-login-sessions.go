@@ -207,19 +207,29 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 
 func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool, error) {
 	// This function checks whether 'session_id' is valid in the sessions table.
+	// SECURITY: Also verifies that the user account is still active (not suspended/banned).
 	// If valid, return user_name.
 	var query string
 	var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	sessions_table := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	users_table := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
-		query = fmt.Sprintf("SELECT user_name FROM %s WHERE session_id = ? AND expires_at > NOW() LIMIT 1", table_name)
+		// SECURITY: Join with users table to check user_status is 'active'
+		query = fmt.Sprintf(`SELECT s.user_name FROM %s s
+			INNER JOIN %s u ON s.user_email = u.email
+			WHERE s.session_id = ? AND s.expires_at > NOW() AND u.user_status = 'active'
+			LIMIT 1`, sessions_table, users_table)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.PG_DB_miner
-		query = fmt.Sprintf("SELECT user_name FROM %s WHERE session_id = $1 AND expires_at > NOW() LIMIT 1", table_name)
+		// SECURITY: Join with users table to check user_status is 'active'
+		query = fmt.Sprintf(`SELECT s.user_name FROM %s s
+			INNER JOIN %s u ON s.user_email = u.email
+			WHERE s.session_id = $1 AND s.expires_at > NOW() AND u.user_status = 'active'
+			LIMIT 1`, sessions_table, users_table)
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
@@ -231,7 +241,7 @@ func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool
 	err := db.QueryRow(query, session_id).Scan(&user_name)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("user not found:%s (SHD_DBS_333)", user_name)
+			error_msg := fmt.Sprintf("session invalid or user inactive:%s (SHD_DBS_333)", ApiUtils.MaskToken(session_id))
 			log.Printf("%s", error_msg)
 			return "", false, nil
 
@@ -241,25 +251,35 @@ func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool
 		log.Printf("***** Alarm:%s", error_msg)
 		return "", false, error_msg
 	}
-	log.Printf("Check session (SHD_DBS_158), stmt: %s, user_name:%s", query, user_name)
+	log.Printf("Check session (SHD_DBS_158), user_name:%s", user_name)
 	return user_name, user_name != "", nil
 }
 
 func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (string, bool, error) {
 	// This function checks whether 'auth_token' is valid in the sessions table.
-	// If valid, return user_name.
+	// SECURITY: Also verifies that the user account is still active (not suspended/banned).
+	// If valid, return user_email.
 	var query string
 	var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	sessions_table := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	users_table := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
-		query = fmt.Sprintf("SELECT user_email FROM %s WHERE auth_token= ? AND expires_at > NOW() LIMIT 1", table_name)
+		// SECURITY: Join with users table to check user_status is 'active'
+		query = fmt.Sprintf(`SELECT s.user_email FROM %s s
+			INNER JOIN %s u ON s.user_email = u.email
+			WHERE s.auth_token = ? AND s.expires_at > NOW() AND u.user_status = 'active'
+			LIMIT 1`, sessions_table, users_table)
 
 	case ApiTypes.PgName:
 		db = ApiTypes.PG_DB_miner
-		query = fmt.Sprintf("SELECT user_email FROM %s WHERE auth_token= $1 AND expires_at > NOW() LIMIT 1", table_name)
+		// SECURITY: Join with users table to check user_status is 'active'
+		query = fmt.Sprintf(`SELECT s.user_email FROM %s s
+			INNER JOIN %s u ON s.user_email = u.email
+			WHERE s.auth_token = $1 AND s.expires_at > NOW() AND u.user_status = 'active'
+			LIMIT 1`, sessions_table, users_table)
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_180): %s", db_type)
@@ -271,7 +291,7 @@ func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (s
 	err := db.QueryRow(query, auth_token).Scan(&user_email)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("session not found, auth_token:%s (SHD_DBS_189)", ApiUtils.MaskToken(auth_token))
+			error_msg := fmt.Sprintf("session invalid or user inactive, auth_token:%s (SHD_DBS_189)", ApiUtils.MaskToken(auth_token))
 			log.Printf("%s", error_msg)
 			return "", false, nil
 
@@ -281,7 +301,7 @@ func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (s
 		log.Printf("***** Alarm:%s", error_msg)
 		return "", false, error_msg
 	}
-	log.Printf("Check session success (SHD_DBS_199), stmt: %s, user_email:%s", query, user_email)
+	log.Printf("Check session success (SHD_DBS_199), user_email:%s", user_email)
 	return user_email, user_email != "", nil
 }
 

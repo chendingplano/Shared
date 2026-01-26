@@ -940,6 +940,42 @@ func UpdateAuthTokenByEmail(
 	return nil
 }
 
+// ClearVTokenByEmail clears the verification/reset token after successful use.
+// SECURITY: This prevents token reuse attacks.
+func ClearVTokenByEmail(
+	rc ApiTypes.RequestContext,
+	email string) error {
+	var db *sql.DB
+	var stmt string
+	logger := rc.GetLogger()
+	db_type := ApiTypes.DatabaseInfo.DBType
+	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+
+	switch db_type {
+	case ApiTypes.MysqlName:
+		db = ApiTypes.MySql_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = NULL, v_token_expires_at = NULL, updated = CURRENT_TIMESTAMP WHERE email = ?", table_name)
+
+	case ApiTypes.PgName:
+		db = ApiTypes.PG_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = NULL, v_token_expires_at = NULL, updated = CURRENT_TIMESTAMP WHERE email = $1", table_name)
+
+	default:
+		err := fmt.Errorf("unsupported database type (SHD_USR_CLR_001): %s", db_type)
+		logger.Error("unsupported database type", "db_type", db_type)
+		return err
+	}
+
+	_, err := db.Exec(stmt, email)
+	if err != nil {
+		logger.Error("failed to clear v_token", "email", email, "error", err)
+		return fmt.Errorf("failed to clear v_token (SHD_USR_CLR_002): %w", err)
+	}
+
+	logger.Info("Cleared v_token after successful use", "email", email)
+	return nil
+}
+
 // RefreshTokenKey generates a new random token key for the user and updates it in the database.
 // This invalidates all existing JWT sessions for the user.
 func RefreshTokenKey(

@@ -5,10 +5,23 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
+
+// validIdentifierRegex validates SQL identifiers (table names, column names)
+// to prevent SQL injection. Only alphanumeric characters and underscores allowed.
+var validIdentifierRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// isValidSQLIdentifier checks if a string is a safe SQL identifier
+func isValidSQLIdentifier(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	return validIdentifierRegex.MatchString(name)
+}
 
 // InsertBatch inserts multiple records into the specified table
 // and returns the auto-generated prompt_id values. It works for both
@@ -28,6 +41,14 @@ func InsertBatch(
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
 	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 
+	// SECURITY: Validate table name to prevent SQL injection
+	// Table names are interpolated directly into SQL, so they MUST be validated
+	if !isValidSQLIdentifier(tableName) {
+		error_msg := fmt.Sprintf("invalid table name (SQL injection prevention): %s", tableName)
+		log.Printf("***** SECURITY ALERT:[req=%s] %s (SHD_UCM_SEC_001)", reqID, error_msg)
+		return fmt.Errorf("%s", error_msg)
+	}
+
 	// This function inserts records in batch. It supports MySQL and PostgreSQL only now.
 	// In the future, it may support more databases.
 	if batchSize <= 0 {
@@ -44,6 +65,12 @@ func InsertBatch(
 			continue // Skip to next field
 
 		default:
+			// SECURITY: Validate column names to prevent SQL injection
+			if !isValidSQLIdentifier(f.FieldName) {
+				error_msg := fmt.Sprintf("invalid column name (SQL injection prevention): %s", f.FieldName)
+				log.Printf("***** SECURITY ALERT:[req=%s] %s (SHD_UCM_SEC_002)", reqID, error_msg)
+				return fmt.Errorf("%s", error_msg)
+			}
 			columns = append(columns, f.FieldName)
 		}
 	}
@@ -143,6 +170,11 @@ func InsertAutoColumns(
 		return fmt.Errorf("no records")
 	}
 
+	// SECURITY: Validate table name to prevent SQL injection
+	if !isValidSQLIdentifier(tableName) {
+		return fmt.Errorf("invalid table name (SQL injection prevention): %s", tableName)
+	}
+
 	// 1. Infer set of columns from all records
 	colSet := map[string]struct{}{}
 	for _, rec := range records {
@@ -153,6 +185,10 @@ func InsertAutoColumns(
 
 	columns := []string{}
 	for col := range colSet {
+		// SECURITY: Validate each column name to prevent SQL injection
+		if !isValidSQLIdentifier(col) {
+			return fmt.Errorf("invalid column name (SQL injection prevention): %s", col)
+		}
 		columns = append(columns, col)
 	}
 
