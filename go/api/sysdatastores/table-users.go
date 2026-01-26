@@ -822,6 +822,8 @@ func UpsertUser(
 	checkStringField("user_status", new_user_info.UserStatus, user_info.UserStatus, false)
 	checkStringField("avatar", new_user_info.Avatar, user_info.Avatar, false)
 	checkStringField("locale", new_user_info.Locale, user_info.Locale, false)
+	checkStringField("outlook_refresh_token", new_user_info.OutlookRefreshToken, user_info.OutlookRefreshToken, false)
+	checkStringField("outlook_access_token", new_user_info.OutlookAccessToken, user_info.OutlookAccessToken, false)
 	checkStringField("outlook_sub_id", new_user_info.OutlookSubID, user_info.OutlookSubID, false)
 
 	// Check bool fields
