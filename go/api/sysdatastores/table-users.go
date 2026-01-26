@@ -38,7 +38,7 @@ func CreateUsersTable(
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
-	
+
 	logger.Info("Create table", "table_name", table_name)
 
 	var stmt string
@@ -667,7 +667,7 @@ func UpsertUser(
 		insert_stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ("+
 			"$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, "+
 			"$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, "+
-			"$21, $22) "+
+			"$21, $22, $23) "+
 			"ON CONFLICT (LOWER(email)) DO UPDATE SET v_token = EXCLUDED.v_token "+
 			"RETURNING *",
 			table_name, Users_insert_field_names)
@@ -702,6 +702,7 @@ func UpsertUser(
 		user_info.OutlookSubExpiresAt,
 		user_info.OutlookTokenExpiresAt,
 		user_info.VToken,
+		user_info.VTokenExpiresAt,
 	}
 
 	row := db.QueryRow(insert_stmt, args...)
