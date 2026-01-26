@@ -16,8 +16,7 @@ appAuthStore.stopImpersonation();
 ********************************************************/
 
 import { writable } from 'svelte/store';
-import type { UserInfo } from '$lib/types/CommonTypes';
-import type { JimoResponse } from '$lib/types/CommonTypes';
+import type { UserInfo, JimoResponse } from '../types/CommonTypes';
 
 export let onNavigate = (path: string) => {}; // passed from the host app
 
@@ -161,33 +160,26 @@ function createAuthStore(): AuthStore {
     const checkAuthStatus = async () => {
         // If already logged in with user info, skip the check
         if (currentState.isLoggedIn && currentState.user) {
-            console.log("Already logged in (SHD_ATH_141), skipping auth check");
             return;
         }
 
         try {
-            console.log("Fetch /auth/me (SHD_ATH_089)")
             const response = await fetch('/auth/me', {
                 method: 'GET',
                 credentials: 'include', // essential for cookies
             });
 
-            console.log("Fetch /auth/me (SHD_ATH_131)")
             const resp_text = await response.text()
             if (response.ok) {
-                console.log("Fetch /auth/me (SHD_ATH_134)")
                 const resp_json = JSON.parse(resp_text) as JimoResponse
                 const results_str = resp_json.results as string
                 const base_url = resp_json.base_url
                 if (base_url === null || base_url === "") {
-                    alert('missing base_url (ARX_ATH_185')
-                    console.error('missing base_url (ARX_ATH_185')
+                    console.error('Missing base_url in /auth/me response (SHD_ATH_185)')
                 }
                 if (typeof results_str === 'string' && results_str.length > 0) {
                     const userInfo = JSON.parse(results_str) as UserInfo;
 
-                    console.log("Fetch /auth/me success (SHD_ATH_102), user_name:" + userInfo.name +
-                        "user name:" + userInfo.first_name+ " " + userInfo.last_name)
                     update(() => ({
                         isLoggedIn: !!userInfo,
                         status: 'success',
@@ -200,12 +192,9 @@ function createAuthStore(): AuthStore {
                         impersonatedClientId: null,
                         impersonatedClientName: null,
                     }));
-                } else {
-                    alert("User info is empty:" + resp_text)
                 }
             } else {
                 // Not logged in — leave state as is (logged out)
-                console.log("Fetch /auth/me failed (SHD_ATH_116)")
                 update(() => ({
                     isLoggedIn: false,
                     status: 'login',
@@ -251,14 +240,11 @@ function createAuthStore(): AuthStore {
 
     async function login(email: string, password: string): Promise<LoginResults> {
         try {
-            console.log("fetch login (SHD_ATH_193)")
             const response = await fetch('/auth/email/login', {
               method: 'POST',
               body: JSON.stringify({ email, password }),
               headers: { 'Content-Type': 'application/json' },
             });
-
-            console.log("fetch login (SHD_ATH_200)")
             if (!response.ok) {
                 const errorData = await response.json();
                 var error_msg: string
@@ -327,7 +313,6 @@ function createAuthStore(): AuthStore {
             const user = currentState.user;
             const user_name = user ? user.name:''
             const email = user ? user.email : ''
-            console.log("user_name (SHD_AST_218):", user_name, "email:", email)
             const response = await fetch('/auth/logout', {
               method: 'POST',
               headers: { "Content-Type": "application/json" },
@@ -427,9 +412,8 @@ function createAuthStore(): AuthStore {
     }
   }
 
-  async function verifyEmail(token: string, loc: string): Promise<VerifyEmailResults> {
+  async function verifyEmail(token: string, _loc: string): Promise<VerifyEmailResults> {
     try {
-        console.log("Verify email with token (SHD_ATH_383), caller:" + loc)
         const response = await fetch(`/auth/email/verify?token=${token}&type=auth`, {
             method: 'GET',
             credentials: 'include', // Important: include cookies
@@ -450,10 +434,8 @@ function createAuthStore(): AuthStore {
         const resp_json = JSON.parse(resp_text);
         const base_url = resp_json.base_url
         if (base_url === null || base_url === '') {
-            alert(`missing base_url (ARX_ATH_447)`)
-            console.error(`missing base_url (ARX_ATH_447)`)
+            console.error('Missing base_url in email verify response (SHD_ATH_447)')
         }
-        console.log("Email verify response (SHD_ATH_400):", resp_json);
 
         const redirect_url = resp_json.redirect_url || '/dashboard';
         const user_info_str = resp_json.user_info;
@@ -474,7 +456,6 @@ function createAuthStore(): AuthStore {
                 impersonatedClientName: null,
             }));
 
-            console.log("Email verification successful (SHD_ATH_424)");
             return {
                 status: true,
                 error_msg: '',
