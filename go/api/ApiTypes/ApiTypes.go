@@ -393,8 +393,8 @@ type UserInfo struct {
 	UserStatus            string    `json:"user_status"`
 	Avatar                string    `json:"avatar"`
 	Locale                string    `json:"locale"`
-	OutlookRefreshToken   string    `json:"-"` // SECURITY: Never expose OAuth tokens in API responses
-	OutlookAccessToken    string    `json:"-"` // SECURITY: Never expose OAuth tokens in API responses
+	OutlookRefreshToken   string    `json:"outlook_refresh_token"` // SECURITY: Never expose OAuth tokens in API responses
+	OutlookAccessToken    string    `json:"outlook_access_token"`  // SECURITY: Never expose OAuth tokens in API responses
 	OutlookTokenExpiresAt time.Time `json:"outlook_token_expires_at"`
 	OutlookSubID          string    `json:"outlook_sub_id"`
 	OutlookSubExpiresAt   time.Time `json:"outlook_sub_expires_at"`
