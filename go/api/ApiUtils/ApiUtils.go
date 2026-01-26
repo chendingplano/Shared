@@ -437,3 +437,65 @@ func ParseTimestamp(s string) (time.Time, error) {
 func GenerateUUID() string {
 	return uuid.NewString()
 }
+
+// IsSafeReturnURL validates that a return URL is safe for redirection.
+// It prevents open redirect attacks by ensuring the URL is a same-origin relative path.
+// Returns true only if the URL:
+// - Starts with "/" (relative path)
+// - Does not start with "//" (protocol-relative URL)
+// - Does not contain backslashes (browser interpretation varies)
+// - Does not contain "javascript:" or "data:" schemes
+// - Does not contain "://" (absolute URL)
+func IsSafeReturnURL(returnURL string) bool {
+	if returnURL == "" {
+		return false
+	}
+
+	// Must start with / (relative path)
+	if !strings.HasPrefix(returnURL, "/") {
+		return false
+	}
+
+	// Reject protocol-relative URLs (//evil.com)
+	if strings.HasPrefix(returnURL, "//") {
+		return false
+	}
+
+	// Reject backslash URLs (/\evil.com) - browsers may interpret backslashes as forward slashes
+	if strings.Contains(returnURL, "\\") {
+		return false
+	}
+
+	// Reject javascript:, data:, etc.
+	lowerURL := strings.ToLower(returnURL)
+	if strings.Contains(lowerURL, "javascript:") || strings.Contains(lowerURL, "data:") {
+		return false
+	}
+
+	// Reject absolute URLs embedded in path
+	if strings.Contains(returnURL, "://") {
+		return false
+	}
+
+	// Parse to catch any edge cases
+	parsed, err := url.Parse(returnURL)
+	if err != nil {
+		return false
+	}
+
+	// Ensure the parsed URL is still a relative path
+	if parsed.Host != "" || parsed.Scheme != "" {
+		return false
+	}
+
+	return true
+}
+
+// GetSafeReturnURL returns the returnURL if it's safe, otherwise returns the fallback.
+// This is the backend equivalent of the frontend getSafeReturnUrl function.
+func GetSafeReturnURL(returnURL string, fallback string) string {
+	if IsSafeReturnURL(returnURL) {
+		return returnURL
+	}
+	return fallback
+}

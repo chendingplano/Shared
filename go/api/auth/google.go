@@ -3,6 +3,7 @@ package auth
 
 // server/api/Auth/google.go
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -42,13 +43,63 @@ func getGoogleOauthConfig() *oauth2.Config {
 	}
 }
 
-var oauthStateString = "random-string" // 开发阶段可用常量，生产环境请生成并验证
+var oauthStateNonce = "random-string" // Base nonce for CSRF protection
+
+// oauthState represents the data encoded in the OAuth state parameter.
+// This carries data through the OAuth flow while maintaining CSRF protection.
+type oauthState struct {
+	Nonce     string `json:"n"` // CSRF nonce
+	ReturnURL string `json:"r"` // Optional return URL after login
+}
+
+// encodeOAuthState encodes the state struct to a base64 string
+func encodeOAuthState(state oauthState) string {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return oauthStateNonce // Fallback to simple nonce
+	}
+	return base64.URLEncoding.EncodeToString(data)
+}
+
+// decodeOAuthState decodes the base64 state string back to struct
+func decodeOAuthState(encoded string) (oauthState, error) {
+	// Handle legacy simple string state
+	if encoded == oauthStateNonce {
+		return oauthState{Nonce: oauthStateNonce}, nil
+	}
+
+	data, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return oauthState{}, err
+	}
+
+	var state oauthState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return oauthState{}, err
+	}
+	return state, nil
+}
 
 func HandleGoogleLogin(c echo.Context) error {
 	config := getGoogleOauthConfig()
-	url := config.AuthCodeURL(oauthStateString, oauth2.AccessTypeOffline)
-	log.Printf("HandleGoogleLogin called (MID_GGL_043), redirect to:%s", url)
-	return c.Redirect(http.StatusTemporaryRedirect, url)
+
+	// Capture and validate returnUrl from query params
+	returnURL := c.QueryParam("returnUrl")
+	if returnURL != "" && !ApiUtils.IsSafeReturnURL(returnURL) {
+		log.Printf("HandleGoogleLogin: rejected unsafe returnUrl: %s (SHD_GGL_081)", returnURL)
+		returnURL = "" // Reject unsafe URLs
+	}
+
+	// Encode state with nonce and optional returnUrl
+	state := oauthState{
+		Nonce:     oauthStateNonce,
+		ReturnURL: returnURL,
+	}
+	stateStr := encodeOAuthState(state)
+
+	authURL := config.AuthCodeURL(stateStr, oauth2.AccessTypeOffline)
+	log.Printf("HandleGoogleLogin called (MID_GGL_043), returnUrl:%s, redirect to:%s", returnURL, authURL)
+	return c.Redirect(http.StatusTemporaryRedirect, authURL)
 }
 
 func HandleGoogleCallback(c echo.Context) error {
@@ -63,117 +114,21 @@ func HandleGoogleCallback(c echo.Context) error {
 	return c.String(status_code, redirect_url)
 }
 
-/*
-func HandleGoogleCallbackPocket(e *core.RequestEvent) error {
-	rc := RequestHandlers.NewFromPocket(e)
-	logger := rc.GetLogger()
-	reqID := rc.ReqID()
-
-	logger.Info("HandleGoogleCallbackPocket called")
-
-	// Get the OAuth code from the callback
-	if rc.FormValue("state") != oauthStateString {
-		error_msg := fmt.Sprintf("invalid oauth state: expected %s, got %s",
-			oauthStateString, rc.FormValue("state"))
-		log.Printf("[req=%s] ***** Alarm %s (SHD_GGL_077)", reqID, error_msg)
-		e.String(http.StatusBadRequest, "invalid oauth state")
-		return nil
-	}
-
-	code := rc.FormValue("code")
-	if code == "" {
-		error_msg := "code not found in request (SHD_GGL_084)"
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusBadRequest, error_msg)
-		return nil
-	}
-
-	// Get user info from Google
-	googleUserInfo, err := getGoogleUserInfo(rc.Context(), code)
-	if err != nil {
-		error_msg := fmt.Sprintf("failed to get user info: %v (SHD_GGL_092)", err)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusInternalServerError, "failed to get user info")
-		return nil
-	}
-
-	if !googleUserInfo.VerifiedEmail {
-		error_msg := fmt.Sprintf("unverified email login attempt, email:%s (SHD_GGL_099)",
-			googleUserInfo.Email)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusUnauthorized, "email not verified")
-		return nil
-	}
-
-	// Find or create the user in Pocketbase
-	usersCollection, err := e.App.FindCollectionByNameOrId("users")
-	if err != nil {
-		error_msg := fmt.Sprintf("failed to find users collection: %v (SHD_GGL_108)", err)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusInternalServerError, "internal error")
-		return nil
-	}
-
-	// Will generate a password since Pocketbase does not allow empty password
-	password := ApiUtils.GeneratePassword(rc, 12)
-
-	var user_info ApiTypes.UserInfo
-	user_info.UserIdType = "google"
-	user_info.UserName = googleUserInfo.Email
-	user_info.Email = googleUserInfo.Email
-	user_info.AuthType = "google"
-	user_info.UserStatus = "active"
-	user_info.FirstName = googleUserInfo.GivenName
-	user_info.LastName = googleUserInfo.FamilyName
-	user_info.Avatar = googleUserInfo.Picture
-	user_info, err = rc.UpsertUser(user_info,
-		password, false, false, false, false)
-
-	if err != nil {
-		error_msg := fmt.Sprintf("failed upsert user (SHD_GGL_173), err: %v", err)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusInternalServerError, "failed to generate token")
-		return nil
-	}
-
-	userRecord, err := e.App.FindAuthRecordByEmail(usersCollection.Id, googleUserInfo.Email)
-	if err != nil {
-		error_msg := fmt.Sprintf("internal error (SHD_GGL_182), err: %v", err)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusInternalServerError, "failed to generate token")
-		return nil
-	}
-
-	// Generate Pocketbase auth token
-	token, tokenErr := userRecord.NewAuthToken()
-	if tokenErr != nil {
-		error_msg := fmt.Sprintf("failed to generate auth token: %v (SHD_GGL_167)", tokenErr)
-		log.Printf("[req=%s] ***** Alarm %s", reqID, error_msg)
-		e.String(http.StatusInternalServerError, "failed to generate token")
-		return nil
-	}
-
-	log.Printf("[req=%s] Successfully authenticated user %s via Google OAuth (SHD_GGL_176)",
-		reqID, googleUserInfo.Email)
-
-	// Redirect to frontend OAuth callback page with token
-	// Note: Using /oauth/callback instead of /auth/callback to avoid the (auth) layout
-	redirectURL := ApiUtils.GetOAuthRedirectURL(rc, token, googleUserInfo.Name)
-	http.Redirect(e.Response, e.Request, redirectURL, http.StatusSeeOther)
-	return nil
-}
-*/
-
 func HandleGoogleCallbackBase(
 	rc ApiTypes.RequestContext) (int, string) {
 	logger := rc.GetLogger()
 	logger.Info("HandleGoogleCallback called")
-	if rc.FormValue("state") != oauthStateString {
-		error_msg := fmt.Sprintf("invalid oauth state: expected %s, got %s",
-			oauthStateString, rc.FormValue("state"))
+
+	// Decode and validate OAuth state
+	stateStr := rc.FormValue("state")
+	state, err := decodeOAuthState(stateStr)
+	if err != nil || state.Nonce != oauthStateNonce {
+		error_msg := fmt.Sprintf("invalid oauth state: got %s, error: %v",
+			stateStr, err)
 		logger.Error("invalid oauth state",
-			"expecting", oauthStateString,
-			"actual", rc.FormValue("state"))
+			"expecting_nonce", oauthStateNonce,
+			"actual", stateStr,
+			"error", err)
 		var record = ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
 			ActivityType: ApiTypes.ActivityType_AuthFailure,
@@ -185,6 +140,14 @@ func HandleGoogleCallbackBase(
 
 		return http.StatusBadRequest, "invalid oauth state (MID_GGL_043)"
 	}
+
+	// Extract and re-validate returnUrl from state (defense-in-depth)
+	returnURL := ""
+	if state.ReturnURL != "" && ApiUtils.IsSafeReturnURL(state.ReturnURL) {
+		returnURL = state.ReturnURL
+		logger.Info("OAuth callback with returnUrl", "returnUrl", returnURL)
+	}
+
 	code := rc.FormValue("code")
 	if code == "" {
 		error_msg := "code not found in request (SHD_GGL_060)"
@@ -398,18 +361,22 @@ func HandleGoogleCallbackBase(
 		ActivityMsg:  &msg2,
 		CallerLoc:    "SHD_EML_324"})
 
-	// Redirect to the home URL
+	// Redirect to the home URL, including returnUrl if present
 	redirectURL := fmt.Sprintf("%s?name=%s", redirect_url, url.QueryEscape(googleUserInfo.Name))
+	if returnURL != "" {
+		redirectURL = fmt.Sprintf("%s&returnUrl=%s", redirectURL, url.QueryEscape(returnURL))
+	}
 
 	logger.Info("Google login success",
 		"is_admin", user_info.Admin,
 		"redirectURL", redirectURL,
+		"returnURL", returnURL,
 		"email", googleUserInfo.Email,
 		"user_name", googleUserInfo.Name,
 		"http_only", "true")
 
-	msg3 := fmt.Sprintf("User %s (%s) logged in successfully, redirect to:%s",
-		googleUserInfo.Name, googleUserInfo.Email, redirectURL)
+	msg3 := fmt.Sprintf("User %s (%s) logged in successfully, redirect to:%s, returnUrl:%s",
+		googleUserInfo.Name, googleUserInfo.Email, redirectURL, returnURL)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
