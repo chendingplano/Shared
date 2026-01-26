@@ -22,9 +22,9 @@ var Users_selected_field_names = "id, " +
 	"name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
-	"locale, outlook_refresh_token, outlook_access_token, outlook_token_expires_at, " +
+	"locale, outlook_token_expires_at, " +
 	"outlook_sub_id, outlook_sub_expires_at, " +
-	"v_token, v_token_expires_at, created, updated"
+	"v_token_expires_at, created, updated"
 
 var Users_insert_field_names = "name, " +
 	"password, user_id_type, first_name, last_name, " +
@@ -129,12 +129,9 @@ func scanUserRecord(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
-		&user_info.OutlookRefreshToken,
-		&user_info.OutlookAccessToken,
 		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
 		&outlookSubExpiresAt,
-		&user_info.VToken,
 		&vTokenExpiresAt,
 		&created,
 		&updated,
@@ -434,12 +431,9 @@ func scanUserRecordFromRows(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
-		&user_info.OutlookRefreshToken,
-		&user_info.OutlookAccessToken,
 		&outlookTokenExpiresAt,
 		&user_info.OutlookSubID,
 		&outlookSubExpiresAt,
-		&user_info.VToken,
 		&vTokenExpiresAt,
 		&created,
 		&updated,
@@ -669,8 +663,8 @@ func UpsertUser(
 			"$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, "+
 			"$21, $22, $23) "+
 			"ON CONFLICT (LOWER(email)) DO UPDATE SET v_token = EXCLUDED.v_token "+
-			"RETURNING *",
-			table_name, Users_insert_field_names)
+			"RETURNING %s",
+			table_name, Users_insert_field_names, Users_selected_field_names)
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_313): %s", db_type)
@@ -696,12 +690,12 @@ func UpsertUser(
 		user_info.UserStatus,
 		user_info.Avatar,
 		user_info.Locale,
-		user_info.OutlookRefreshToken,
-		user_info.OutlookAccessToken,
+		user_info.OutlookRefreshToken, // write-only (not read back for security)
+		user_info.OutlookAccessToken,  // write-only (not read back for security)
 		user_info.OutlookSubID,
 		user_info.OutlookSubExpiresAt,
 		user_info.OutlookTokenExpiresAt,
-		user_info.VToken,
+		user_info.VToken,            // write-only (not read back for security)
 		user_info.VTokenExpiresAt,
 	}
 
@@ -799,10 +793,7 @@ func UpsertUser(
 	checkStringField("user_status", new_user_info.UserStatus, user_info.UserStatus, false)
 	checkStringField("avatar", new_user_info.Avatar, user_info.Avatar, false)
 	checkStringField("locale", new_user_info.Locale, user_info.Locale, false)
-	checkStringField("outlook_refresh_token", new_user_info.OutlookRefreshToken, user_info.OutlookRefreshToken, false)
-	checkStringField("outlook_access_token", new_user_info.OutlookAccessToken, user_info.OutlookAccessToken, false)
 	checkStringField("outlook_sub_id", new_user_info.OutlookSubID, user_info.OutlookSubID, false)
-	checkStringField("v_token", new_user_info.VToken, user_info.VToken, false)
 
 	// Check bool fields
 	checkBoolField("verified", new_user_info.Verified, user_info.Verified)

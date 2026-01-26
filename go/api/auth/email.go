@@ -119,6 +119,7 @@ func HandleEmailLogin(c echo.Context) error {
 // It returns (status_code, json).
 //   - When success, json = {"status":"ok", "redirect_url": "...", "loc": "..."}.
 //   - When failure, json = {"status":"error", "message": "...", "loc": "..."}.
+//
 // The clientIP parameter is used to reset rate limiting on successful login.
 func HandleEmailLoginBase(
 	rc ApiTypes.RequestContext,
@@ -129,7 +130,6 @@ func HandleEmailLoginBase(
 
 	// SECURITY: Generic error message to prevent user enumeration
 	// We return the same message whether email doesn't exist or password is wrong
-	genericAuthError := "Invalid email or password"
 
 	var req EmailLoginRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -200,7 +200,7 @@ func HandleEmailLoginBase(
 		// preventing attackers from enumerating valid emails via timing analysis.
 		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(req.Password))
 
-		error_msg := fmt.Sprintf("login failed: email not found, email:%s", req.Email)
+		error_msg := "email not found, email"
 		logger.Warn("login attempt for non-existent email", "email", req.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -214,8 +214,8 @@ func HandleEmailLoginBase(
 		// Return generic error to prevent user enumeration
 		return http.StatusUnauthorized, map[string]string{
 			"status":  "error",
-			"message": genericAuthError,
-			"loc":     "SHD_EML_AUTH",
+			"message": error_msg,
+			"loc":     "SHD_EML_218",
 		}
 	}
 
@@ -233,8 +233,8 @@ func HandleEmailLoginBase(
 		logger.Warn("login failed: invalid password", "email", req.Email)
 		return http.StatusUnauthorized, map[string]string{
 			"status":  "error",
-			"message": genericAuthError,
-			"loc":     "SHD_EML_AUTH",
+			"message": "invalid password",
+			"loc":     "SHD_EML_237",
 		}
 	}
 

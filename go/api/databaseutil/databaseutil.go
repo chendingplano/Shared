@@ -249,7 +249,7 @@ func ExecuteStatement(db *sql.DB, stmt string) error {
 
 	_, err1 := tx.Exec(stmt)
 	if err1 != nil {
-		return fmt.Errorf("failed to execute query in transaction (SHD_DBS_166): %w", err1)
+		return fmt.Errorf("failed to execute query (SHD_DBS_166), error: %w, stmt:%s", err1, stmt)
 	}
 
 	// Commit the transaction
