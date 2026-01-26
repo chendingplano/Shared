@@ -79,18 +79,18 @@ func sendMailSMTP(
 	textBody string,
 	htmlBody string) error {
 	// ⚙️ SMTP server configuration from environment variables
+	// SECURITY: All credentials MUST come from environment variables - no fallbacks
 	from := os.Getenv("SMTP_FROM")
 	logger := rc.GetLogger()
 	if from == "" {
-		error_msg := "Missing SMTP_FROM environment variable"
-		logger.Error(error_msg,
-			"action", "default to chending1111@gmail.com")
-		from = "chending1111@gmail.com" // fallback
+		logger.Error("Missing required SMTP_FROM environment variable")
+		return fmt.Errorf("SMTP configuration error: SMTP_FROM not set")
 	}
 
 	password := os.Getenv("SMTP_PASSWORD")
 	if password == "" {
-		password = "fonn wwrr jthy ylph" // fallback
+		logger.Error("Missing required SMTP_PASSWORD environment variable")
+		return fmt.Errorf("SMTP configuration error: SMTP_PASSWORD not set")
 	}
 
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -498,4 +498,25 @@ func GetSafeReturnURL(returnURL string, fallback string) string {
 		return returnURL
 	}
 	return fallback
+}
+
+// MaskToken masks a sensitive token for safe logging.
+// Shows only the first 4 and last 4 characters with asterisks in between.
+// For tokens shorter than 12 characters, shows only first 2 and last 2.
+// SECURITY: Use this function when logging tokens, session IDs, or other secrets.
+func MaskToken(token string) string {
+	if token == "" {
+		return "[empty]"
+	}
+
+	length := len(token)
+	if length < 8 {
+		return "****"
+	}
+
+	if length < 12 {
+		return token[:2] + "****" + token[length-2:]
+	}
+
+	return token[:4] + "****" + token[length-4:]
 }

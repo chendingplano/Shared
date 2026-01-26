@@ -294,19 +294,8 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 		}
 
 		// Cookie exists but is invalid → delete it
-		logger.Info("Cookie invalid, remove cookie", "cookie", cookie)
-		/*
-			rc.SetCookie(&http.Cookie{
-				Name:   "session_id",
-				Value:  "",
-				Path:   "/",
-				MaxAge: -1,
-				// Match original cookie attributes:
-				HttpOnly: true,
-				Secure:   ApiUtils.IsSecure(), // e.g., true in prod, false in dev
-			})
-		*/
-		rc.SetCookie(cookie)
+		logger.Info("Cookie invalid, removing cookie", "cookie", cookie)
+		rc.DeleteCookie("session_id")
 		return nil, nil
 	}
 

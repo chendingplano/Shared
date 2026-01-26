@@ -139,6 +139,22 @@ func (e *echoContext) SetCookie(session_id string) {
 	cookie.HttpOnly = true
 	cookie.Secure = is_secure
 	cookie.SameSite = http.SameSiteStrictMode
+	cookie.MaxAge = 72 * 60 * 60 // 72 hours in seconds
+	e.c.SetCookie(cookie)
+}
+
+// DeleteCookie clears a cookie by setting MaxAge to -1, which tells the browser to delete it.
+func (e *echoContext) DeleteCookie(name string) {
+	is_secure := ApiUtils.IsSecure()
+	cookie := &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1, // Tells browser to delete the cookie
+		HttpOnly: true,
+		Secure:   is_secure,
+		SameSite: http.SameSiteStrictMode,
+	}
 	e.c.SetCookie(cookie)
 }
 
@@ -228,12 +244,12 @@ func (e *echoContext) VerifyUserPassword(
 		}
 		token := uuid.NewString()
 		url := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
+		// SECURITY: Do not log password reset tokens or URLs - they allow account takeover
 		logger.Warn("user not set password yet. Sent reset password email",
 			"email", userInfo.Email,
-			"token", token,
-			"url", url)
-		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, email:%s, token:%s",
-			userInfo.Email, token, url)
+			"token", ApiUtils.MaskToken(token))
+		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, token:%s",
+			userInfo.Email, ApiUtils.MaskToken(token))
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -251,10 +267,10 @@ func (e *echoContext) VerifyUserPassword(
         	<p><a href="%s">%s</a></p>`, url, url)
 		textBody := fmt.Sprintf("Please click the link below to reset your password:\n%s", url)
 
+		// SECURITY: Do not log password reset tokens or URLs
 		e.logger.Info("user not set password yet",
 			"sent email to", userInfo.Email,
-			"token", token,
-			"url", url)
+			"token", ApiUtils.MaskToken(token))
 		e.PushCallFlow("SHD_RCP_192")
 		ApiUtils.SendMail(e, userInfo.Email, subject, textBody, htmlBody, ApiUtils.EmailTypePasswordReset)
 		e.PopCallFlow()
@@ -294,12 +310,12 @@ func (e *echoContext) GetUserInfoByToken(token string) (*ApiTypes.UserInfo, bool
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// No user found with that email
-			e.logger.Error("No user found", "token", token)
+			e.logger.Error("No user found", "token", ApiUtils.MaskToken(token))
 			return user_info, false
 		}
 
 		// Real database error
-		e.logger.Error("failed to get user by token", "error", err, "token", token)
+		e.logger.Error("failed to get user by token", "error", err, "token", ApiUtils.MaskToken(token))
 		return nil, false
 	}
 

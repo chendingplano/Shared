@@ -7,6 +7,14 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// RegisterCSRFMiddleware adds CSRF protection to state-changing routes.
+// Call this after RegisterRoutes to protect POST/PUT/DELETE endpoints.
+// Note: OAuth callbacks and login endpoints are excluded as they have
+// their own CSRF protection via state parameter and origin validation.
+func RegisterCSRFMiddleware(e *echo.Echo) {
+	e.Use(auth.CSRFMiddleware)
+}
+
 var logger = loggerutil.CreateDefaultLogger()
 
 func RegisterRoutes(e *echo.Echo) {

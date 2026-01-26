@@ -43,31 +43,43 @@ func getGoogleOauthConfig() *oauth2.Config {
 	}
 }
 
-var oauthStateNonce = "random-string" // Base nonce for CSRF protection
-
 // oauthState represents the data encoded in the OAuth state parameter.
 // This carries data through the OAuth flow while maintaining CSRF protection.
+// The Nonce field contains a cryptographically random, per-request, time-limited token.
 type oauthState struct {
-	Nonce     string `json:"n"` // CSRF nonce
+	Nonce     string `json:"n"` // CSRF nonce (per-request, time-limited)
 	ReturnURL string `json:"r"` // Optional return URL after login
 }
 
-// encodeOAuthState encodes the state struct to a base64 string
-func encodeOAuthState(state oauthState) string {
+// encodeOAuthState encodes the state struct to a base64 string.
+// Uses GenerateOAuthNonce() for cryptographically secure, per-request nonces.
+// Returns empty string if nonce generation fails (cache full - DoS protection).
+func encodeOAuthState(returnURL string) string {
+	nonce := GenerateOAuthNonce()
+	if nonce == "" {
+		// Cache is full - return empty to signal failure
+		return ""
+	}
+
+	state := oauthState{
+		Nonce:     nonce,
+		ReturnURL: returnURL,
+	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		return oauthStateNonce // Fallback to simple nonce
+		// This should never happen with simple struct marshaling,
+		// but return a valid nonce anyway for safety
+		fallbackNonce := GenerateOAuthNonce()
+		if fallbackNonce == "" {
+			return ""
+		}
+		return fallbackNonce
 	}
 	return base64.URLEncoding.EncodeToString(data)
 }
 
 // decodeOAuthState decodes the base64 state string back to struct
 func decodeOAuthState(encoded string) (oauthState, error) {
-	// Handle legacy simple string state
-	if encoded == oauthStateNonce {
-		return oauthState{Nonce: oauthStateNonce}, nil
-	}
-
 	data, err := base64.URLEncoding.DecodeString(encoded)
 	if err != nil {
 		return oauthState{}, err
@@ -90,12 +102,14 @@ func HandleGoogleLogin(c echo.Context) error {
 		returnURL = "" // Reject unsafe URLs
 	}
 
-	// Encode state with nonce and optional returnUrl
-	state := oauthState{
-		Nonce:     oauthStateNonce,
-		ReturnURL: returnURL,
+	// Encode state with per-request nonce and optional returnUrl
+	stateStr := encodeOAuthState(returnURL)
+
+	// Handle cache full case (DoS protection)
+	if stateStr == "" {
+		log.Printf("***** Alarm: OAuth nonce cache full - possible DoS attack (SHD_GGL_095)")
+		return c.String(http.StatusServiceUnavailable, "Service temporarily unavailable. Please try again.")
 	}
-	stateStr := encodeOAuthState(state)
 
 	authURL := config.AuthCodeURL(stateStr, oauth2.AccessTypeOffline)
 	log.Printf("HandleGoogleLogin called (MID_GGL_043), returnUrl:%s, redirect to:%s", returnURL, authURL)
@@ -119,14 +133,13 @@ func HandleGoogleCallbackBase(
 	logger := rc.GetLogger()
 	logger.Info("HandleGoogleCallback called")
 
-	// Decode and validate OAuth state
+	// Decode and validate OAuth state with per-request nonce
 	stateStr := rc.FormValue("state")
 	state, err := decodeOAuthState(stateStr)
-	if err != nil || state.Nonce != oauthStateNonce {
-		error_msg := fmt.Sprintf("invalid oauth state: got %s, error: %v",
+	if err != nil {
+		error_msg := fmt.Sprintf("invalid oauth state format: got %s, error: %v",
 			stateStr, err)
-		logger.Error("invalid oauth state",
-			"expecting_nonce", oauthStateNonce,
+		logger.Error("invalid oauth state format",
 			"actual", stateStr,
 			"error", err)
 		var record = ApiTypes.ActivityLogDef{
@@ -137,8 +150,23 @@ func HandleGoogleCallbackBase(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_GGL_043"}
 		sysdatastores.AddActivityLog(record)
-
 		return http.StatusBadRequest, "invalid oauth state (MID_GGL_043)"
+	}
+
+	// Validate nonce (one-time use, time-limited)
+	if !ValidateOAuthNonce(state.Nonce) {
+		error_msg := fmt.Sprintf("invalid or expired oauth nonce: state=%s", stateStr)
+		logger.Error("invalid oauth nonce",
+			"state", stateStr)
+		var record = ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_AuthFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_GoogleAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_GGL_044"}
+		sysdatastores.AddActivityLog(record)
+		return http.StatusBadRequest, "invalid or expired oauth state (MID_GGL_044)"
 	}
 
 	// Extract and re-validate returnUrl from state (defense-in-depth)
@@ -243,7 +271,7 @@ func HandleGoogleCallbackBase(
 
 	user_info.VToken = auth_token
 	user_info, err = rc.UpsertUser(user_info, "", true, false, false, true, false)
-	logger.Info("upsert user", "found", found, "auth_token", auth_token)
+	logger.Info("upsert user", "found", found, "auth_token", ApiUtils.MaskToken(auth_token))
 	if err != nil {
 		error_msg := fmt.Sprintf("failed creating user, email:%s, err:%s (SHD_GGL_125)", googleUserInfo.Email, err)
 		logger.Error("failed creating user",
@@ -326,9 +354,9 @@ func HandleGoogleCallbackBase(
 	// Generate a cookie.
 	rc.SetCookie(sessionID)
 
-	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true", sessionID)
+	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true", ApiUtils.MaskToken(sessionID))
 	logger.Info("set cookie",
-		"session_id", sessionID,
+		"session_id", ApiUtils.MaskToken(sessionID),
 		"user_id", user_info.UserId,
 		"is_admin", user_info.Admin,
 		"http_only", "true")
@@ -345,11 +373,11 @@ func HandleGoogleCallbackBase(
 	user_name := user_info.FirstName + " " + user_info.LastName
 	redirect_url := ApiUtils.GetOAuthRedirectURL(rc, auth_token, user_name)
 	msg2 := fmt.Sprintf("google login success, email:%s, session_id:%s, redirect_url:%s",
-		user_info.Email, sessionID, redirect_url)
+		user_info.Email, ApiUtils.MaskToken(sessionID), redirect_url)
 	logger.Info(
 		"Google login success",
 		"email", user_info.Email,
-		"session_id", sessionID,
+		"session_id", ApiUtils.MaskToken(sessionID),
 		"redirect_url", redirect_url,
 		"loc", "SHD_EML_316")
 
@@ -420,7 +448,8 @@ func getGoogleUserInfo(rc ApiTypes.RequestContext, code string) (*userInfoResp, 
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
 		error_msg := fmt.Errorf("failed to get userinfo (MID_GGL_121): %w", err)
-		logger.Error("failed to get UserInfo", "error", err, "token", token)
+		// SECURITY: Do not log OAuth tokens - they grant account access
+		logger.Error("failed to get UserInfo", "error", err)
 		return nil, error_msg
 	}
 	defer resp.Body.Close()

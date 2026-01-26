@@ -31,6 +31,7 @@ const (
 	ActivityType_UserPending           string = "user_pending"
 	ActivityType_VerifyEmailSuccess    string = "verify_email_success"
 	ActivityType_PasswordUpdateFailure string = "password_update_failure"
+	ActivityType_WeakPassword          string = "weak_password"
 )
 
 const (

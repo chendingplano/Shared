@@ -434,6 +434,7 @@ type RequestContext interface {
 
 	GetCookie(name string) string
 	SetCookie(session_id string)
+	DeleteCookie(name string) // Clears a cookie by setting MaxAge=-1
 	GetUserID() string
 	IsAuthenticated() *UserInfo
 	FormValue(name string) string
