@@ -240,6 +240,7 @@ func HandleGoogleCallbackBase(
 	user_info, found := rc.GetUserInfoByEmail(googleUserInfo.Email)
 	if !found {
 		// Add user to database by rc.
+		user_info = new(ApiTypes.UserInfo)
 		user_info.UserId = ApiUtils.GenerateUUID()
 		user_info.UserIdType = "google"
 		user_info.VToken = auth_token
