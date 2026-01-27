@@ -9,7 +9,6 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // CreateLoginSessionsTable creates the login sessions table.
@@ -17,7 +16,7 @@ import (
 // (multi-device login). Previous versions used user_name as PK which forced
 // single-session-per-user.
 func CreateLoginSessionsTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

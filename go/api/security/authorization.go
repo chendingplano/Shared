@@ -15,7 +15,7 @@ var (
 
 type AccCtrlMgr struct {
 	rsc_map map[string]bool
-	logger  *loggerutil.JimoLogger
+	logger  ApiTypes.JimoLogger
 }
 
 // GetAccCtrlMgr returns the singleton instance of AccCtrlMgr.
@@ -28,10 +28,7 @@ func GetAccCtrlMgr() *AccCtrlMgr {
 // This should be called once during application startup.
 func InitAccCtrlMgr() *AccCtrlMgr {
 	accCtrlMgrOnce.Do(func() {
-		logger := loggerutil.CreateLogger2(
-			loggerutil.ContextTypeBackground,
-			loggerutil.LogHandlerTypeDefault,
-			10000)
+		logger := loggerutil.CreateDefaultLogger()
 		accCtrlMgrInstance = &AccCtrlMgr{
 			rsc_map: make(map[string]bool),
 			logger:  logger,
@@ -42,7 +39,7 @@ func InitAccCtrlMgr() *AccCtrlMgr {
 
 // NewAccCtrlMgr creates a new AccCtrlMgr instance
 // Deprecated: Use InitAccCtrlMgr and GetAccCtrlMgr instead for singleton access
-func NewAccCtrlMgr(logger *loggerutil.JimoLogger) *AccCtrlMgr {
+func NewAccCtrlMgr(logger ApiTypes.JimoLogger) *AccCtrlMgr {
 	return &AccCtrlMgr{
 		rsc_map: make(map[string]bool),
 		logger:  logger,

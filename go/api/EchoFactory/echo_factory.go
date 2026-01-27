@@ -42,7 +42,7 @@ var DefaultAuthenticator AuthenticatorFunc
 type echoContext struct {
 	c            echo.Context
 	ctx          context.Context
-	logger       *loggerutil.JimoLogger
+	logger       ApiTypes.JimoLogger
 	call_flow    []string
 	user_info    *ApiTypes.UserInfo
 	user_checked bool
@@ -172,7 +172,7 @@ func (e *echoContext) SetReqID(reqID string) {
 	e.c.Set(ApiTypes.RequestIDKey, reqID)
 }
 
-func (e *echoContext) GetLogger() *loggerutil.JimoLogger {
+func (e *echoContext) GetLogger() ApiTypes.JimoLogger {
 	return e.logger
 }
 

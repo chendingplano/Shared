@@ -7,7 +7,6 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 const (
@@ -70,7 +69,7 @@ type AddPromptResponse struct {
 }
 
 func CreatePromptStoreTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

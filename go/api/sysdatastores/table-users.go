@@ -13,7 +13,6 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // To generate short UUID
@@ -35,7 +34,7 @@ var Users_insert_field_names = "name, " +
 	"outlook_sub_expires_at, outlook_token_expires_at, v_token, v_token_expires_at"
 
 func CreateUsersTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
@@ -273,7 +272,7 @@ var ErrTokenExpired = errors.New("password reset token has expired")
 // MigrateUsersTable_AddVTokenExpiresAt adds the v_token_expires_at column
 // to existing users tables. This migration is idempotent - safe to run multiple times.
 func MigrateUsersTable_AddVTokenExpiresAt(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

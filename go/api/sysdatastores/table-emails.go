@@ -8,7 +8,6 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 var emailstore_selected_field_names = "email_id, full_email, email_source, email_status, domain_name, " +
@@ -54,7 +53,7 @@ type EmailInfo struct {
 }
 
 func CreateEmailStoreTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

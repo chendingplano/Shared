@@ -21,7 +21,7 @@ type ResourceStore struct {
 	resource_map map[string]ApiTypes.ResourceStoreDef
 	done         chan struct{}  // Signals shutdown
 	wg           sync.WaitGroup // Tracks background goroutine
-	logger       *loggerutil.JimoLogger
+	logger       ApiTypes.JimoLogger
 }
 
 var (
@@ -73,8 +73,7 @@ func (c *ResourceStore) StopResourceStore() {
 func newResourceStore(db_type string,
 	table_name string,
 	db *sql.DB) *ResourceStore {
-	logger := loggerutil.CreateLogger2(loggerutil.ContextTypeBackground,
-		loggerutil.LogHandlerTypeDefault, 10000)
+	logger := loggerutil.CreateDefaultLogger()
 	return &ResourceStore{
 		db:         db,
 		db_type:    db_type,
@@ -283,7 +282,7 @@ func (c *ResourceStore) houseKeepingLoop() {
 // a JSON object (map).
 // Upon success, it returns nil. If any error occurs, it returns a non-nil error.
 func parseResourceDef(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	row *ApiTypes.ResourceDef,
 	resource_def_sql sql.NullString) error {
 	if !resource_def_sql.Valid {
@@ -339,7 +338,7 @@ func parseResourceDef(
 // returns a non-nil error.
 // This function is called when resource store loads resources from DB.
 func ConstructFieldDefs(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	resource_json map[string]interface{},
 	resource_name string) ([]ApiTypes.FieldDef, error) {
 	// This function assumes 'field_defs' is an attribute in 'resource_json':
@@ -398,7 +397,7 @@ func ConstructFieldDefs(
 // returns a non-nil error.
 // This function is called when resource store loads resources from DB.
 func ConstructSelectedFields(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	resource_json map[string]interface{},
 	resource_name string) ([]ApiTypes.FieldDef, error) {
 	// This function assumes 'selected_fields' is an attribute in 'resource_json':

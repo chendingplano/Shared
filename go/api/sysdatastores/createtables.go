@@ -5,11 +5,10 @@ import (
 	"fmt"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 	_ "github.com/lib/pq"
 )
 
-func CreateTables(logger *loggerutil.JimoLogger) error {
+func CreateTables(logger ApiTypes.JimoLogger) error {
 	// This function creates all the tables.
 	var db *sql.DB
 	database_type := ApiTypes.DatabaseInfo.DBType
@@ -43,7 +42,7 @@ func CreateTables(logger *loggerutil.JimoLogger) error {
 
 // RunMigrations applies schema migrations to existing tables.
 // Each migration is idempotent - safe to run multiple times.
-func RunMigrations(logger *loggerutil.JimoLogger, db *sql.DB, db_type string) {
+func RunMigrations(logger ApiTypes.JimoLogger, db *sql.DB, db_type string) {
 	logger.Info("Running database migrations")
 
 	// Migration: Add v_token_expires_at column to users table

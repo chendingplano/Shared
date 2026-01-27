@@ -23,3 +23,8 @@ prompt_store_id             = "IDs for prompt store"
 [icon_service]
 enable_icon_service         = "enabled"
 icon_data_dir               = "icons"
+
+[proc_log]
+log_file_dir                = "~/ProcLog"
+file_max_size_in_mb         = 100
+num_log_files               = 20

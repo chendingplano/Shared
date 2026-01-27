@@ -10,7 +10,6 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type SessionLogDef struct {
@@ -53,7 +52,7 @@ var (
 )
 
 func CreateSessionLogTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

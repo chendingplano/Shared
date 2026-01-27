@@ -28,7 +28,7 @@ type ActivityLogCache struct {
 	activity_log_insert_fieldnames string
 	done                           chan struct{}  // Signals shutdown
 	wg                             sync.WaitGroup // Tracks background goroutine
-	logger                         *loggerutil.JimoLogger
+	logger                         ApiTypes.JimoLogger
 }
 
 // Global singleton instance and initialization guard
@@ -38,7 +38,7 @@ var (
 )
 
 func CreateActivityLogTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
@@ -135,10 +135,7 @@ func (c *ActivityLogCache) StopActivityLogCache() {
 func newActivityLogCache(db_type string,
 	table_name string,
 	db *sql.DB) *ActivityLogCache {
-	logger := loggerutil.CreateLogger2(
-		loggerutil.ContextTypeBackground,
-		loggerutil.LogHandlerTypeDefault,
-		10000)
+	logger := loggerutil.CreateDefaultLogger()
 	return &ActivityLogCache{
 		db:                             db,
 		db_type:                        db_type,

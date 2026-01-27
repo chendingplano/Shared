@@ -7,7 +7,6 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type IDMgrDef struct {
@@ -22,7 +21,7 @@ type IDMgrDef struct {
 const id_mgr_insert_fieldnames = "id_name, crt_value, id_desc, caller_loc"
 
 func CreateIDMgrTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {

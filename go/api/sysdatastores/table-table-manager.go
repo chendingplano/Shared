@@ -7,10 +7,9 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-func CreateTableManagerTable(logger *loggerutil.JimoLogger) error {
+func CreateTableManagerTable(logger ApiTypes.JimoLogger) error {
     db_type := ApiTypes.DatabaseInfo.DBType
     table_name := ApiTypes.LibConfig.SystemTableNames.TableNameTableManager
     var stmt string

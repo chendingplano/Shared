@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/shopspring/decimal"
 )
 
@@ -40,6 +39,7 @@ type LibConfigDef struct {
 	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
 	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
 	IconServiceConf  IconServiceConfig `mapstructure:"icon_service"`
+	ProcLog          ProcLogConfig     `mapstructure:"proc_log"`
 }
 
 type SystemTableNames struct {
@@ -63,6 +63,12 @@ type SystemIDs struct {
 type IconServiceConfig struct {
 	EnableIconService string `mapstructure:"enable_icon_service"`
 	IconDataDir       string `mapstructure:"icon_data_dir"`
+}
+
+type ProcLogConfig struct {
+	LogFileDir      string `mapstructure:"log_file_dir"`
+	FileMaxSizeInMB int    `mapstructure:"file_max_size_in_mb"`
+	NumLogFiles     int    `mapstructure:"num_log_files"`
 }
 
 const (
@@ -422,11 +428,19 @@ type UserInfoPocket struct {
 	Verified        bool   `json:"verified"`
 }
 
+type JimoLogger interface {
+	Info(message string, args ...any)
+	Warn(message string, args ...any)
+	Error(message string, args ...any)
+	Trace(message string)
+	Close()
+}
+
 // RequestContext is a framework-agnostic wrapper for request-scoped data
 type RequestContext interface {
 	// Context returns the underlying Go context (for deadlines, cancellation, values)
 	Context() context.Context
-	GetLogger() *loggerutil.JimoLogger
+	GetLogger() JimoLogger
 
 	// ReqID returns a unique request ID (guaranteed non-empty)
 	ReqID() string

@@ -9,7 +9,6 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 const IconsTableName = "icons"
@@ -24,7 +23,7 @@ var Icons_insert_field_names = "name, category, file_name, file_path, " +
 	"description, creator, updater"
 
 func CreateIconsTable(
-	logger *loggerutil.JimoLogger,
+	logger ApiTypes.JimoLogger,
 	db *sql.DB,
 	db_type string,
 	table_name string) error {
