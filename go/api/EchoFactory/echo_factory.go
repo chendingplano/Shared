@@ -52,7 +52,7 @@ type echoContext struct {
 func NewRCAsAdmin(loc string) ApiTypes.RequestContext {
 	// This RC is used internally!
 	ctx := context.Background()
-	logger := loggerutil.CreateLogger(ctx, loggerutil.LogHandlerTypeDefault)
+	logger := loggerutil.CreateDefaultLogger()
 	ee := &echoContext{
 		call_flow:    []string{loc},
 		ctx:          ctx,

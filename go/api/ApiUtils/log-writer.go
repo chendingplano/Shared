@@ -1,5 +1,6 @@
 package ApiUtils
 
+/*
 import (
 	"bufio"
 	"fmt"
@@ -248,3 +249,5 @@ func CloseFileLogging() {
 		}
 	}
 }
+
+*/
