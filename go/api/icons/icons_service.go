@@ -17,18 +17,19 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-var logger = loggerutil.CreateDefaultLogger()
-
 // iconServiceImpl is the concrete implementation using local filesystem
 type iconServiceImpl struct {
 	dataHomeDir string
+	logger      ApiTypes.JimoLogger
 }
 
 // NewIconService creates a new IconService instance
 // dataHomeDir: base directory for icon storage (from DATA_HOME_DIR env var)
 func NewIconService(dataHomeDir string) ApiTypes.IconService {
+	var logger = loggerutil.CreateDefaultLogger("SHD_ICN_030")
 	return &iconServiceImpl{
 		dataHomeDir: dataHomeDir,
+		logger:      logger,
 	}
 }
 
@@ -229,16 +230,16 @@ func (s *iconServiceImpl) DeleteIconFile(
 
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		logger.Warn("icon file not found for deletion", "path", filePath)
+		s.logger.Warn("icon file not found for deletion", "path", filePath)
 		return nil // File already doesn't exist, consider it deleted
 	}
 
 	if err := os.Remove(filePath); err != nil {
-		logger.Error("failed to delete icon file", "error", err, "path", filePath)
+		s.logger.Error("failed to delete icon file", "error", err, "path", filePath)
 		return fmt.Errorf("failed to delete icon file (SHD_ICN_SVC_230): %w", err)
 	}
 
-	logger.Info("Icon file deleted", "path", filePath)
+	s.logger.Info("Icon file deleted", "path", filePath)
 	return nil
 }
 

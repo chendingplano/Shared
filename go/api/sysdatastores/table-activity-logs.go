@@ -135,7 +135,7 @@ func (c *ActivityLogCache) StopActivityLogCache() {
 func newActivityLogCache(db_type string,
 	table_name string,
 	db *sql.DB) *ActivityLogCache {
-	logger := loggerutil.CreateDefaultLogger()
+	logger := loggerutil.CreateDefaultLogger("SHD_TAL_138")
 	return &ActivityLogCache{
 		db:                             db,
 		db_type:                        db_type,

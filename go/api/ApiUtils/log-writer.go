@@ -1,6 +1,5 @@
 package ApiUtils
 
-/*
 import (
 	"bufio"
 	"fmt"
@@ -8,16 +7,21 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	ljack "gopkg.in/natefinch/lumberjack.v2"
 )
 
-// FileLogWriter manages rotating log files
-type FileLogWriter struct {
+// ansiRegex matches ANSI escape codes (color codes, cursor movement, etc.)
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// FileLogWriterStruct manages rotating log files
+type FileLogWriterStruct struct {
 	mu             sync.Mutex
 	logDir         string
 	maxSizeBytes   int64
@@ -29,9 +33,9 @@ type FileLogWriter struct {
 }
 
 var (
-	fileLogWriter *FileLogWriter
+	fileLogWriter *FileLogWriterStruct
 	fileLogOnce   sync.Once
-	fileLogOutput io.Writer // combined stdout + file writer
+	FileLogOutput io.Writer // combined stdout + file writer
 )
 
 // InitFileLogging initializes file logging with rotation support.
@@ -39,22 +43,45 @@ var (
 // logDir: directory for log files (will be created if doesn't exist)
 // maxSizeMB: max size per log file in megabytes
 // numFiles: number of rotating log files (log_00, log_01, ...)
-func initFileLogging() error {
+func InitFileLogging(loc string) error {
 	var initErr error
 	slog.Info("InitFileLogging (SHD_JLG_078)")
 	fileLogOnce.Do(func() {
-		LoadLibConfig()
+		LoadLibConfig(loc)
 
 		procLog := ApiTypes.LibConfig.ProcLog
+		file_logger := procLog.Filelogger
+		slog.Info("file_logger", "value", file_logger)
+		if file_logger == "nofilelogger" {
+			// No file logger used.
+			slog.Info("No file logger used (SHD_LWT_051)")
+			FileLogOutput = os.Stdout
+			return
+		}
+
+		if file_logger != "filewriter" {
+			file_logger = "lumberjack"
+		}
+
 		logDir := procLog.LogFileDir
 		maxSizeMB := procLog.FileMaxSizeInMB
+
+		if maxSizeMB < 10 || maxSizeMB > 5000 {
+			slog.Warn("Invalid max_size_in_mb. Default to 500", "value", maxSizeMB)
+			maxSizeMB = 500
+		}
+
 		numFiles := procLog.NumLogFiles
+		if numFiles < 2 || numFiles > 50 {
+			slog.Warn("Invalid num-log-files. Defaults to 20", "value", numFiles)
+			numFiles = 20
+		}
 
 		// Expand ~ to home directory
 		if strings.HasPrefix(logDir, "~/") {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				initErr = fmt.Errorf("failed to get home directory: %w", err)
+				initErr = fmt.Errorf("failed to get home directory: %w (SHD_LWT_064)", err)
 				return
 			}
 			logDir = filepath.Join(home, logDir[2:])
@@ -62,41 +89,64 @@ func initFileLogging() error {
 
 		// Create log directory if it doesn't exist
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			initErr = fmt.Errorf("failed to create log directory %s: %w", logDir, err)
+			initErr = fmt.Errorf("failed to create log directory %s: %w (SHD_LWT_072)", logDir, err)
 			return
 		}
 
-		flw := &FileLogWriter{
-			logDir:       logDir,
-			maxSizeBytes: int64(maxSizeMB) * 1024 * 1024,
-			numFiles:     numFiles,
-		}
+		if file_logger == "filewriter" {
+			flw := &FileLogWriterStruct{
+				logDir:       logDir,
+				maxSizeBytes: int64(maxSizeMB) * 1024 * 1024,
+				numFiles:     numFiles,
+			}
 
-		// Find the most recently modified log file to continue from
-		if err := flw.findCurrentLogFile(); err != nil {
-			initErr = fmt.Errorf("failed to find current log file: %w", err)
+			// Find the most recently modified log file to continue from
+			if err := flw.findCurrentLogFile(); err != nil {
+				initErr = fmt.Errorf("failed to find current log file: %w", err)
+				return
+			}
+
+			// Open the current log file
+			if err := flw.openCurrentFile(); err != nil {
+				initErr = fmt.Errorf("failed to open log file: %w", err)
+				return
+			}
+
+			fileLogWriter = flw
+			slog.Info("Create file writer (SHD_JLG_115)",
+				"file_dir", procLog.LogFileDir,
+				"max_size", maxSizeMB,
+				"num_files", numFiles)
+			FileLogOutput = io.MultiWriter(os.Stdout, fileLogWriter)
 			return
 		}
 
-		// Open the current log file
-		if err := flw.openCurrentFile(); err != nil {
-			initErr = fmt.Errorf("failed to open log file: %w", err)
-			return
+		maxAge := procLog.MaxAgeInDays
+		if maxAge < 1 || maxAge > 90 {
+			slog.Warn("Invalid max_age_in_days. Default to 20", "value", maxAge)
+			maxAge = 20
 		}
 
-		fileLogWriter = flw
+		lumberjack := &ljack.Logger{
+			Filename:   fmt.Sprintf("%s/lumjack.log", procLog.LogFileDir),
+			MaxSize:    maxSizeMB, // megabytes
+			MaxBackups: numFiles,
+			MaxAge:     maxAge,                         // days
+			Compress:   procLog.NeedCompress == "true", // disabled by default
+		}
+
 		// Create a MultiWriter that writes to both stdout and the file
-		slog.Info("Create fileLog (SHD_JLG_115)",
-			"file_dir", procLog.LogFileDir,
+		slog.Info("Create lumberjack (SHD_JLG_138)",
+			"file_dir", fmt.Sprintf("%s/lumberjack", procLog.LogFileDir),
 			"max_size", procLog.FileMaxSizeInMB,
 			"num_files", procLog.NumLogFiles)
-		fileLogOutput = io.MultiWriter(os.Stdout, fileLogWriter)
+		FileLogOutput = io.MultiWriter(os.Stdout, lumberjack)
 	})
 	return initErr
 }
 
 // findCurrentLogFile finds the most recently modified log file and sets currentIndex
-func (flw *FileLogWriter) findCurrentLogFile() error {
+func (flw *FileLogWriterStruct) findCurrentLogFile() error {
 	type fileInfo struct {
 		index   int
 		modTime time.Time
@@ -148,12 +198,12 @@ func (flw *FileLogWriter) findCurrentLogFile() error {
 }
 
 // getLogFileName returns the full path for a log file at the given index
-func (flw *FileLogWriter) getLogFileName(index int) string {
+func (flw *FileLogWriterStruct) getLogFileName(index int) string {
 	return filepath.Join(flw.logDir, fmt.Sprintf("log_%02d", index))
 }
 
 // openCurrentFile opens the current log file for appending
-func (flw *FileLogWriter) openCurrentFile() error {
+func (flw *FileLogWriterStruct) openCurrentFile() error {
 	filename := flw.getLogFileName(flw.currentIndex)
 
 	// Open file for append, create if doesn't exist
@@ -177,12 +227,15 @@ func (flw *FileLogWriter) openCurrentFile() error {
 }
 
 // Write implements io.Writer interface
-func (flw *FileLogWriter) Write(p []byte) (n int, err error) {
+func (flw *FileLogWriterStruct) Write(p []byte) (n int, err error) {
 	flw.mu.Lock()
 	defer flw.mu.Unlock()
 
+	// Strip ANSI escape codes (color codes) for clean plain text output
+	cleaned := ansiRegex.ReplaceAll(p, nil)
+
 	// Check if we need to rotate before writing
-	if flw.currentSize+int64(len(p)) > flw.maxSizeBytes {
+	if flw.currentSize+int64(len(cleaned)) > flw.maxSizeBytes {
 		if err := flw.rotate(); err != nil {
 			// If rotation fails, still try to write to current file
 			// Log the error but don't fail the write
@@ -191,12 +244,12 @@ func (flw *FileLogWriter) Write(p []byte) (n int, err error) {
 	}
 
 	// Write to buffered writer (no hard sync)
-	n, err = flw.bufferedWriter.Write(p)
+	written, err := flw.bufferedWriter.Write(cleaned)
 	if err != nil {
-		return n, err
+		return len(p), err
 	}
 
-	flw.currentSize += int64(n)
+	flw.currentSize += int64(written)
 
 	// Flush the buffer periodically but don't sync to disk
 	// This provides reasonable durability without performance impact
@@ -204,11 +257,12 @@ func (flw *FileLogWriter) Write(p []byte) (n int, err error) {
 		flw.bufferedWriter.Flush()
 	}
 
-	return n, nil
+	// Return original length to satisfy io.Writer contract
+	return len(p), nil
 }
 
 // rotate closes the current file and opens the next one
-func (flw *FileLogWriter) rotate() error {
+func (flw *FileLogWriterStruct) rotate() error {
 	// Flush and close current file
 	if flw.bufferedWriter != nil {
 		flw.bufferedWriter.Flush()
@@ -249,5 +303,3 @@ func CloseFileLogging() {
 		}
 	}
 }
-
-*/

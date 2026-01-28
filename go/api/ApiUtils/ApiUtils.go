@@ -527,7 +527,7 @@ func MaskToken(token string) string {
 
 var libConfigOnce sync.Once
 
-func LoadLibConfig() {
+func LoadLibConfig(loc string) {
 	libConfigOnce.Do(func() {
 
 		config_path := os.Getenv("SHARED_LIB_CONFIG_DIR")

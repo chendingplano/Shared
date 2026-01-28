@@ -25,6 +25,9 @@ enable_icon_service         = "enabled"
 icon_data_dir               = "icons"
 
 [proc_log]
-log_file_dir                = "~/ProcLog"
-file_max_size_in_mb         = 100
+file_logger                 = "filewriter"
+log_file_dir                = "/Users/cding/ProcLog"
+file_max_size_in_mb         = 500
 num_log_files               = 20
+max_age_in_days             = 10
+need_compress               = "true"

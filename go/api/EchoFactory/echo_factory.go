@@ -52,7 +52,7 @@ type echoContext struct {
 func NewRCAsAdmin(loc string) ApiTypes.RequestContext {
 	// This RC is used internally!
 	ctx := context.Background()
-	logger := loggerutil.CreateDefaultLogger()
+	logger := loggerutil.CreateDefaultLogger("SHD_EFC_055")
 	ee := &echoContext{
 		call_flow:    []string{loc},
 		ctx:          ctx,
@@ -67,7 +67,7 @@ func NewRCAsAdmin(loc string) ApiTypes.RequestContext {
 
 func NewFromEcho(c echo.Context, loc string) ApiTypes.RequestContext {
 	ctx := c.Request().Context()
-	logger := loggerutil.CreateLogger(ctx, loggerutil.LogHandlerTypeDefault)
+	logger := loggerutil.CreateLogger(ctx, loggerutil.LogHandlerTypeDefault, "SHD_EFC_070")
 	ee := &echoContext{
 		c:         c,
 		call_flow: []string{loc},

@@ -15,9 +15,9 @@ func RegisterCSRFMiddleware(e *echo.Echo) {
 	e.Use(auth.CSRFMiddleware)
 }
 
-var logger = loggerutil.CreateDefaultLogger()
-
 func RegisterRoutes(e *echo.Echo) {
+	var logger = loggerutil.CreateDefaultLogger("SHD_RTR_020")
+
 	logger.Info("Register /auth/google/login route")
 	e.GET("/auth/google/login", func(c echo.Context) error {
 		return auth.HandleGoogleLogin(c)

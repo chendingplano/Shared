@@ -73,7 +73,7 @@ func (c *ResourceStore) StopResourceStore() {
 func newResourceStore(db_type string,
 	table_name string,
 	db *sql.DB) *ResourceStore {
-	logger := loggerutil.CreateDefaultLogger()
+	logger := loggerutil.CreateDefaultLogger("SHD_RST_076")
 	return &ResourceStore{
 		db:         db,
 		db_type:    db_type,

@@ -15,8 +15,8 @@ import (
 	"github.com/chendingplano/shared/go/authmiddleware"
 )
 
-func InitLib(ctx context.Context, config_path string) {
-	ApiUtils.LoadLibConfig()
+func InitLib(ctx context.Context, config_path string, loc string) {
+	ApiUtils.LoadLibConfig(loc)
 	admin_rc := EchoFactory.NewRCAsAdmin("SHD_LMG_050")
 	defer admin_rc.Close()
 	logger := admin_rc.GetLogger()

@@ -28,7 +28,7 @@ func GetAccCtrlMgr() *AccCtrlMgr {
 // This should be called once during application startup.
 func InitAccCtrlMgr() *AccCtrlMgr {
 	accCtrlMgrOnce.Do(func() {
-		logger := loggerutil.CreateDefaultLogger()
+		logger := loggerutil.CreateDefaultLogger("SHD_ATH_031")
 		accCtrlMgrInstance = &AccCtrlMgr{
 			rsc_map: make(map[string]bool),
 			logger:  logger,
