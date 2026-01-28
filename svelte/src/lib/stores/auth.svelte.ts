@@ -180,6 +180,8 @@ function createAuthStore(): AuthStore {
                 if (typeof results_str === 'string' && results_str.length > 0) {
                     const userInfo = JSON.parse(results_str) as UserInfo;
 
+                    // Restore impersonation from sessionStorage if present
+                    const persisted = getPersistedImpersonation();
                     update(() => ({
                         isLoggedIn: !!userInfo,
                         status: 'success',
@@ -188,13 +190,14 @@ function createAuthStore(): AuthStore {
                         isAdmin: userInfo?.admin ?? false,
                         isOwner: userInfo?.is_owner ?? false,
                         baseURL: base_url ,
-                        isImpersonating: false,
-                        impersonatedClientId: null,
-                        impersonatedClientName: null,
+                        isImpersonating: persisted !== null,
+                        impersonatedClientId: persisted?.clientId ?? null,
+                        impersonatedClientName: persisted?.clientName ?? null,
                     }));
                 }
             } else {
-                // Not logged in — leave state as is (logged out)
+                // Not logged in — clear everything including persisted impersonation
+                clearPersistedImpersonation();
                 update(() => ({
                     isLoggedIn: false,
                     status: 'login',
@@ -210,6 +213,7 @@ function createAuthStore(): AuthStore {
             }
         } catch (error) {
             console.warn('Auth check failed (SHD_ATH_120):', error);
+            clearPersistedImpersonation();
             update(() => ({
                 isLoggedIn: false,
                 status: 'login',
@@ -325,6 +329,7 @@ function createAuthStore(): AuthStore {
             }
 
             if (typeof window !== 'undefined') {
+              clearPersistedImpersonation();
               update(current => ({
                 ...current,
                 status: 'logout',
@@ -332,6 +337,9 @@ function createAuthStore(): AuthStore {
                 isLoggedIn: false,
                 isAdmin: false,
                 isOwner: false,
+                isImpersonating: false,
+                impersonatedClientId: null,
+                impersonatedClientName: null,
               }));
             }
 
@@ -485,8 +493,42 @@ function createAuthStore(): AuthStore {
     }
   }
 
+  // Impersonation persistence helpers (sessionStorage = tab-scoped, clears on tab close)
+  const IMPERSONATION_KEY = 'mirai_impersonation';
+
+  const persistImpersonation = (clientId: string, clientName: string): void => {
+      try {
+          sessionStorage.setItem(IMPERSONATION_KEY, JSON.stringify({ clientId, clientName }));
+      } catch {
+          // sessionStorage unavailable (SSR, private browsing quota, etc.) — silent fail
+      }
+  };
+
+  const clearPersistedImpersonation = (): void => {
+      try {
+          sessionStorage.removeItem(IMPERSONATION_KEY);
+      } catch {
+          // silent fail
+      }
+  };
+
+  const getPersistedImpersonation = (): { clientId: string; clientName: string } | null => {
+      try {
+          const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.clientId === 'string' && typeof parsed.clientName === 'string') {
+              return parsed;
+          }
+          return null;
+      } catch {
+          return null;
+      }
+  };
+
   // Impersonation methods
   const startImpersonation = (clientId: string, clientName: string): void => {
+      persistImpersonation(clientId, clientName);
       update(current => ({
           ...current,
           isImpersonating: true,
@@ -496,6 +538,7 @@ function createAuthStore(): AuthStore {
   };
 
   const stopImpersonation = (): void => {
+      clearPersistedImpersonation();
       update(current => ({
           ...current,
           isImpersonating: false,
