@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -146,10 +145,7 @@ func scanUserRecord(
 
 	// Copy valid OAuth tokens to UserInfo (empty string if NULL)
 	if outlookRefreshToken.Valid {
-		log.Printf("outlook refresh token:%s", outlookRefreshToken.String)
 		user_info.OutlookRefreshToken = outlookRefreshToken.String
-	} else {
-		log.Printf("outlook refresh token invalid")
 	}
 
 	if outlookAccessToken.Valid {
