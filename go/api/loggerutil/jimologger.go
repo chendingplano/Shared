@@ -151,7 +151,6 @@ func newPrettyLogger(loc string) *slog.Logger {
 }
 
 func getLoggerHandler(handlerType LogFormat, loc string) *slog.Logger {
-	slog.Info("getLoggerHandler (SHD_JLG_373)")
 	switch handlerType {
 	case LogHandlerTypeDefault:
 		// Default: use slogpretty
