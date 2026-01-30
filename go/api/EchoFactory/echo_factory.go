@@ -15,11 +15,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
@@ -238,45 +235,14 @@ func (e *echoContext) VerifyUserPassword(
 	}
 
 	if userInfo.Password == "" {
-		home_domain := os.Getenv("APP_DOMAIN_NAME")
-		if home_domain == "" {
-			logger.Error("missing APP_DOMAIN_NAME env var")
-		}
-		token := uuid.NewString()
-		url := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
-		// SECURITY: Do not log password reset tokens or URLs - they allow account takeover
-		logger.Warn("user not set password yet. Sent reset password email",
-			"email", userInfo.Email,
-			"token", ApiUtils.MaskToken(token))
-		error_msg := fmt.Sprintf("user not set password yet, sent reset password email to:%s, token:%s",
-			userInfo.Email, ApiUtils.MaskToken(token))
+		logger.Info("login attempt for account without password set",
+			"email", userInfo.Email)
 
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_SentEmail,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_RCE_216"})
-
-		e.UpdateTokenByEmail(userInfo.Email, token)
-
-		subject := "Reset your password"
-		htmlBody := fmt.Sprintf(`
-        	<p>Please click the link below to reset your password:</p>
-        	<p><a href="%s">%s</a></p>`, url, url)
-		textBody := fmt.Sprintf("Please click the link below to reset your password:\n%s", url)
-
-		// SECURITY: Do not log password reset tokens or URLs
-		e.logger.Info("user not set password yet",
-			"sent email to", userInfo.Email,
-			"token", ApiUtils.MaskToken(token))
-		e.PushCallFlow("SHD_RCP_192")
-		ApiUtils.SendMail(e, userInfo.Email, subject, textBody, htmlBody, ApiUtils.EmailTypePasswordReset)
-		e.PopCallFlow()
-
-		msg := fmt.Sprintf("You have not set the password yet. An email has been sent to your email: %s. "+
-			"Please check your email and click the link to set your password (SHD_EML_135)", userInfo.Email)
+		// Do not auto-send password reset emails here. Instead, return a clear
+		// message so the frontend can tell the user to sign in with Google or
+		// use "Forgot Password" to create a password.
+		msg := "Your account was created with Google sign-in and does not have a password. " +
+			"Please use the \"Login with Google\" button, or click \"Forgot Password\" to set one."
 		return false, ApiTypes.CustomHttpStatus_PasswordNotSet, msg
 	}
 
