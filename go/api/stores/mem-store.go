@@ -3,11 +3,11 @@ package stores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type InMemStore struct {
@@ -20,6 +20,7 @@ type InMemStore struct {
 	id_records     map[string]ApiTypes.IDRecordDef
 	done           chan struct{}  // Signals shutdown
 	wg             sync.WaitGroup // Tracks background goroutine
+	logger         ApiTypes.JimoLogger
 }
 
 var (
@@ -37,22 +38,19 @@ func InitInMemStore(db_type string,
 	id_inc_value int,
 	id_keys map[string]interface{}) error {
 	in_mem_store_once.Do(func() {
-		log.Printf("InitInMemStore, table_name:%s (SHD_MST_035)", table_name)
-		in_mem_store_singleton = newInMemStore(db_type, table_name, db)
+		logger := loggerutil.CreateDefaultLogger("SHD_MST_042")
+		logger.Info("InitInMemStore", "table_name", table_name)
+		in_mem_store_singleton = newInMemStore(db_type, table_name, db, logger)
 		in_mem_store_singleton.id_start_value = id_start_value
 		in_mem_store_singleton.id_inc_value = id_inc_value
 
-		log.Printf("InitInMemStore (SHD_MST_045)")
 		// Initialize the map
 		in_mem_store_singleton.id_records = make(map[string]ApiTypes.IDRecordDef)
 
 		var id_start_value = in_mem_store_singleton.id_start_value
 		var id_inc_value = in_mem_store_singleton.id_inc_value
-		log.Printf("InitInMemStore (SHD_MST_051)")
 		for key, value := range id_keys {
-			log.Printf("InitInMemStore (SHD_MST_053)")
 			if id_desc, ok := value.(string); ok {
-				log.Printf("InitInMemStore (SHD_MST_055)")
 				var record = ApiTypes.IDRecordDef{
 					CrtLogId:    int64(id_start_value),
 					NumLogIds:   0,
@@ -60,17 +58,17 @@ func InitInMemStore(db_type string,
 					IdDesc:      id_desc,
 				}
 				in_mem_store_singleton.id_records[key] = record
-				log.Printf("Add system ID (SHD_MST_075): str_value:%s", key)
 
 				in_mem_store_singleton.UpsertSystemIDDef(key, id_desc)
 			} else {
-				log.Printf("***** Alarm:Key (SHD_MST_077): %s, Value: %v (not a string)", key, value)
 			}
 		}
-		log.Printf("InitInMemStore (SHD_MST_070)")
+
+		in_mem_store_singleton.logger.Info("InitInMemStore completed",
+			"table_name", in_mem_store_singleton.table_name)
 		in_mem_store_singleton.start()
 	})
-	log.Printf("InitInMemStore (SHD_MST_073)")
+	in_mem_store_singleton.logger.Info("InitInMemStore finished", "table_name", table_name)
 	return nil
 }
 
@@ -93,11 +91,13 @@ func (c *InMemStore) StopInMemStore() {
 
 func newInMemStore(db_type string,
 	table_name string,
-	db *sql.DB) *InMemStore {
+	db *sql.DB,
+	logger ApiTypes.JimoLogger) *InMemStore {
 	return &InMemStore{
 		db:         db,
 		db_type:    db_type,
 		table_name: table_name,
+		logger:     logger,
 		done:       make(chan struct{}),
 	}
 }
@@ -117,7 +117,7 @@ func (c *InMemStore) UpsertSystemIDDef(id_name string, id_desc string) error {
 	var stmt string
 	db_type := c.db_type
 	table_name := c.table_name
-	log.Printf("UpsertSystemIDDef (SHD_MST_120)")
+	c.logger.Info("UpsertSystemIDDef", "table_name", table_name, "id_name", id_name, "id_desc", id_desc)
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (?, ?, ?, ?)
@@ -131,21 +131,18 @@ func (c *InMemStore) UpsertSystemIDDef(id_name string, id_desc string) error {
 	default:
 		// SHOULD NEVER HAPPEN!!!
 		error_msg := fmt.Sprintf("unrecognized db_type:%s (SHD_IMG_033)", db_type)
-		log.Printf("***** Alarm: %s", error_msg)
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	log.Printf("UpsertSystemIDDef (SHD_MST_120)")
+	c.logger.Info("UpsertSystemIDDef", "table_name", table_name, "stmt", stmt)
 	if c.db == nil {
 		error_msg := "db is nil (SHD_IMG_033)"
-		log.Printf("***** Alarm: %s", error_msg)
 		return fmt.Errorf("%s", error_msg)
 	}
 
 	_, err := c.db.Exec(stmt, id_name, c.id_start_value, id_desc, "SHD_MST_136")
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to insert activity_log_id record (SHD_MST_138): %v, stmt:%s", err, stmt)
-		log.Printf("***** Alarm %s", error_msg)
 		return fmt.Errorf("%s", error_msg)
 	}
 
@@ -163,7 +160,7 @@ func (c *InMemStore) nextManagedID(key string) int64 {
 
 	if !exists {
 		// Entry does not exist
-		log.Printf("***** Alarm: ID record not found:%s (SHD_MST_150)", key)
+		c.logger.Error("ID record not found", "key", key)
 		record = ApiTypes.IDRecordDef{
 			CrtLogId:    int64(c.id_start_value),
 			NumLogIds:   0,
@@ -172,25 +169,28 @@ func (c *InMemStore) nextManagedID(key string) int64 {
 	}
 
 	if record.CrtLogId <= 0 || record.NumLogIds <= 0 {
-		log.Printf("Retrieve ID block from DB:%s (SHD_MST_159)", key)
+		c.logger.Info("Retrieve ID block from DB", "key", key)
 		new_log_id, err := c.NextIDBlock(key, record.IdBlockSize)
 		if err != nil {
 			eMsg := err.Error()
-			errorMsg := fmt.Sprintf("failed retrieving log ID block for %s: %s (SHD_MST_201)", key, eMsg)
-			log.Printf("***** Alarm:%s", errorMsg)
+			c.logger.Error("failed retrieving log ID block", "key", key, "error", eMsg)
+			return -1
 		}
 
 		if new_log_id <= 0 {
-			errorMsg := fmt.Sprintf("invalid new log ID (<=0) for %s (SHD_MST_206)", key)
-			log.Printf("***** Alarm:%s", errorMsg)
+			c.logger.Error("invalid new log ID", "key", key, "new_log_id", new_log_id)
+			return -1
 		}
 
-		log.Printf("Next ID block retrieved (SHD_MST_170), start_id:%d, block_size:%d", new_log_id, record.IdBlockSize)
+		c.logger.Info("Next ID block retrieved", "key",
+			key, "start_id",
+			new_log_id, "block_size",
+			record.IdBlockSize)
 		record.CrtLogId = new_log_id
 		record.NumLogIds = record.IdBlockSize
 	}
 
-	log.Printf("Next ID for:%s, id:%d, remain:%d (SHD_MST_177)", key, record.CrtLogId, record.NumLogIds)
+	c.logger.Info("Next ID for", "key", key, "id", record.CrtLogId, "remain", record.NumLogIds)
 
 	next_log_id := record.CrtLogId
 	record.CrtLogId += 1
@@ -245,14 +245,14 @@ func (c *InMemStore) NextIDBlock(id_name string, inc_value int) (int64, error) {
 
 	default:
 		error_msg := fmt.Sprintf("unsupported database type (SHD_MST_034): %s", c.db_type)
-		log.Printf("***** Alarm:%s", error_msg)
+		c.logger.Error("unsupported database type", "error", error_msg)
 		return -1, fmt.Errorf("%s", error_msg)
 	}
 
 	tx, err := c.db.Begin()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to start transaction: %v", err)
-		log.Printf("***** Alarm:%s (SHD_MST_188)", error_msg)
+		c.logger.Error("failed to start transaction", "error", error_msg)
 		return 0, fmt.Errorf("%s", error_msg)
 	}
 
@@ -269,19 +269,18 @@ func (c *InMemStore) NextIDBlock(id_name string, inc_value int) (int64, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			error_msg := fmt.Sprintf("record with id_name '%s' not found, stmt:%s (SHD_MST_135)", id_name, query)
-			log.Printf("***** Alarm:%s", error_msg)
+			c.logger.Error("record not found", "error", error_msg)
 			return 0, fmt.Errorf("%s", error_msg)
 		}
 
 		error_msg := fmt.Sprintf("failed to update and retrieve: %v, stmt:%s (SHD_MST_140)", err, query)
-		log.Printf("***** Alarm:%s", error_msg)
 		return 0, fmt.Errorf("%s", error_msg)
 	}
 
 	// Commit the transaction
 	if err = tx.Commit(); err != nil {
 		error_msg := fmt.Sprintf("failed to commit transaction (SHD_MST_136): %v", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		c.logger.Error("failed to commit transaction", "error", error_msg)
 		return 0, fmt.Errorf("%s", error_msg)
 	}
 

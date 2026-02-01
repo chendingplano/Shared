@@ -3,7 +3,6 @@ package sysdatastores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -57,14 +56,12 @@ func CreateLoginSessionsTable(
 
 	default:
 		err := fmt.Errorf("database type not supported:%s (MID_CTB_117)", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
 		return err
 	}
 
 	err := databaseutil.ExecuteStatement(db, stmt)
 	if err != nil {
 		err1 := fmt.Errorf("failed creating table '%s' (MID_CTB_124), err: %w, stmt:%s", table_name, err, stmt)
-		log.Printf("***** Alarm: %s", err1.Error())
 		return err1
 	}
 
@@ -175,6 +172,7 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 	var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	logger := rc.GetLogger()
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -187,7 +185,6 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_DBS_DEL_001): %s", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
 		return err
 	}
 
@@ -195,12 +192,11 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 	if err != nil {
 		error_msg := fmt.Errorf("failed to delete user sessions (SHD_DBS_DEL_002), email:%s, err: %w",
 			user_email, err)
-		log.Printf("***** Alarm:%s", error_msg.Error())
 		return error_msg
 	}
 
 	rowsDeleted, _ := result.RowsAffected()
-	log.Printf("Deleted %d sessions for user %s (SHD_DBS_DEL_003)", rowsDeleted, user_email)
+	logger.Info("Deleted sessions", "total", rowsDeleted, "email", user_email)
 	return nil
 }
 
@@ -213,6 +209,8 @@ func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool
 	db_type := ApiTypes.DatabaseInfo.DBType
 	sessions_table := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 	users_table := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	logger := rc.GetLogger()
+
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
@@ -232,7 +230,6 @@ func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-		log.Printf("***** Alarm %s:", error_msg.Error())
 		return "", false, error_msg
 	}
 
@@ -240,17 +237,15 @@ func IsValidSession(rc ApiTypes.RequestContext, session_id string) (string, bool
 	err := db.QueryRow(query, session_id).Scan(&user_name)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("session invalid or user inactive:%s (SHD_DBS_333)", ApiUtils.MaskToken(session_id))
-			log.Printf("%s", error_msg)
+			logger.Warn("session invalid or user inactive", "session_id", ApiUtils.MaskToken(session_id))
 			return "", false, nil
 
 		}
 
 		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_240): %w", err)
-		log.Printf("***** Alarm:%s", error_msg)
 		return "", false, error_msg
 	}
-	log.Printf("Check session (SHD_DBS_158), user_name:%s", user_name)
+	logger.Info("Check session", "user_name", user_name)
 	return user_name, user_name != "", nil
 }
 
@@ -260,6 +255,8 @@ func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (s
 	// If valid, return user_email.
 	var query string
 	var db *sql.DB
+	logger := rc.GetLogger()
+
 	db_type := ApiTypes.DatabaseInfo.DBType
 	sessions_table := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 	users_table := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
@@ -282,7 +279,6 @@ func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (s
 
 	default:
 		error_msg := fmt.Errorf("unsupported database type (SHD_DBS_180): %s", db_type)
-		log.Printf("***** Alarm %s:", error_msg.Error())
 		return "", false, error_msg
 	}
 
@@ -290,17 +286,16 @@ func IsValidSessionByAuthToken(rc ApiTypes.RequestContext, auth_token string) (s
 	err := db.QueryRow(query, auth_token).Scan(&user_email)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			error_msg := fmt.Sprintf("session invalid or user inactive, auth_token:%s (SHD_DBS_189)", ApiUtils.MaskToken(auth_token))
-			log.Printf("%s", error_msg)
+			logger.Warn("session invalid or user inactive",
+				"auth_token", ApiUtils.MaskToken(auth_token))
 			return "", false, nil
 
 		}
 
 		error_msg := fmt.Errorf("failed to validate session (SHD_DBS_195): %w", err)
-		log.Printf("***** Alarm:%s", error_msg)
 		return "", false, error_msg
 	}
-	log.Printf("Check session success (SHD_DBS_199), user_email:%s", user_email)
+	logger.Info("Check session success", "user_email", user_email)
 	return user_email, user_email != "", nil
 }
 
@@ -309,6 +304,8 @@ func DeleteSession(rc ApiTypes.RequestContext, session_id string) error {
 	var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
+	logger := rc.GetLogger()
+
 	switch db_type {
 	case ApiTypes.MysqlName:
 		db = ApiTypes.MySql_DB_miner
@@ -320,16 +317,14 @@ func DeleteSession(rc ApiTypes.RequestContext, session_id string) error {
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_DBS_565): %s", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
 		return err
 	}
 
 	_, err := db.Exec(stmt, session_id)
 	if err != nil {
 		error_msg := fmt.Errorf("failed to delete session (SHD_DBS_771), stmt:%s, session_id:%s, err: %w", stmt, session_id, err)
-		log.Printf("***** Alarm:%s", error_msg.Error())
 		return error_msg
 	}
-	log.Printf("Session deleted (SHD_DBS_775), session_id:%s", session_id)
+	logger.Info("Session deleted", "session_id", session_id)
 	return nil
 }

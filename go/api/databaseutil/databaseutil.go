@@ -47,6 +47,7 @@ func InitDB(ctx context.Context,
 			log.Fatal("***** Alarm Failed creating PG connection (SHD_DBS_026)", err)
 			return err
 		}
+		log.Printf("PostgreSQL configured (%s->SHD_DBS_033)", call_flow)
 	} else {
 		log.Printf("PostgreSQL not configured (%s->SHD_DBS_033)", call_flow)
 	}
@@ -63,8 +64,7 @@ func InitDB(ctx context.Context,
 			log.Printf("***** Alarm Failed creating MySQL connection (%s->SHD_DBS_032): %v", call_flow, err)
 			return err
 		}
-	} else {
-		log.Printf("MySQL not configured (%s->SHD_DBS_044)", call_flow)
+		log.Printf("MySQL configured (%s->SHD_DBS_044)", call_flow)
 	}
 
 	return nil

@@ -25,9 +25,8 @@ enable_icon_service         = "enabled"
 icon_data_dir               = "icons"
 
 [proc_log]
-file_logger                 = "filewriter"
-log_file_dir                = "/Users/cding/ProcLog"
-file_max_size_in_mb         = 500
+file_logger                 = "lumberjack"
+file_max_size_in_mb         = 100
 num_log_files               = 20
-max_age_in_days             = 10
-need_compress               = "true"
+max_age_in_days             = 30
+need_compress               = "false"

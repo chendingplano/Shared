@@ -942,7 +942,11 @@ func HandleForgotPasswordPocket(p *core.RequestEvent) error {
 func HandleForgotPasswordBase(
 	rc ApiTypes.RequestContext,
 	reqID string) (int, map[string]string) {
-	log.Printf("[req=%s] Handle forgot password request (SHD_EML_650)", reqID)
+	// Note that this function will report alarms if errors occur. The caller will
+	// not generate logs.
+	logger := rc.GetLogger()
+
+	logger.Info("Handle forgot password request")
 	// The request body:
 	// {
 	//   "email": "xxx",
@@ -955,9 +959,9 @@ func HandleForgotPasswordBase(
 	}
 	if err := rc.Bind(&req); err != nil {
 		log_id := sysdatastores.NextActivityLogID()
-		error_msg := fmt.Sprintf("failed retrieve email, log_id:%d, error:%v (SHD_EML_702)",
+		error_msg := fmt.Sprintf("invalid request, log_id:%d, error:%v (SHD_EML_702)",
 			log_id, err)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("invalid request", "error", err, "logid", log_id)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -977,7 +981,7 @@ func HandleForgotPasswordBase(
 	if !isValidEmail(req.Email) {
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("invalid email:%s, log_id:%d (SHD_EML_653)", req.Email, log_id)
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("invalid email", "email", req.Email, "logid", log_id)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -1005,7 +1009,7 @@ func HandleForgotPasswordBase(
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("password reset requested for non-existent email:%s, log_id:%d",
 			req.Email, log_id)
-		log.Printf("[req=%s] %s (SHD_EML_676)", reqID, error_msg)
+		logger.Warn("reset password, but user not found", "email", req.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -1020,7 +1024,7 @@ func HandleForgotPasswordBase(
 		return http.StatusOK, map[string]string{
 			"status":  "ok",
 			"message": successMsg,
-			"loc":     "SHD_EML_742",
+			"loc":     "SHD_EML_027",
 		}
 	}
 
@@ -1029,8 +1033,12 @@ func HandleForgotPasswordBase(
 
 	home_domain := os.Getenv("APP_DOMAIN_NAME")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var (SHD_EML_808)"
-		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("APP_DOMAIN_NAME not set")
+		return http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "server error (env var not set)",
+			"loc":     "SHD_EML_040",
+		}
 	}
 
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)
@@ -1057,7 +1065,7 @@ func HandleForgotPasswordBase(
 	return http.StatusOK, map[string]string{
 		"status":  "ok",
 		"message": successMsg,
-		"loc":     "SHD_EML_742",
+		"loc":     "SHD_EML_068",
 	}
 }
 

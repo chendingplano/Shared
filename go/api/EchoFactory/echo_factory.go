@@ -64,7 +64,7 @@ func NewRCAsAdmin(loc string) ApiTypes.RequestContext {
 
 func NewFromEcho(c echo.Context, loc string) ApiTypes.RequestContext {
 	ctx := c.Request().Context()
-	logger := loggerutil.CreateLogger(ctx, loggerutil.LogHandlerTypeDefault, "SHD_EFC_070")
+	logger := loggerutil.CreateDefaultLogger("SHD_EFC_070")
 	ee := &echoContext{
 		c:         c,
 		call_flow: []string{loc},
@@ -250,7 +250,7 @@ func (e *echoContext) VerifyUserPassword(
 	err := bcrypt.CompareHashAndPassword([]byte(userInfo.Password), []byte(password))
 	if err != nil {
 		error_msg := fmt.Sprintf("invalid password, email:%s", userInfo.Email)
-		logger.Error("invalid password", "email", userInfo.Email)
+		logger.Warn("password mismatch", "error", err, "email", userInfo.Email)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,

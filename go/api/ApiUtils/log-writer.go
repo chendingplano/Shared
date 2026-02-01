@@ -36,10 +36,10 @@ var (
 	fileLogWriter *FileLogWriterStruct
 	fileLogOnce   sync.Once
 	FileLogOutput io.Writer // combined stdout + file writer
+	FileWriter    io.Writer // file writer only
 )
 
-// InitFileLogging initializes file logging with rotation support.
-// Must be called after LibConfig is loaded.
+// InitFileLogging initializes file writer (FileLogOutput).
 // logDir: directory for log files (will be created if doesn't exist)
 // maxSizeMB: max size per log file in megabytes
 // numFiles: number of rotating log files (log_00, log_01, ...)
@@ -63,7 +63,7 @@ func InitFileLogging(loc string) error {
 			file_logger = "lumberjack"
 		}
 
-		logDir := procLog.LogFileDir
+		logFileDir := os.Getenv("LOG_FILE_DIR")
 		maxSizeMB := procLog.FileMaxSizeInMB
 
 		if maxSizeMB < 10 || maxSizeMB > 5000 {
@@ -78,24 +78,29 @@ func InitFileLogging(loc string) error {
 		}
 
 		// Expand ~ to home directory
-		if strings.HasPrefix(logDir, "~/") {
+		if strings.HasPrefix(logFileDir, "~/") {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				initErr = fmt.Errorf("failed to get home directory: %w (SHD_LWT_064)", err)
+				initErr = fmt.Errorf("failed to get home directory: %w (SHD_LWT_064), LOG_FILE_DIR:%s",
+					err, logFileDir)
+				slog.Error("failed to get home directory. Default to stdio only", "error", err)
+				FileLogOutput = os.Stdout
 				return
 			}
-			logDir = filepath.Join(home, logDir[2:])
+			logFileDir = filepath.Join(home, logFileDir[2:])
 		}
 
 		// Create log directory if it doesn't exist
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			initErr = fmt.Errorf("failed to create log directory %s: %w (SHD_LWT_072)", logDir, err)
+		if err := os.MkdirAll(logFileDir, 0755); err != nil {
+			initErr = fmt.Errorf("failed to create log directory %s: %w (SHD_LWT_072)", logFileDir, err)
+			slog.Error("failed to create log directory. Default to stdio only", "log_dir", logFileDir, "error", err)
+			FileLogOutput = os.Stdout
 			return
 		}
 
 		if file_logger == "filewriter" {
 			flw := &FileLogWriterStruct{
-				logDir:       logDir,
+				logDir:       logFileDir,
 				maxSizeBytes: int64(maxSizeMB) * 1024 * 1024,
 				numFiles:     numFiles,
 			}
@@ -103,21 +108,25 @@ func InitFileLogging(loc string) error {
 			// Find the most recently modified log file to continue from
 			if err := flw.findCurrentLogFile(); err != nil {
 				initErr = fmt.Errorf("failed to find current log file: %w", err)
+				slog.Error("failed to find current log file. Default to stdio only", "error", err)
+				FileLogOutput = os.Stdout
 				return
 			}
 
 			// Open the current log file
 			if err := flw.openCurrentFile(); err != nil {
 				initErr = fmt.Errorf("failed to open log file: %w", err)
+				slog.Error("failed to open log file. Default to stdio only", "error", err)
+				FileLogOutput = os.Stdout
 				return
 			}
 
-			fileLogWriter = flw
+			FileWriter = flw
 			slog.Info("Create file writer (SHD_JLG_115)",
-				"file_dir", procLog.LogFileDir,
+				"file_dir", logFileDir,
 				"max_size", maxSizeMB,
 				"num_files", numFiles)
-			FileLogOutput = io.MultiWriter(os.Stdout, fileLogWriter)
+			FileLogOutput = io.MultiWriter(os.Stdout, FileWriter)
 			return
 		}
 
@@ -127,8 +136,9 @@ func InitFileLogging(loc string) error {
 			maxAge = 20
 		}
 
-		lumberjack := &ljack.Logger{
-			Filename:   fmt.Sprintf("%s/lumjack.log", procLog.LogFileDir),
+		filename := fmt.Sprintf("%s/app.log", logFileDir)
+		FileWriter = &ljack.Logger{
+			Filename:   filename,
 			MaxSize:    maxSizeMB, // megabytes
 			MaxBackups: numFiles,
 			MaxAge:     maxAge,                         // days
@@ -137,10 +147,10 @@ func InitFileLogging(loc string) error {
 
 		// Create a MultiWriter that writes to both stdout and the file
 		slog.Info("Create lumberjack (SHD_JLG_138)",
-			"file_dir", fmt.Sprintf("%s/lumberjack", procLog.LogFileDir),
+			"file_dir", filename,
 			"max_size", procLog.FileMaxSizeInMB,
 			"num_files", procLog.NumLogFiles)
-		FileLogOutput = io.MultiWriter(os.Stdout, lumberjack)
+		FileLogOutput = io.MultiWriter(os.Stdout, FileWriter)
 	})
 	return initErr
 }

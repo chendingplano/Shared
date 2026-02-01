@@ -67,7 +67,6 @@ type IconServiceConfig struct {
 
 type ProcLogConfig struct {
 	Filelogger      string `mapstructure:"file_logger"`
-	LogFileDir      string `mapstructure:"log_file_dir"`
 	FileMaxSizeInMB int    `mapstructure:"file_max_size_in_mb"`
 	NumLogFiles     int    `mapstructure:"num_log_files"`
 	MaxAgeInDays    int    `mapstructure:"max_age_in_days"`

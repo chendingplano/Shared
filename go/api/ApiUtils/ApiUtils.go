@@ -532,14 +532,14 @@ func LoadLibConfig(loc string) {
 
 		config_path := os.Getenv("SHARED_LIB_CONFIG_DIR")
 		if len(config_path) <= 0 {
-			slog.Error("***** Alarm: missing SHARED_LIB_CONFIG_DIR env variable (SHD_LMG_024)")
+			slog.Error("missing SHARED_LIB_CONFIG_DIR env variable (SHD_LMG_024)")
 			return
 		}
 
 		// config_path should be "~/Workspace/Shared/libconfig.toml"
 		// 1. DB Must be initialized properly
 
-		slog.Info("Loading config from(SHD_LMG_047)", "config_path", config_path)
+		slog.Info("Loading config (SHD_LMG_047)", "config_path", config_path)
 		viper.SetConfigFile(config_path)
 		viper.SetConfigType("toml")
 
@@ -549,7 +549,7 @@ func LoadLibConfig(loc string) {
 				log.Printf("***** Alarm: config file not found (SHD_LMG_054): %s", config_path)
 				os.Exit(1)
 			}
-			slog.Error("***** Alarm: error reading config (SHD_LMG_056)", "error", err)
+			slog.Error("error reading config (SHD_LMG_056)", "error", err)
 			os.Exit(1)
 		}
 
@@ -558,7 +558,7 @@ func LoadLibConfig(loc string) {
 
 		// Unmarshal into struct
 		if err := viper.Unmarshal(&ApiTypes.LibConfig); err != nil {
-			slog.Error("***** Alarm: unable to decode config (SHD_LMG_064)", "error", err)
+			slog.Error("unable to decode config (SHD_LMG_064)", "error", err)
 			os.Exit(1)
 		}
 	})

@@ -42,9 +42,9 @@ func InitIconService(rc ApiTypes.RequestContext) error {
 		return nil
 	}
 
-	dataHomeDir := ApiTypes.LibConfig.DataHomeDir
+	dataHomeDir := os.Getenv("DATA_HOME_DIR")
 	if dataHomeDir == "" {
-		logger.Error("Missing data_home_dir config")
+		logger.Error("Missing DATA_HOME_DIR environment variable")
 		return fmt.Errorf("Missing data_home_dir config (SHD_ISV_042)")
 	}
 

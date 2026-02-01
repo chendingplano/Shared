@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"github.com/Marlliton/slogpretty"
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
+	"github.com/lmittmann/tint"
 )
 
 type ContextType string
@@ -31,37 +31,20 @@ type LogFormat int
 
 const (
 	LogHandlerTypeDefault LogFormat = iota
-	LogHandlerTypeJSON
 	LogHandlerTypePretty
-	LogHandlerTypeText
+	LogHandlerTypeTint
 )
 
 // Singleton logger instances - created once and reused
 var (
-	defaultLogger *slog.Logger
-	jsonLogger    *slog.Logger
-	prettyLogger  *slog.Logger
-	textLogger    *slog.Logger
+	devLogger  *slog.Logger
+	jsonLogger *slog.Logger
 
-	defaultOnce sync.Once
-	jsonOnce    sync.Once
-	prettyOnce  sync.Once
-	textOnce    sync.Once
+	devOnce  sync.Once
+	jsonOnce sync.Once
 )
 
-// getOutput returns the appropriate io.Writer for logging
-// Returns MultiWriter(stdout, file) if file logging is initialized, otherwise just stdout
-func getOutput(loc string) io.Writer {
-	ApiUtils.InitFileLogging(loc)
-
-	if ApiUtils.FileLogOutput != nil {
-		slog.Info("User fileLog (SHD_JLG_280)")
-		return ApiUtils.FileLogOutput
-	}
-	slog.Info("User stdio (SHD_JLG_283)")
-	return os.Stdout
-}
-
+/*
 func CreateLogger(
 	ctx context.Context,
 	loggerType LogFormat,
@@ -70,9 +53,10 @@ func CreateLogger(
 	return &JimoLoggerImpl{
 		ctx:    ctx,
 		cancel: nil,
-		logger: getLoggerHandler(loggerType, loc),
+		logger: getLogger(loggerType),
 		reqID:  generateRequestID("e")}
 }
+*/
 
 type JimoLoggerImpl struct {
 	ctx         context.Context
@@ -115,7 +99,8 @@ func createLogger(
 	default:
 		slog.Error("***** Alarm",
 			"message", "Invalid context type",
-			"context_type", contextType)
+			"context_type", contextType,
+			"loc", loc)
 		default_timeout_sec := 30
 		timeout := time.Duration(default_timeout_sec) * time.Second
 		ctx, cancelFunc = context.WithTimeout(context.Background(), timeout)
@@ -125,93 +110,142 @@ func createLogger(
 		ctx:        ctx,
 		cancel:     cancelFunc,
 		call_depth: 2,
-		logger:     getLoggerHandler(loggerType, loc),
+		logger:     getLogger(loggerType),
 		reqID:      generateRequestID("e")}
 }
 
-func newTextLogger(loc string) *slog.Logger {
-	handler := slog.NewTextHandler(getOutput(loc), &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+func newDevLogger(consoleHandler slog.Handler) *slog.Logger {
+	ApiUtils.InitFileLogging("SHD_JLG_118")
+	fileWriter := ApiUtils.FileWriter
+
+	slog.Info("newDevLogger (SHD_JLG_123)")
+
+	if fileWriter == nil {
+		slog.Info("newDevLogger (SHD_JLG_124)")
+		return slog.New(consoleHandler)
+	}
+
+	// file → text, no color
+	slog.Info("newDevLogger with fileWriter (SHD_JLG_129)")
+	fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{
+		Level:     slog.LevelDebug,
+		AddSource: false,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.String("time", a.Value.Time().Format("2006-01-02 15:04:05"))
+			}
+			return a
+		},
 	})
+
+	handler := MultiHandler{
+		handlers: []slog.Handler{
+			consoleHandler,
+			fileHandler,
+		},
+	}
+
 	return slog.New(handler)
 }
 
-func newJSONLogger(loc string) *slog.Logger {
-	handler := slog.NewJSONHandler(getOutput(loc), &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+func newJSONLogger(consoleHandler slog.Handler) *slog.Logger {
+	ApiUtils.InitFileLogging("SHD_JLG_141")
+	fileWriter := ApiUtils.FileWriter
+
+	if fileWriter == nil {
+		return slog.New(consoleHandler)
+	}
+
+	fileHandler := slog.NewJSONHandler(fileWriter, &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
+		AddSource: true,
 	})
+
+	handler := MultiHandler{
+		handlers: []slog.Handler{
+			consoleHandler,
+			fileHandler,
+		},
+	}
+
 	return slog.New(handler)
 }
 
-func newPrettyLogger(loc string) *slog.Logger {
-	handler := slogpretty.New(getOutput(loc), &slogpretty.Options{
-		TimeFormat: "2006-01-02 15:04:05",
-	})
-	return slog.New(handler)
-}
-
-func getLoggerHandler(handlerType LogFormat, loc string) *slog.Logger {
+func getConsoleHandler(handlerType LogFormat, loc string) slog.Handler {
 	switch handlerType {
 	case LogHandlerTypeDefault:
 		// Default: use slogpretty
 		// Source: https://github.com/Marlliton/slogpretty
-		defaultOnce.Do(func() {
-			defaultLogger = newPrettyLogger(loc)
+		handler := slogpretty.New(os.Stdout, &slogpretty.Options{
+			TimeFormat: "2006-01-02 15:04:05",
 		})
-		return defaultLogger
-
-	case LogHandlerTypeJSON:
-		jsonOnce.Do(func() {
-			jsonLogger = newJSONLogger(loc)
-		})
-		return jsonLogger
-
-	case LogHandlerTypeText:
-		textOnce.Do(func() {
-			textLogger = newTextLogger(loc)
-		})
-		return textLogger
+		return handler
 
 	case LogHandlerTypePretty:
 		// Source: https://github.com/Marlliton/slogpretty
-		prettyOnce.Do(func() {
-			prettyLogger = newPrettyLogger(loc)
+		handler := slogpretty.New(os.Stdout, &slogpretty.Options{
+			TimeFormat: "2006-01-02 15:04:05",
 		})
-		return prettyLogger
+		return handler
+
+	case LogHandlerTypeTint:
+		handler := tint.NewHandler(os.Stdout, &tint.Options{
+			Level:      slog.LevelDebug,
+			AddSource:  true,
+			TimeFormat: "15:04:05",
+		})
+		return handler
 
 	default:
-		slog.Error("***** Alarm",
-			"message", "Invalid log handler type",
-			"logger_type", handlerType)
+		slog.Error("Invalid log handler type. Falling back to default handler",
+			"handlerType", handlerType,
+			"loc", loc)
 		// Fall back to default handler
-		return getLoggerHandler(LogHandlerTypeDefault, loc)
+		return getConsoleHandler(LogHandlerTypeDefault, loc)
 	}
+}
+
+func getLogger(handlerType LogFormat) *slog.Logger {
+	is_json := false
+	if is_json {
+		jsonOnce.Do(func() {
+			consoleHandler := getConsoleHandler(handlerType, "SHD_JLG_250")
+			jsonLogger = newJSONLogger(consoleHandler)
+		})
+		return jsonLogger
+	}
+
+	devOnce.Do(func() {
+		consoleHandler := getConsoleHandler(handlerType, "SHD_JLG_259")
+		devLogger = newDevLogger(consoleHandler)
+	})
+	return devLogger
 }
 
 // Info logs an informational message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Info(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s]", l.reqID)
+	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
 
-	call_flow := GetCallStack(l.call_depth)
-	logArgs := append([]any{"message", message, "call_flow", call_flow}, args...)
+	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
+	logArgs := append([]any{"call_flow", call_flow}, args...)
 	l.logger.Info(msg, logArgs...)
 }
 
 // Warn logs a warning message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Warn(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s]", l.reqID)
+	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
 
-	call_flow := GetCallStack(l.call_depth)
-	logArgs := append([]any{"message", message, "call_flow", call_flow}, args...)
+	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
+	logArgs := append([]any{"call_flow", call_flow}, args...)
 	l.logger.Warn(msg, logArgs...)
 }
 
 // Error logs an error message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Error(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s] ***** Alarm", l.reqID)
+	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
 
-	call_flow := GetCallStack(l.call_depth)
-	logArgs := append([]any{"message", message, "call_flow", call_flow}, args...)
+	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
+	logArgs := append([]any{"call_flow", call_flow}, args...)
 	l.logger.Error(msg, logArgs...)
 }
 
@@ -254,14 +288,14 @@ func GetCallStack(depth int) string {
 	}
 
 	filename2 := filepath.Base(file2)
-	if depth == 2 {
+	if depth == 1 {
 		// It returns only one level
 		return fmt.Sprintf("%s:%d", filename2, line2)
 	}
 
 	_, file3, line3, ok3 := runtime.Caller(3)
 	if !ok3 {
-		return fmt.Sprintf("%s:%d->%s:%d", filename2, line2, filename1, line1)
+		return fmt.Sprintf("%s:%d", filename2, line2)
 	}
 
 	filename3 := filepath.Base(file3)
