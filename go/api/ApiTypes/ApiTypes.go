@@ -32,9 +32,8 @@ const CallFlowKey = "jimo_call_flow"
 const RequestIDKey = "jimo_req_id"
 
 type LibConfigDef struct {
-	IDStartValue int    `mapstructure:"id_start_value"`
-	IDIncValue   int    `mapstructure:"id_inc_value"`
-	DataHomeDir  string `mapstructure:"data_home_dir"`
+	IDStartValue int `mapstructure:"id_start_value"`
+	IDIncValue   int `mapstructure:"id_inc_value"`
 
 	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
 	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
@@ -66,7 +65,6 @@ type IconServiceConfig struct {
 }
 
 type ProcLogConfig struct {
-	Filelogger      string `mapstructure:"file_logger"`
 	FileMaxSizeInMB int    `mapstructure:"file_max_size_in_mb"`
 	NumLogFiles     int    `mapstructure:"num_log_files"`
 	MaxAgeInDays    int    `mapstructure:"max_age_in_days"`

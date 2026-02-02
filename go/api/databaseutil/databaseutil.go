@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/labstack/echo/v4"
 )
 
@@ -31,40 +31,41 @@ var AllowedLogicOps = map[string]bool{
 func InitDB(ctx context.Context,
 	mysql_config ApiTypes.DBConfig,
 	pg_config ApiTypes.DBConfig) error {
+	logger := loggerutil.CreateDefaultLogger("SHD_DBU_035")
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	log.Printf("InitDB called (SHD_DBS_0 45), call_flow:%s", call_flow)
+	logger.Info("InitDB called (SHD_DBS_0 45)")
 
 	if pg_config.DBType != "pg" {
 		error_msg := fmt.Errorf("invalid PG config name (%s->SHD_DBS_056):%s", call_flow, pg_config.DBType)
-		log.Printf("***** Alarm %s", error_msg.Error())
+		logger.Error("Invalid PG config name", "error", error_msg)
 		return error_msg
 	}
 
 	if pg_config.CreateFlag {
-		log.Printf("To create PGDBMiner (SHD_DBS_024)")
-		err := CreatePGDBMiner(pg_config)
+		logger.Info("To create PGDBMiner (SHD_DBS_024)")
+		err := CreatePGDBMiner(logger, pg_config)
 		if err != nil {
-			log.Fatal("***** Alarm Failed creating PG connection (SHD_DBS_026)", err)
+			logger.Error("Failed creating PG connection (SHD_DBS_026)", "error", err)
 			return err
 		}
-		log.Printf("PostgreSQL configured (%s->SHD_DBS_033)", call_flow)
+		logger.Info("PostgreSQL configured (SHD_DBS_033)", "call_flow", call_flow)
 	} else {
-		log.Printf("PostgreSQL not configured (%s->SHD_DBS_033)", call_flow)
+		logger.Info("PostgreSQL not configured (SHD_DBS_033)", "call_flow", call_flow)
 	}
 
 	if mysql_config.DBType != "mysql" {
 		error_msg := fmt.Errorf("invalid mysql config name (%s->SHD_DBS_072):%s", call_flow, mysql_config.DBType)
-		log.Printf("***** Alarm %s", error_msg.Error())
+		logger.Error("Invalid MySQL config name", "error", error_msg)
 		return error_msg
 	}
 
 	if mysql_config.CreateFlag {
-		err := AosCreateMySqlDBMiner(mysql_config)
+		err := AosCreateMySqlDBMiner(logger, mysql_config)
 		if err != nil {
-			log.Printf("***** Alarm Failed creating MySQL connection (%s->SHD_DBS_032): %v", call_flow, err)
+			logger.Error("Failed creating MySQL connection (SHD_DBS_032)", "call_flow", call_flow, "error", err)
 			return err
 		}
-		log.Printf("MySQL configured (%s->SHD_DBS_044)", call_flow)
+		logger.Info("MySQL configured (SHD_DBS_044)", "call_flow", call_flow)
 	}
 
 	return nil
@@ -77,7 +78,7 @@ func IsValidTableName(name string) bool {
 	return regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(name)
 }
 
-func CreatePGDBMiner(config ApiTypes.DBConfig) error {
+func CreatePGDBMiner(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
 	var err error
 	host := config.Host
 	port := config.Port
@@ -89,21 +90,19 @@ func CreatePGDBMiner(config ApiTypes.DBConfig) error {
 		host, port, username, password, dbname)
 
 	// SECURITY: Don't log credentials
-	log.Printf("Connect to PG (SHD_DBS_089), host:%s, port:%d, username:%s, dbname:%s",
-		host, port, username, dbname)
+	logger.Info("Connect to PG (SHD_DBS_089)", "host", host, "port", port, "username", username, "dbname", dbname)
 
 	ApiTypes.PG_DB_miner, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal("Failed to connect to database (SHD_DBS_050):", err)
+		logger.Error("Failed to connect to database (SHD_DBS_050)", "error", err)
 	}
 
 	// Test the connection
 	if err = ApiTypes.PG_DB_miner.Ping(); err != nil {
 		// SECURITY: Don't log connection string or credentials
-		log.Printf("***** Alarm: Failed connecting PostgreSQL (SHD_DBS_055), err:%s, host:%s, dbname:%s",
-			err, host, dbname)
+		logger.Error("Failed connecting PostgreSQL (SHD_DBS_055)", "error", err, "host", host, "dbname", dbname)
 	} else {
-		log.Printf("PostgreSQL created (SHD_DBS_058), dbname:%s, user:%s", dbname, username)
+		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname, "user", username)
 	}
 
 	ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_miner
@@ -111,7 +110,7 @@ func CreatePGDBMiner(config ApiTypes.DBConfig) error {
 	return nil
 }
 
-func AosCreateMySqlDBMiner(config ApiTypes.DBConfig) error {
+func AosCreateMySqlDBMiner(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
 	var err error
 	host := config.Host
 	port := config.Port
@@ -121,27 +120,28 @@ func AosCreateMySqlDBMiner(config ApiTypes.DBConfig) error {
 	options := "?tls=false&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
 	connStr := fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, db_name, options)
 
-	log.Printf("To connect to MySQL with connStr (SHD_DBS_081)")
+	logger.Info("To connect to MySQL with connStr (SHD_DBS_081)", "connStr", connStr)
 	ApiTypes.MySql_DB_miner, err = sql.Open("mysql", connStr)
 	if err != nil {
-		log.Fatal("***** Alarm Failed connecting MySQL (SHD_DBS_084):", err)
+		logger.Error("Failed connecting MySQL (SHD_DBS_084)", "error", err)
 		return err
 	}
 
 	// Test the connection
 	if err = ApiTypes.MySql_DB_miner.Ping(); err != nil {
 		// SECURITY: Don't log connection string (contains credentials)
-		log.Printf("***** Alarm: Failed to ping MySQL (SHD_DBS_090), err:%s, host:%s, db:%s", err, host, db_name)
+		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", db_name)
 		return err
 	}
 
-	log.Println("Connected to MySQL database (SHD_DBS_174)")
+	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", db_name)
 	ApiTypes.DatabaseInfo.MySQLDBHandle = ApiTypes.MySql_DB_miner
 
 	return nil
 }
 
 func HandleSelect(c echo.Context,
+	logger ApiTypes.JimoLogger,
 	base_stmt string,
 	db *sql.DB,
 	allowedFields map[string]bool,
@@ -159,11 +159,11 @@ func HandleSelect(c echo.Context,
 	// SECURITY: Uses parameterized queries to prevent SQL injection.
 	// User input (val) is NEVER interpolated into the query string.
 
-	log.Printf("To retrieve data for Documents (SHD_DBS_024)")
+	logger.Info("To retrieve data for Documents (SHD_DBS_024)")
 
 	i := 0
 	for {
-		log.Printf("Processing filter index: %d (SHD_DBS_178)", i)
+		logger.Info("Processing filter index", "index", i)
 		field := c.QueryParam(fmt.Sprintf("field_%d", i))
 		if field == "" {
 			break
@@ -175,13 +175,14 @@ func HandleSelect(c echo.Context,
 			logic_opr = c.QueryParam(fmt.Sprintf("logic_opr_%d", i))
 			if logic_opr == "" || !AllowedLogicOps[logic_opr] {
 				error_msg := fmt.Errorf("invalid logic operator (SHD_DBS_177):%s", logic_opr)
-				log.Printf("***** Alarm %s", error_msg.Error())
+				logger.Error("Invalid logic operator in HandleSelect", "logic_opr", logic_opr, "error", error_msg)
 				return nil, error_msg
 			}
 		}
 
 		if !allowedFields[field] {
 			error_msg := fmt.Errorf("invalid field (SHD_DBS_183):%s", field)
+			logger.Error("Invalid field in HandleSelect", "field", field)
 			return nil, error_msg
 		}
 
@@ -200,7 +201,7 @@ func HandleSelect(c echo.Context,
 		}
 		args = append(args, val)
 
-		log.Printf("Received filter - field: %s, op: %s, logic_opr: %s (SHD_001_035)", field, op, logic_opr)
+		logger.Info("Received filter", "field", field, "op", op, "logic_opr", logic_opr)
 		i++
 	}
 
@@ -214,11 +215,11 @@ func HandleSelect(c echo.Context,
 		query += " " + limit
 	}
 
-	log.Printf("Constructed query: %s (SHD_DBS_215)", query)
+	logger.Info("Constructed query", "query", query)
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		error_msg := fmt.Errorf("select failed (SHD_DBS_217), err:%v, query:%s", err, query)
-		log.Printf("***** Alarm %s", error_msg.Error())
+		logger.Error("Failed to execute query", "error", error_msg)
 		return nil, error_msg
 	}
 	return rows, nil
@@ -257,7 +258,6 @@ func ExecuteStatement(db *sql.DB, stmt string) error {
 		return fmt.Errorf("failed to commit transaction (SHD_DBS_171): %w", err)
 	}
 
-	// log.Println("Statement executed successfully (SHD_DBS_175)")
 	return nil
 }
 
@@ -317,8 +317,9 @@ func CloseDatabase() {
 	}
 }
 
-func CreateGenericTable(table_name string) error {
+func CreateGenericTable(rc ApiTypes.RequestContext, table_name string) error {
 	db_type := ApiTypes.DatabaseInfo.DBType
+	logger := rc.GetLogger()
 	const common_fields = "record_type VARCHAR(255) NOT NULL, " +
 		"doc_type VARCHAR(255) NOT NULL, " +
 		"doc_name VARCHAR(255) NOT NULL, " +
@@ -353,6 +354,6 @@ func CreateGenericTable(table_name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create table (SHD_DBS_320): %w", err)
 	}
-	log.Printf("Table created successfully (SHD_DBS_322), table_name:%s", table_name)
+	logger.Info("Table created successfully (SHD_DBS_322)", "table_name", table_name)
 	return nil
 }

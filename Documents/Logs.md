@@ -290,9 +290,14 @@ Example: 500 MB × 20 files = 10 GB maximum
 
 Logs are configured in `libconfig.toml` under the `[proc_log]` section.
 
+### Environment Variables
+| Name | Values | Description |
+|:-----|:-----|:------------|
+| `FILE_LOGGER` | 'nofilelogger', 'filewriter', 'lumberjack' | The file writer to use. Defaults to `"lumberjack"` if not specified or invalid. |
+
+
 | Name | Type | Description |
 |:-----|:-----|:------------|
-| `file_logger` | optional | The file writer to use. Allowed values: `"nofilelogger"`, `"filewriter"`, `"lumberjack"`. Defaults to `"lumberjack"` if not specified or invalid. |
 | `log_file_dir` | **mandatory** | Directory for log files. Supports `~` expansion. System exits on error if not configured. |
 | `file_max_size_in_mb` | optional | Maximum log file size in MB. Range: [10, 5000]. Default: 500. |
 | `num_log_files` | optional | Number of rotating log files. Range: [2, 50]. Default: 20. |
@@ -303,7 +308,6 @@ Logs are configured in `libconfig.toml` under the `[proc_log]` section.
 
 ```toml
 [proc_log]
-file_logger = "lumberjack"
 log_file_dir = "~/logs/myapp"
 file_max_size_in_mb = 500
 num_log_files = 20
@@ -313,14 +317,18 @@ need_compress = "false"
 
 ### Disabling File Logging
 
-To log only to stdout:
+To log only to stdout, set the "proc_log" section in libconfig.toml as follows:
 
 ```toml
 [proc_log]
-file_logger = "no-file-logger"
 log_file_dir = "/dev/null"  # Still required but unused
 ```
 
+and set the environment variable in .env file:
+
+```text
+FILE_LOGGER=nofilelogger
+```
 ---
 
 ## Initialization and Cleanup

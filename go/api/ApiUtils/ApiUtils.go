@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"math/big"
 	"net/smtp"
@@ -539,14 +538,14 @@ func LoadLibConfig(loc string) {
 		// config_path should be "~/Workspace/Shared/libconfig.toml"
 		// 1. DB Must be initialized properly
 
-		slog.Info("Loading config (SHD_LMG_047)", "config_path", config_path)
+		slog.Info("Loading config (SHD_LMG_542)", "config_path", config_path)
 		viper.SetConfigFile(config_path)
 		viper.SetConfigType("toml")
 
 		// Read config file
 		if err := viper.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-				log.Printf("***** Alarm: config file not found (SHD_LMG_054): %s", config_path)
+				slog.Error("config file not found (SHD_LMG_054)", "config_path", config_path)
 				os.Exit(1)
 			}
 			slog.Error("error reading config (SHD_LMG_056)", "error", err)
@@ -561,5 +560,6 @@ func LoadLibConfig(loc string) {
 			slog.Error("unable to decode config (SHD_LMG_064)", "error", err)
 			os.Exit(1)
 		}
+		slog.Info("Loading config success (SHD_LMG_564)")
 	})
 }

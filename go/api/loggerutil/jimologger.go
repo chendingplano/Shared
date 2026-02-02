@@ -118,15 +118,13 @@ func newDevLogger(consoleHandler slog.Handler) *slog.Logger {
 	ApiUtils.InitFileLogging("SHD_JLG_118")
 	fileWriter := ApiUtils.FileWriter
 
-	slog.Info("newDevLogger (SHD_JLG_123)")
-
 	if fileWriter == nil {
-		slog.Info("newDevLogger (SHD_JLG_124)")
+		slog.Info("newDevLogger with no file writer (SHD_JLG_124)")
 		return slog.New(consoleHandler)
 	}
 
 	// file → text, no color
-	slog.Info("newDevLogger with fileWriter (SHD_JLG_129)")
+	slog.Info("newDevLogger with file writer (SHD_JLG_129)")
 	fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{
 		Level:     slog.LevelDebug,
 		AddSource: false,

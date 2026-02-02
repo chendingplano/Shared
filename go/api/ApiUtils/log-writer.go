@@ -45,35 +45,47 @@ var (
 // numFiles: number of rotating log files (log_00, log_01, ...)
 func InitFileLogging(loc string) error {
 	var initErr error
-	slog.Info("InitFileLogging (SHD_JLG_078)")
 	fileLogOnce.Do(func() {
+		slog.Info("InitFileLogging (SHD_JLG_078)", "loc", loc)
 		LoadLibConfig(loc)
 
 		procLog := ApiTypes.LibConfig.ProcLog
-		file_logger := procLog.Filelogger
-		slog.Info("file_logger", "value", file_logger)
+		file_logger := os.Getenv("FILE_LOGGER")
+		if len(file_logger) == 0 {
+			file_logger = "lumberjack"
+			slog.Warn("FILE_LOGGER environment variable not set. Default to lumberjack (SHD_LWT_046)", "loc", loc)
+		}
+
+		slog.Info("file_logger (SHD_LWG_059)", "type", file_logger)
 		if file_logger == "nofilelogger" {
 			// No file logger used.
-			slog.Info("No file logger used (SHD_LWT_051)")
+			slog.Warn("No file logger used (SHD_LWT_051)", "loc", loc)
 			FileLogOutput = os.Stdout
 			return
 		}
 
-		if file_logger != "filewriter" {
+		if file_logger != "filewriter" && file_logger != "lumberjack" {
+			slog.Warn("Invalid file_logger. Default to lumberjack (SHD_LWT_056)", "value", file_logger)
 			file_logger = "lumberjack"
 		}
 
 		logFileDir := os.Getenv("LOG_FILE_DIR")
+		if len(logFileDir) == 0 {
+			slog.Error("LOG_FILE_DIR environment variable not set. Default to stdio only (SHD_LWT_060)")
+			FileLogOutput = os.Stdout
+			return
+		}
+
 		maxSizeMB := procLog.FileMaxSizeInMB
 
 		if maxSizeMB < 10 || maxSizeMB > 5000 {
-			slog.Warn("Invalid max_size_in_mb. Default to 500", "value", maxSizeMB)
+			slog.Warn("Invalid max_size_in_mb. Default to 500 (SHD_LWT_082)", "value", maxSizeMB)
 			maxSizeMB = 500
 		}
 
 		numFiles := procLog.NumLogFiles
 		if numFiles < 2 || numFiles > 50 {
-			slog.Warn("Invalid num-log-files. Defaults to 20", "value", numFiles)
+			slog.Warn("Invalid num-log-files. Defaults to 20 (SHD_LWT_087)", "value", numFiles)
 			numFiles = 20
 		}
 
@@ -83,7 +95,7 @@ func InitFileLogging(loc string) error {
 			if err != nil {
 				initErr = fmt.Errorf("failed to get home directory: %w (SHD_LWT_064), LOG_FILE_DIR:%s",
 					err, logFileDir)
-				slog.Error("failed to get home directory. Default to stdio only", "error", err)
+				slog.Error("failed to get home directory. Default to stdio only (SHD_LWT_065)", "error", err)
 				FileLogOutput = os.Stdout
 				return
 			}
@@ -93,7 +105,7 @@ func InitFileLogging(loc string) error {
 		// Create log directory if it doesn't exist
 		if err := os.MkdirAll(logFileDir, 0755); err != nil {
 			initErr = fmt.Errorf("failed to create log directory %s: %w (SHD_LWT_072)", logFileDir, err)
-			slog.Error("failed to create log directory. Default to stdio only", "log_dir", logFileDir, "error", err)
+			slog.Error("failed to create log directory. Default to stdio only (SHD_LWT_073)", "log_dir", logFileDir, "error", err)
 			FileLogOutput = os.Stdout
 			return
 		}
@@ -108,7 +120,7 @@ func InitFileLogging(loc string) error {
 			// Find the most recently modified log file to continue from
 			if err := flw.findCurrentLogFile(); err != nil {
 				initErr = fmt.Errorf("failed to find current log file: %w", err)
-				slog.Error("failed to find current log file. Default to stdio only", "error", err)
+				slog.Error("failed to find current log file. Default to stdio only (SHD_LWT_089)", "error", err)
 				FileLogOutput = os.Stdout
 				return
 			}
@@ -116,7 +128,7 @@ func InitFileLogging(loc string) error {
 			// Open the current log file
 			if err := flw.openCurrentFile(); err != nil {
 				initErr = fmt.Errorf("failed to open log file: %w", err)
-				slog.Error("failed to open log file. Default to stdio only", "error", err)
+				slog.Error("failed to open log file. Default to stdio only (SHD_LWT_092)", "error", err)
 				FileLogOutput = os.Stdout
 				return
 			}
@@ -132,7 +144,7 @@ func InitFileLogging(loc string) error {
 
 		maxAge := procLog.MaxAgeInDays
 		if maxAge < 1 || maxAge > 90 {
-			slog.Warn("Invalid max_age_in_days. Default to 20", "value", maxAge)
+			slog.Warn("Invalid max_age_in_days. Default to 20 (SHD_LWT_097)", "value", maxAge)
 			maxAge = 20
 		}
 

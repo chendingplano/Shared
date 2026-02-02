@@ -2,7 +2,6 @@
 id_start_value              = 10000
 id_inc_value                = 1000
 allow_dynamic_tables        = true
-data_home_dir               = "~/Workspace/Data"
 
 [system_table_names]
 table_name_test             = "test"
@@ -25,7 +24,6 @@ enable_icon_service         = "enabled"
 icon_data_dir               = "icons"
 
 [proc_log]
-file_logger                 = "lumberjack"
 file_max_size_in_mb         = 100
 num_log_files               = 20
 max_age_in_days             = 30
