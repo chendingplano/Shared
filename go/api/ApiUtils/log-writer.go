@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chendingplano/shared/go/api/ApiTypes"
 	ljack "gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -49,7 +49,6 @@ func InitFileLogging(loc string) error {
 		slog.Info("InitFileLogging (SHD_JLG_078)", "loc", loc)
 		LoadLibConfig(loc)
 
-		procLog := ApiTypes.LibConfig.ProcLog
 		file_logger := os.Getenv("FILE_LOGGER")
 		if len(file_logger) == 0 {
 			file_logger = "lumberjack"
@@ -76,15 +75,63 @@ func InitFileLogging(loc string) error {
 			return
 		}
 
-		maxSizeMB := procLog.FileMaxSizeInMB
+		maxAgeStr := os.Getenv("MAX_AGE_IN_DAYS")
+		if len(maxAgeStr) == 0 {
+			slog.Warn("MAX_AGE_IN_DAYS environment variable not set. Default to 30 days (SHD_LWT_075)")
+			maxAgeStr = "30"
+		}
+		maxAge, err := strconv.Atoi(maxAgeStr)
+		if err != nil {
+			slog.Error("Error converting MAX_AGE_IN_DAYS to int. Default to 30 (days)", "error", err)
+			maxAge = 30 // default value
+		}
 
-		if maxSizeMB < 10 || maxSizeMB > 5000 {
-			slog.Warn("Invalid max_size_in_mb. Default to 500 (SHD_LWT_082)", "value", maxSizeMB)
+		var minAgeLimit = 1
+		var maxAgeLimit = 365
+		if maxAge < minAgeLimit || maxAge > maxAgeLimit {
+			slog.Warn("Invalid MAX_AGE_IN_DAYS. Default to 30 days (SHD_LWT_080)",
+				"value", maxAge,
+				"minAge", minAgeLimit,
+				"maxAge", maxAgeLimit)
+			maxAge = 30
+		}
+
+		maxSizeMBStr := os.Getenv("MAX_SIZE_IN_MB")
+		if len(maxSizeMBStr) == 0 {
+			slog.Warn("MAX_SIZE_IN_MB environment variable not set. Default to 500 (MB) (SHD_LWT_078)")
+			maxSizeMBStr = "500"
+		}
+
+		maxSizeMB, err := strconv.Atoi(maxSizeMBStr)
+		if err != nil {
+			slog.Error("Error converting MAX_SIZE_IN_MB to int. Default to 500 (MB)", "error", err)
+			maxSizeMB = 500 // default value
+		}
+
+		var minSizeLimit = 10
+		var maxSizeLimit = 5000
+		if maxSizeMB < minSizeLimit || maxSizeMB > maxSizeLimit {
+			slog.Warn("Invalid MAX_SIZE_IN_MB. Default to 500 (MB) (SHD_LWT_082)",
+				"value", maxSizeMB,
+				"minSize", minSizeLimit,
+				"maxSize", maxSizeLimit)
 			maxSizeMB = 500
 		}
 
-		numFiles := procLog.NumLogFiles
-		if numFiles < 2 || numFiles > 50 {
+		numFilesStr := os.Getenv("NUM_LOG_FILES")
+		if len(numFilesStr) == 0 {
+			slog.Warn("NUM_LOG_FILES environment variable not set. Default to 20 (SHD_LWT_084)")
+			numFilesStr = "20"
+		}
+		numFiles, err := strconv.Atoi(numFilesStr)
+		if err != nil {
+			slog.Error("Error converting NUM_LOG_FILES to int. Default to 20", "error", err)
+			numFiles = 20 // default value
+		}
+
+		minNumFilesLimit := 2
+		maxNumFilesLimit := 50
+		if numFiles < minNumFilesLimit || numFiles > maxNumFilesLimit {
 			slog.Warn("Invalid num-log-files. Defaults to 20 (SHD_LWT_087)", "value", numFiles)
 			numFiles = 20
 		}
@@ -142,26 +189,21 @@ func InitFileLogging(loc string) error {
 			return
 		}
 
-		maxAge := procLog.MaxAgeInDays
-		if maxAge < 1 || maxAge > 90 {
-			slog.Warn("Invalid max_age_in_days. Default to 20 (SHD_LWT_097)", "value", maxAge)
-			maxAge = 20
-		}
-
 		filename := fmt.Sprintf("%s/app.log", logFileDir)
 		FileWriter = &ljack.Logger{
 			Filename:   filename,
 			MaxSize:    maxSizeMB, // megabytes
 			MaxBackups: numFiles,
-			MaxAge:     maxAge,                         // days
-			Compress:   procLog.NeedCompress == "true", // disabled by default
+			MaxAge:     maxAge, // days
+			Compress:   false,  // disabled by default
 		}
 
 		// Create a MultiWriter that writes to both stdout and the file
 		slog.Info("Create lumberjack (SHD_JLG_138)",
 			"file_dir", filename,
-			"max_size", procLog.FileMaxSizeInMB,
-			"num_files", procLog.NumLogFiles)
+			"max_size", maxSizeMB,
+			"num_files", numFiles,
+			"max_age", maxAge)
 		FileLogOutput = io.MultiWriter(os.Stdout, FileWriter)
 	})
 	return initErr

@@ -38,7 +38,6 @@ type LibConfigDef struct {
 	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
 	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
 	IconServiceConf  IconServiceConfig `mapstructure:"icon_service"`
-	ProcLog          ProcLogConfig     `mapstructure:"proc_log"`
 }
 
 type SystemTableNames struct {
@@ -62,13 +61,6 @@ type SystemIDs struct {
 type IconServiceConfig struct {
 	EnableIconService string `mapstructure:"enable_icon_service"`
 	IconDataDir       string `mapstructure:"icon_data_dir"`
-}
-
-type ProcLogConfig struct {
-	FileMaxSizeInMB int    `mapstructure:"file_max_size_in_mb"`
-	NumLogFiles     int    `mapstructure:"num_log_files"`
-	MaxAgeInDays    int    `mapstructure:"max_age_in_days"`
-	NeedCompress    string `mapstructure:"need_compress"`
 }
 
 const (
