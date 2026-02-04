@@ -436,8 +436,23 @@ func HandleEmailVerifyCommon(
 		return
 	}
 
-	// Error case: return error message
+	// Error case
 	logger.Error("failed verify", "error", err)
+
+	// For GET requests (browser clicking a link), redirect to login with a
+	// user-friendly error instead of returning raw JSON in the browser.
+	// POST requests (programmatic) still get JSON.
+	if !is_post {
+		errorType := "verify_failed"
+		if resp["loc"] == "SHD_EML_TOKEN_EXP" {
+			errorType = "verify_expired"
+		}
+
+		domainName := os.Getenv("APP_DOMAIN_NAME")
+		c.Redirect(http.StatusSeeOther, domainName+"/login?error="+errorType)
+		return
+	}
+
 	c.JSON(status_code, resp)
 }
 
