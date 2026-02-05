@@ -95,6 +95,8 @@ Log entries are JSON objects. Each line defines one JSON object. Below is an exa
 | created_at | timestamp | Not Null | The creation time of the record, extracted from "time" attribute |
 
 ### Source Code Files  
+- Go source code in ~/Workspace/shared/go/api/logs2db
+- Go main.go: ~/Workspace/shared/go/cmd/logs2db
 
 ### Log Loader as Service
 It should be implemented as a service. It supports the following commands:
@@ -106,10 +108,30 @@ It should be implemented as a service. It supports the following commands:
 | log2db reload | It first prompts the usr to clear the table, and then reload all the log files |
 | log2db purge -maxfiles [integer] | It keeps up to [integer] most recent log files and delete all other log files, provided they have been loaded into the database.|
 
+### Files   
+Package api/logs2db/ (8 files)
+! File	| Purpose |
+|:------|:--------|
+|config.go	| TOML config via Viper, LOG2DB_CONFIG env var, PG connection params |
+|jsonpath.go	| Dot-notation path extraction (_meta.logLevelName), handles arrays by joining with \n |
+|state.go	| Atomic JSON state file tracking last-loaded line per log file |
+|inserter.go	| CREATE TABLE IF NOT EXISTS, batch multi-row INSERT with ON CONFLICT DO NOTHING |
+|scanner.go	| File discovery (sorted by mod time), line-by-line JSON parsing, UUID v7 generation |
+|service.go	| RunOnce/RunLoop/Reload orchestration, runtime stats tracking |
+|daemon.go	| PID file read/write, IsRunning via signal 0, StopProcess with SIGTERM/SIGKILL |
+|purge.go	| Keep N newest files, delete older ones only if fully loaded, with safety checks |
+
 ### Status Format 
+```text
 Service Status: (active, not started)
 Start Time: the time when the service was started
 Total Log Entries: the total number of log entries loaded into the table 
 Entries Since Start: the total number of log entries since the the start of the current invovation
 Total Errors: number of errors occurred during this invocation
+```
 
+## Usage 
+    1. Set LOG2DB_CONFIG to point to your TOML config file    
+    2. Set PG_USER_NAME, PG_PASSWORD, PG_DB_NAME (and optionally PG_HOST, PG_PORT)
+    3. Run "go build -o </your/bin/dir/logs2db> (recommend:~/go/bin/logs2db)
+    4. Run logs2db start (foreground) or nohup logs2db start & (background)
