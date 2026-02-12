@@ -14,11 +14,11 @@ func GetRedirectURL(
 	is_admin bool,
 	domain_name_only bool) string {
 	logger := rc.GetLogger()
-	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	home_domain := os.Getenv("APP_BASE_URL")
 	if home_domain == "" {
-		error_msg := fmt.Sprintf("missing APP_DOMAIN_NAME env var, email:%s, default to:%s",
+		error_msg := fmt.Sprintf("missing APP_BASE_URL env var, email:%s, default to:%s",
 			email, home_domain)
-		logger.Error("missing APP_DOMAIN_NAME")
+		logger.Error("missing APP_BASE_URL")
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			ActivityName: ApiTypes.ActivityName_Auth,
@@ -33,16 +33,17 @@ func GetRedirectURL(
 		return home_domain
 	}
 
-	var redirect_url string = fmt.Sprintf("%s/", home_domain)
+	// var redirect_url string = fmt.Sprintf("%s/", home_domain)
+	var redirect_url string = home_domain
 	if is_admin {
-		default_admin_app := os.Getenv("APP_DEFAULT_ADMIN_APP")
+		default_admin_app := os.Getenv("VITE_DEFAULT_ADMIN_ROUTE")
 		if default_admin_app != "" {
 			redirect_url += default_admin_app
 		} else {
 			redirect_url += "admin/dashboard"
-			error_msg := fmt.Sprintf("missing APP_DEFAULT_ADMIN_APP env var, email:%s, default to:%s",
+			error_msg := fmt.Sprintf("missing VITE_DEFAULT_ADMIN_ROUTE env var, email:%s, default to:%s",
 				email, redirect_url)
-			logger.Error("missing APP_DEFAULT_ADMIN_APP")
+			logger.Error("missing VITE_DEFAULT_ADMIN_ROUTE")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				ActivityName: ApiTypes.ActivityName_Auth,
@@ -53,14 +54,14 @@ func GetRedirectURL(
 				CallerLoc:    "SHD_ATL_046"})
 		}
 	} else {
-		default_app := os.Getenv("APP_DEFAULT_APP")
+		default_app := os.Getenv("VITE_DEFAULT_NORM_ROUTE")
 		if default_app != "" {
 			redirect_url += default_app
 		} else {
 			redirect_url += "dashboard"
-			error_msg := fmt.Sprintf("missing APP_DEFAULT_APP env var, email:%s, default to:%s",
+			error_msg := fmt.Sprintf("missing VITE_DEFAULT_NORM_ROUTE env var, email:%s, default to:%s",
 				email, redirect_url)
-			logger.Error("missing APP_DEFAULT_APP")
+			logger.Error("missing VITE_DEFAULT_NORM_ROUTE")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 				ActivityName: ApiTypes.ActivityName_Auth,

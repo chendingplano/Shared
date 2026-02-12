@@ -173,9 +173,9 @@ func (s *BackupService) verifyPostgreSQLConfig(ctx context.Context, logger *slog
 	}{
 		{
 			setting:      "wal_level",
-			requiredVal:  "replica",
+			requiredVal:  "logical",
 			description:  "WAL level must be 'replica' or 'logical' for archiving",
-			configureSQL: "ALTER SYSTEM SET wal_level = 'replica';",
+			configureSQL: "ALTER SYSTEM SET wal_level = 'logical';",
 		},
 		{
 			setting:      "archive_mode",
@@ -272,12 +272,12 @@ func (s *BackupService) PerformBaseBackup(ctx context.Context, logger *slog.Logg
 		"-p", fmt.Sprintf("%d", s.config.PGPort),
 		"-U", s.config.PGUser,
 		"-D", backupDir,
-		"-Ft",                // tar format
-		"-Xs",                // stream WAL
-		"-P",                 // progress
-		"-v",                 // verbose
-		"-z",                 // gzip compression
-		"--checkpoint=fast",  // don't wait for checkpoint
+		"-Ft",               // tar format
+		"-Xs",               // stream WAL
+		"-P",                // progress
+		"-v",                // verbose
+		"-z",                // gzip compression
+		"--checkpoint=fast", // don't wait for checkpoint
 		"--label", fmt.Sprintf("backup_%s", result.BackupID),
 	)
 

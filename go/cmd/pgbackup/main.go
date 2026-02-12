@@ -112,7 +112,7 @@ This command should be run once before starting backups.`,
 		fmt.Println("Next steps:")
 		fmt.Println("1. Configure PostgreSQL for WAL archiving (if not already done):")
 		fmt.Println()
-		fmt.Printf("   ALTER SYSTEM SET wal_level = 'replica';\n")
+		fmt.Printf("   ALTER SYSTEM SET wal_level = 'logical';\n")
 		fmt.Printf("   ALTER SYSTEM SET archive_mode = 'on';\n")
 		fmt.Printf("   ALTER SYSTEM SET archive_command = '%s %%p %%f';\n", config.ArchiveScriptPath)
 		fmt.Printf("   ALTER SYSTEM SET archive_timeout = 300;\n")

@@ -31,7 +31,7 @@ var (
 // This ensures environment variables are read at runtime rather than module init time.
 func getGitHubOAuthConfig() *oauth2.Config {
 	githubOauthConfigOnce.Do(func() {
-		domainName := os.Getenv("APP_DOMAIN_NAME")
+		domainName := os.Getenv("APP_BASE_URL")
 		githubOauthConfig = &oauth2.Config{
 			ClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),

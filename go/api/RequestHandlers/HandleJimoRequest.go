@@ -83,7 +83,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -113,14 +112,15 @@ const (
 
 func HandleJimoRequestEcho(c echo.Context) error {
 	rc := EchoFactory.NewFromEcho(c, "SHD_HJR_114")
+	logger := rc.GetLogger()
+	defer rc.Close()
+
 	ctx := c.Request().Context()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	body, _ := io.ReadAll(c.Request().Body)
 
 	new_call_flow := fmt.Sprintf("%s->SHD_RHD_119", call_flow)
-	log.Printf("[req=%s] ++++++++++ HandleJimoRequestEcho:%s, data:%s",
-		reqID, new_call_flow, string(body))
+	logger.Info("HandleJimoRequestEcho", "body", string(body))
 
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, new_call_flow)
 
@@ -134,7 +134,8 @@ func handleJimoRequestPriv(
 	ctx context.Context,
 	rc ApiTypes.RequestContext,
 	body []byte) (int, ApiTypes.JimoResponse) {
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	logger := rc.GetLogger()
+	reqID := rc.ReqID()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
 	user_info := rc.IsAuthenticated()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_135", call_flow))
@@ -151,7 +152,7 @@ func handleJimoRequestPriv(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_067)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -161,7 +162,7 @@ func handleJimoRequestPriv(
 		return ApiTypes.CustomHttpStatus_NotLoggedIn, resp
 	}
 
-	log.Printf("[req:%s] HandleJimoRequest, email:%s (SHD_RHD_054)", reqID, user_info.Email)
+	logger.Info("HandleJimoRequest", "email", user_info.Email)
 
 	// Step 2: Parse minimal info to get request_type
 	var genericReq ApiTypes.JimoRequest
@@ -178,7 +179,7 @@ func handleJimoRequestPriv(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] %s (SHD_RHD_117)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -216,7 +217,7 @@ func handleJimoRequestPriv(
 			ModuleName:   ApiTypes.ModuleName_RequestHandler,
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
-		log.Printf("[req:%s] ***** Alarm:%s (%s->SHD_RHD_168)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -233,8 +234,9 @@ func HandleDBQuery(
 	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	reqID := rc.ReqID()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
 	// It is a database query:
 	//	- Get db name and table name
@@ -249,7 +251,7 @@ func HandleDBQuery(
 			if err != nil {
 				error_msg := fmt.Sprintf("resource not found, error:%v, resource_name:%s, loc:%s",
 						err, resource_name, req.Loc)
-				log.Printf("[req:%s] +++++ WARNING:%s (SHD_RHD_165)", reqID, error_msg)
+				logger.Info("+++++ WARNING:%s (SHD_RHD_165)", error_msg)
 
 				resp := ApiTypes.JimoResponse {
 					Status: false,
@@ -264,7 +266,7 @@ func HandleDBQuery(
 			if resource_def.ResourceDef.ResourceType != ApiTypes.ResourceType_Table {
 				error_msg := fmt.Sprintf("incorrect resource type, expecting:%s, actual:%s",
 						ApiTypes.ResourceType_Table, resource_def.ResourceDef.ResourceType)
-				log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_193)", reqID, error_msg)
+				logger.Info("***** Alarm:%s (SHD_RHD_193)", error_msg)
 
 				resp := ApiTypes.JimoResponse {
 					Status: false,
@@ -280,7 +282,7 @@ func HandleDBQuery(
 			if resource_json == nil {
 			    log_id := sysdatastores.NextActivityLogID()
 				error_msg := fmt.Sprintf("missing resource def, resource_name:%s, log_id:%d", resource_name, log_id)
-				log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_208)", reqID, error_msg)
+				logger.Info("***** Alarm:%s (SHD_RHD_208)", error_msg)
 
 				sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		            LogID:              log_id,
@@ -318,7 +320,7 @@ func HandleDBQuery(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_304)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
 			ReqID:     reqID,
@@ -330,7 +332,7 @@ func HandleDBQuery(
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	query, args, selected_fields, aliases, field_def_map, err := buildQuery(new_ctx, req)
+	query, args, selected_fields, aliases, field_def_map, err := buildQuery(rc, new_ctx, req)
 	table_name := req.TableName
 	if err != nil {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_330", call_flow)
@@ -357,7 +359,7 @@ func HandleDBQuery(
 	default:
 		error_msg := fmt.Sprintf("invalid db type:%s:%s:%s, table_name:%s, loc:%s (SHD_RHD_447)",
 			db_type, ApiTypes.MysqlName, ApiTypes.PgName, table_name, req.Loc)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_260)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_355", call_flow)
 		resp := ApiTypes.JimoResponse{
 			Status:    false,
@@ -405,8 +407,6 @@ func HandleDBQuery(
 	}
 
 	query += fmt.Sprintf(" LIMIT %d OFFSET %d", req.PageSize, req.Start)
-	// log.Printf("[req:%s] To run query:%s, args:%v, table:%s, loc:%s (SHD_RHD_366)",
-	// 	reqID, query, args, table_name, req.Loc)
 
 	json_data, num_records, err := RunQuery(new_ctx, rc, req, db, query,
 		args, selected_fields, aliases, field_def_map)
@@ -417,7 +417,7 @@ func HandleDBQuery(
 			err, log_id, table_name, req.Loc)
 		error_msg1 := fmt.Sprintf("run query failed, err:%v, query:%s, "+
 			"table_name:%s, loc:%s", err, query, req.TableName, req.Loc)
-		log.Printf("[req:%s] ***** Alarm:%s (%s->SHD_RHD_297)", reqID, error_msg, call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 
 		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 			LogID:        log_id,
@@ -590,8 +590,9 @@ func HandleDBInsert(
 	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	reqID := rc.ReqID()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_590", call_flow))
 
 	// This function handles the 'insert' request.
@@ -610,7 +611,7 @@ func HandleDBInsert(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_142)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -624,14 +625,14 @@ func HandleDBInsert(
 	db_name := req.DBName
 	table_name := req.TableName
 	field_defs := req.FieldDefs
-	log.Printf("[req:%s] (SHD_RHD_622) handleDBInsert, table:%s:%s", reqID, db_name, table_name)
-	log.Printf("[req:%s] (SHD_RHD_623) FieldDefs:%d", reqID, len(field_defs))
+	logger.Info("handleDBInsert", "dbname", db_name, "tablename", table_name)
+	logger.Info("FieldDefs", "len", len(field_defs))
 	/*
 		if field_defs == nil {
 			resource_def, err 	:= stores.GetResouroceDef(resource_name, resource_opr)
 			if err != nil {
 				error_msg := fmt.Sprintf("%v", err)
-				log.Printf("[req:%s] +++++ WARNING:%s (SHD_RHD_329)", reqID, error_msg)
+				logger.Info("+++++ WARNING:%s (SHD_RHD_329)", error_msg)
 
 				resp := ApiTypes.JimoResponse {
 					Status: false,
@@ -651,7 +652,7 @@ func HandleDBInsert(
 		if resource_def.ResourceDef.ResourceType != ApiTypes.ResourceType_Table {
 			error_msg := fmt.Sprintf("incorrect resource type, expecting:%s, actual:%s",
 					ApiTypes.ResourceType_Table, resource_def.ResourceDef.ResourceType)
-			log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_343)", reqID, error_msg)
+			logger.Info("***** Alarm:%s (SHD_RHD_343)", error_msg)
 
 			resp := ApiTypes.JimoResponse {
 				Status: false,
@@ -669,7 +670,7 @@ func HandleDBInsert(
 
 	if table_name == "" {
 		error_msg := "failed get table name."
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_400)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_669", call_flow)
 		resp := ApiTypes.JimoResponse{
@@ -684,7 +685,7 @@ func HandleDBInsert(
 	records := req.Records
 	if len(records) <= 0 {
 		error_msg := "missing records to insert."
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_581)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_684", call_flow)
 		resp := ApiTypes.JimoResponse{
@@ -711,7 +712,7 @@ func HandleDBInsert(
 	default:
 		error_msg := fmt.Sprintf("invalid db type:%s", db_type)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_669", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -724,7 +725,7 @@ func HandleDBInsert(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed insert to db:%v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_721", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -758,8 +759,9 @@ func HandleDBUpdate(
 	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	reqID := rc.ReqID()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
 
 	var req ApiTypes.UpdateRequest
@@ -776,7 +778,7 @@ func HandleDBUpdate(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_641)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -802,24 +804,23 @@ func HandleDBUpdate(
 
 	default:
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
-		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (%s): %s", reqID, new_call_flow, db_type)
-		log.Printf("%s", error_msg)
+		logger.Error("db_type not supported", "db_type", db_type)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
-			ErrorMsg: error_msg,
+			ErrorMsg: "db_type not supported (SHD_0208051700)",
 			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] (SHD_RHD_811) handleDBInsert:%s:%s", db_name, reqID, table_name)
-	log.Printf("[req:%s] (SHD_RHD_812) FieldDefs:%d", reqID, len(field_defs))
+	logger.Info("handleDBInsert", "dbname", db_name, "tablename", table_name)
+	logger.Info("FieldDefs", "len", len(field_defs))
 
 	if table_name == "" {
 		error_msg := "failed get table name"
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
@@ -831,13 +832,11 @@ func HandleDBUpdate(
 	}
 
 	new_call_flow := fmt.Sprintf("%s->SHD_RHD_828", call_flow)
-	log.Printf("[req:%s] Table:%s.%s (%s)", reqID, db_name, table_name, new_call_flow)
 
 	update_record := req.Record
 	if len(update_record) <= 0 {
 		error_msg := "no records provided for update"
-		new_call_flow := fmt.Sprintf("%s->SHD_RHD_834", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -857,7 +856,7 @@ func HandleDBUpdate(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed building conditions, err:%v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_854", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -870,7 +869,7 @@ func HandleDBUpdate(
 	if expr == nil {
 		error_msg := fmt.Sprintf("missing conditions, loc:%s", req.Loc)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_867", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -889,7 +888,7 @@ func HandleDBUpdate(
 		if !isValidFieldName(field) {
 			error_msg := fmt.Sprintf("invalid field name (SHD_RHD_757): %s", field)
 			new_call_flow := fmt.Sprintf("%s->SHD_RHD_886", call_flow)
-			log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+			logger.Error("invalid field name", "field", field)
 			resp := ApiTypes.JimoResponse{
 				Status:   false,
 				ReqID:    reqID,
@@ -909,8 +908,7 @@ func HandleDBUpdate(
 	sql, args, err := query.ToSql()
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to build SQL query: %v", err)
-		new_call_flow := fmt.Sprintf("%s->SHD_RHD_907", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -927,7 +925,7 @@ func HandleDBUpdate(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to execute update query: %v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_924", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -942,7 +940,7 @@ func HandleDBUpdate(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get rows affected: %v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_932", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -982,9 +980,10 @@ func HandleDBDelete(
 	rc ApiTypes.RequestContext,
 	body []byte,
 	user_name string) (int, ApiTypes.JimoResponse) {
+	logger := rc.GetLogger()
 
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	reqID := rc.ReqID()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_983", call_flow))
 
 	var req ApiTypes.DeleteRequest
@@ -1001,7 +1000,7 @@ func HandleDBDelete(
 			ActivityMsg:  &error_msg,
 			CallerLoc:    new_call_flow})
 
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_641)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1027,24 +1026,23 @@ func HandleDBDelete(
 
 	default:
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_024", call_flow)
-		error_msg := fmt.Sprintf("[req=%s] ***** unrecognized database type (5s): %s, loc:%s", reqID, db_type, new_call_flow)
-		log.Printf("%s", error_msg)
+		logger.Error("db_type not supported", "db_type", db_type)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
-			ErrorMsg: error_msg,
+			ErrorMsg: "db_type not supported (SHD_0208051800)",
 			Loc:      new_call_flow,
 		}
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] (SHD_RHD_036) handleDBDelete:%s:%s", reqID, db_name, table_name)
-	log.Printf("[req:%s] (SHD_RHD_037) FieldDefs:%d", reqID, len(field_defs))
+	logger.Info("handleDBDelete", "dbname", db_name, "tablename", table_name)
+	logger.Info("FieldDefs", "len", len(field_defs))
 
 	if table_name == "" {
 		error_msg := "failed get table name. Resource name"
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_041", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
@@ -1055,7 +1053,7 @@ func HandleDBDelete(
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	log.Printf("[req:%s] (SHD_RHD_053) Delete records, table:%s.%s", reqID, db_name, table_name)
+	logger.Info("handleDBDelete", "dbname", db_name, "tablename", table_name)
 
 	field_map := make(map[string]bool)
 	for _, fd := range field_defs {
@@ -1067,7 +1065,7 @@ func HandleDBDelete(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed building conditions, err:%v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_064", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1080,7 +1078,7 @@ func HandleDBDelete(
 	if expr == nil {
 		error_msg := fmt.Sprintf("missing conditions, loc:%s", req.Loc)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_077", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1101,7 +1099,7 @@ func HandleDBDelete(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to build SQL query: %v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_098", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1118,7 +1116,7 @@ func HandleDBDelete(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to execute update query: %v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_115", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1133,7 +1131,7 @@ func HandleDBDelete(
 	if err != nil {
 		error_msg := fmt.Sprintf("failed to get rows affected: %v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_130", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (%s)", reqID, error_msg, new_call_flow)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		resp := ApiTypes.JimoResponse{
 			Status:   false,
 			ReqID:    reqID,
@@ -1186,18 +1184,17 @@ func RunQuery(
 	selected_fields []string,
 	aliases []string,
 	field_def_map map[string][]ApiTypes.FieldDef) ([]map[string]interface{}, int, error) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		new_call_flow := fmt.Sprintf("%s->SHD_RHD_186", call_flow)
-		log.Printf("[req:%s] ***** Alarm:%v (%s)", reqID, err, new_call_flow)
+		logger.Error("RunQuery", "error", err)
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var data_types = make(map[string]string)
-	log.Printf("[req:%s] RunQuery:%s, args:%v, table:%s (SHD_RHD_490)", reqID, query, args, req.TableName)
+	logger.Info("RunQuery", "query", query, "args", args, "req.TableName", req.TableName)
 	for table_name, field_defs := range field_def_map {
 		for i := range field_defs {
 			full_name := fmt.Sprintf("%s.%s", table_name, field_defs[i].FieldName)
@@ -1218,11 +1215,10 @@ func RunQuery(
 			valuePtrs[i] = &values[i]
 		}
 
-		log.Printf("[req:%s] Handle record:%d, args:%v (SHD_RHD_058)", reqID, count, args)
+		logger.Info("Handle record", "count", count, "args", args)
 		// Scan the row into the value pointers
-		new_call_flow := fmt.Sprintf("%s->SHD_RHD_216", call_flow)
 		if err := rows.Scan(valuePtrs...); err != nil {
-			log.Printf("[req:%s] ***** Alarm:scan error: %v (%s)", reqID, err, new_call_flow)
+			logger.Error("HandleJimoRequest", "error", err)
 			return nil, 0, fmt.Errorf("scan error:%v (SHD_RHD_511)", err)
 		}
 
@@ -1261,7 +1257,7 @@ func RunQuery(
 				new_call_flow := fmt.Sprintf("%s->SHD_RHD_254", call_flow)
 				error_msg := fmt.Sprintf("field not found (%s):%s, selected:%v, data_types:%v",
 					new_call_flow, field_name, selected_fields, data_types)
-				log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+				logger.Error("HandleJimoRequest", "error_msg", error_msg)
 				return nil, 0, fmt.Errorf("%s", error_msg)
 			}
 		}
@@ -1273,12 +1269,12 @@ func RunQuery(
 		results = append(results, rowMap)
 	}
 
-	log.Printf("[req:%s] Query success, records:%d (SHD_RHD_970)", reqID, count)
+	logger.Info("Query success", "records", count)
 
 	if err = rows.Err(); err != nil {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_272", call_flow)
 		error_msg := fmt.Sprintf("rows error: %v (%s)", err, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		return nil, 0, fmt.Errorf("%s", error_msg)
 	}
 
@@ -1371,8 +1367,8 @@ func GetFieldStrValue(
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) (string, error) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	if value_obj, ok := objMap[field_name]; ok {
 		if value_str, ok := value_obj.(string); ok {
 			return value_str, nil
@@ -1381,7 +1377,7 @@ func GetFieldStrValue(
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_372", call_flow)
 		error_msg := fmt.Sprintf("value is not a string, field_name:%s, resource_name:%s (%s)",
 			field_name, resource_name, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		err := fmt.Errorf("%s", error_msg)
 		return "", err
 	}
@@ -1389,7 +1385,7 @@ func GetFieldStrValue(
 	new_call_flow := fmt.Sprintf("%s->SHD_RHD_380", call_flow)
 	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)",
 		field_name, resource_name, new_call_flow)
-	log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+	logger.Error("HandleJimoRequest", "error_msg", error_msg)
 	return "", fmt.Errorf("%s", error_msg)
 }
 
@@ -1399,8 +1395,8 @@ func GetFieldStrArrayValue(
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]string, error) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 
 	if value_obj, ok := objMap[field_name]; ok {
 		if value_slice, ok := value_obj.([]interface{}); ok {
@@ -1421,10 +1417,9 @@ func GetFieldStrArrayValue(
 			field_name, value_obj, new_call_flow)
 	}
 
-	new_call_flow := fmt.Sprintf("%s->SHD_RHD_410", call_flow)
 	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (665)",
 		field_name, resource_name)
-	log.Printf("[req:%s] +++++ Warn:%s (%s)", reqID, error_msg, new_call_flow)
+	logger.Error("HandleJimoRequest", "error_msg", error_msg)
 	return nil, nil
 }
 
@@ -1434,8 +1429,8 @@ func GetFieldAnyArrayValue(
 	objMap map[string]interface{},
 	resource_name string,
 	field_name string) ([]interface{}, error) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 
 	if value_obj, ok := objMap[field_name]; ok {
 		if result, ok := value_obj.([]interface{}); ok {
@@ -1449,7 +1444,7 @@ func GetFieldAnyArrayValue(
 	new_call_flow := fmt.Sprintf("%s->SHD_RHD_431", call_flow)
 	error_msg := fmt.Sprintf("field not exist, field_name:%s, resource_name:%s (%s)",
 		field_name, resource_name, new_call_flow)
-	log.Printf("[req:%s] +++++ Warn:%s (%s)", reqID, error_msg, new_call_flow)
+	logger.Error("HandleJimoRequest", "error_msg", error_msg)
 	return nil, fmt.Errorf("%s", error_msg)
 }
 
@@ -1458,8 +1453,8 @@ func GetTableName(
 	rc ApiTypes.RequestContext,
 	resource_def map[string]interface{},
 	resource_name string) (string, string, error) {
+	logger := rc.GetLogger()
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_233", call_flow))
 
 	// It retrieves: db_name and table_name. db_name is optional.
@@ -1470,7 +1465,7 @@ func GetTableName(
 		return "", "", err
 	}
 
-	log.Printf("[req:%s] Table:%s.%s (SHD_RHD_667)", reqID, db_name, table_name)
+	logger.Info("Table", "dbname", db_name, "table_name", table_name)
 	return db_name, table_name, nil
 }
 
@@ -1636,10 +1631,11 @@ func buildConditionExpr(
 //   - Directly write in code
 //   - Write it and save it in database, use it when you need, parameterized
 func buildQuery(
+	rc ApiTypes.RequestContext,
 	ctx context.Context,
 	req ApiTypes.QueryRequest) (string, []interface{}, []string, []string, map[string][]ApiTypes.FieldDef, error) {
 	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
+	logger := rc.GetLogger()
 	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, fmt.Sprintf("%s->SHD_RHD_644", call_flow))
 
 	db_name := req.DBName
@@ -1648,7 +1644,7 @@ func buildQuery(
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_646", call_flow)
 		error_msg := fmt.Sprintf("missing table name, db:%s, table:%s, loc:%s",
 			db_name, table_name, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 
@@ -1665,20 +1661,19 @@ func buildQuery(
 	if len(selected_fields) == 0 {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_630", call_flow)
 		error_msg := fmt.Sprintf("missing selected fields, table name:%s, loc:%s", table_name, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 
 	if len(field_defs) == 0 {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_637", call_flow)
 		error_msg := fmt.Sprintf("missing field_defs, table name:%s, loc:%s", table_name, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_323)", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
 
 	query_cond := req.Condition
-	log.Printf("[req:%s] (SHD_RHD_679) Table:%s.%s, selected fields:%v, condition:%s, loc:%s",
-		reqID, db_name, table_name, selected_fields, query_cond, req.Loc)
+	logger.Info("HandleJimoRequest", "table_name", table_name, "selected_fields", selected_fields, "condition", query_cond, "loc", req.Loc)
 
 	// Note: the field map assumes field names are not full names (i.e.,
 	// tablename.fieldname). This is okey for table conditions. Join
@@ -1714,7 +1709,6 @@ func buildQuery(
 	query := sq.Select(allSelectedFields...).From(table_name).PlaceholderFormat(sq.Dollar)
 
 	// Add JOIN clauses
-	// log.Printf("[req=%s] JoinClauses:%v, join_types:%v (SHD_RHD_533)", reqID, joinClauses, joinTypes)
 	if len(joinClauses) > 0 {
 		for i, join := range joinClauses {
 			// if i == 0 {
@@ -1722,24 +1716,21 @@ func buildQuery(
 			// }
 			switch joinTypes[i] {
 			case ApiTypes.JoinTypeJoin:
-				// log.Printf("[req=%s] Join:%v (SHD_RHD_541)", reqID, join)
 				query = query.Join(join)
 
 			case ApiTypes.JoinTypeLeftJoin:
-				// log.Printf("[req=%s] LeftJoin:%v (SHD_RHD_545)", reqID, join)
 				query = query.LeftJoin(join)
 
 			case ApiTypes.JoinTypeRightJoin:
-				// log.Printf("[req=%s] RightJoin:%v (SHD_RHD_549)", reqID, join)
 				query = query.RightJoin(join)
 
 			case ApiTypes.JoinTypeInnerJoin:
-				log.Printf("[req=%s] InnerJoin:%v (SHD_RHD_553)", reqID, join)
+				logger.Info("HandleJimoRequest", "inner_join", join)
 				query = query.InnerJoin(join)
 
 			default:
 				error_msg := fmt.Sprintf("invalid join type, pos:%d, join clauses:%v, join_types:%v", i, joinClauses, joinTypes)
-				log.Printf("[req:%s] ***** Alarm:%s (SHD_RHD_538)", reqID, error_msg)
+				logger.Error("HandleJimoRequest", "error_msg", error_msg)
 				return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 			}
 		}
@@ -1747,7 +1738,7 @@ func buildQuery(
 
 	// Add WHERE clause
 	if expr != nil {
-		log.Printf("[req:%s] expr:%v (SHD_RHD_476)", reqID, expr)
+		logger.Info("HandleJimoRequest", "expr", expr)
 		query = query.Where(expr)
 	}
 
@@ -1759,10 +1750,10 @@ func buildQuery(
 	if err != nil {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_724", call_flow)
 		error_msg := fmt.Sprintf("failed building query:%v, loc:%s", err, new_call_flow)
-		log.Printf("[req:%s] ***** Alarm:%s", reqID, error_msg)
+		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		return "", nil, nil, nil, nil, fmt.Errorf("%s", error_msg)
 	}
-	log.Printf("[req:%s] Generated query:%s, args:%d (SHD_RHD_483)", reqID, sql, len(args))
+	logger.Info("HandleJimoRequest", "sql", sql, "args_count", len(args))
 	return sql, args, allSelectedFields, allAliases, fieldDefMap, nil
 }
 

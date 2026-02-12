@@ -131,7 +131,7 @@ func (s *BackupService) deleteBackup(backupPath string) error {
 }
 
 // cleanOldWALFiles removes WAL files no longer needed for recovery
-func (s *BackupService) cleanOldWALFiles(ctx context.Context, logger *slog.Logger, retainedBackups []string) (int, int64, error) {
+func (s *BackupService) cleanOldWALFiles(_ context.Context, logger *slog.Logger, retainedBackups []string) (int, int64, error) {
 	if _, err := os.Stat(s.config.WALArchiveDir); os.IsNotExist(err) {
 		return 0, 0, nil
 	}

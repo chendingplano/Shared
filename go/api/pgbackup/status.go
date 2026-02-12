@@ -1,11 +1,16 @@
 package pgbackup
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,6 +22,19 @@ const (
 
 // BackupStatus contains comprehensive status information
 type BackupStatus struct {
+	// Service status - "active" means PostgreSQL archiving is enabled and scheduled jobs are loaded
+	ServiceStatus string    `json:"service_status"` // "active", "degraded", or "not configured"
+	StartTime     time.Time `json:"start_time,omitempty"`
+
+	// Launchd job status
+	BackupJobLoaded  bool `json:"backup_job_loaded"`
+	CleanupJobLoaded bool `json:"cleanup_job_loaded"`
+	BackupRunning    bool `json:"backup_running"` // true if backup is currently executing
+
+	// Archive stats (since service start)
+	ArchiveFilesCreated int `json:"archive_files_created"`
+	ErrorCount          int `json:"error_count"`
+
 	// Configuration
 	BackupDir     string `json:"backup_dir"`
 	WALArchiveDir string `json:"wal_archive_dir"`
@@ -58,9 +76,116 @@ type BackupStatus struct {
 	Backups []*BackupResult `json:"backups"`
 }
 
+// LaunchdStatus contains information about launchd job status
+type LaunchdStatus struct {
+	BackupJobLoaded  bool // com.shared.pgbackup is loaded
+	CleanupJobLoaded bool // com.shared.pgbackup-cleanup is loaded
+	BackupRunning    bool // backup job currently has a PID (actively running)
+}
+
+// getLaunchdStatus checks the status of pgbackup launchd jobs
+func getLaunchdStatus() LaunchdStatus {
+	status := LaunchdStatus{}
+
+	cmd := exec.Command("launchctl", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return status
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		// Format: PID	Status	Label
+		label := fields[2]
+
+		if label == "com.shared.pgbackup" {
+			status.BackupJobLoaded = true
+			// If PID is not "-", the job is currently running
+			if fields[0] != "-" {
+				status.BackupRunning = true
+			}
+		} else if label == "com.shared.pgbackup-cleanup" {
+			status.CleanupJobLoaded = true
+		}
+	}
+
+	return status
+}
+
+// parseLogForStats parses the backup log file to extract start time and error count
+func (s *BackupService) parseLogForStats(logger *slog.Logger) (startTime time.Time, archiveCount int, errorCount int) {
+	logPath := filepath.Join(s.config.BackupBaseDir, "logs", "backup-stdout.log")
+
+	file, err := os.Open(logPath)
+	if err != nil {
+		logger.Debug("Could not open log file", "path", logPath, "error", err)
+		return time.Time{}, 0, 0
+	}
+	defer file.Close()
+
+	// Regex patterns for parsing log entries
+	timePattern := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})`)
+	archivePattern := regexp.MustCompile(`(?i)archived|archive.*success|wal.*archived`)
+	errorPattern := regexp.MustCompile(`(?i)error|failed|failure`)
+
+	scanner := bufio.NewScanner(file)
+	var firstTime time.Time
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Try to extract timestamp from line
+		if matches := timePattern.FindStringSubmatch(line); len(matches) > 1 {
+			if t, err := time.Parse("2006-01-02T15:04:05", matches[1]); err == nil {
+				if firstTime.IsZero() {
+					firstTime = t
+				}
+			} else if t, err := time.Parse("2006-01-02 15:04:05", matches[1]); err == nil {
+				if firstTime.IsZero() {
+					firstTime = t
+				}
+			}
+		}
+
+		// Count archive successes
+		if archivePattern.MatchString(line) {
+			archiveCount++
+		}
+
+		// Count errors
+		if errorPattern.MatchString(line) {
+			errorCount++
+		}
+	}
+
+	return firstTime, archiveCount, errorCount
+}
+
 // GetStatus returns comprehensive backup status information
 func (s *BackupService) GetStatus(ctx context.Context, logger *slog.Logger) (*BackupStatus, error) {
+	// Get launchd job status
+	launchdStatus := getLaunchdStatus()
+
+	// Parse logs for start time and stats
+	startTime, archiveCount, errorCount := s.parseLogForStats(logger)
+
 	status := &BackupStatus{
+		// Launchd status
+		BackupJobLoaded:  launchdStatus.BackupJobLoaded,
+		CleanupJobLoaded: launchdStatus.CleanupJobLoaded,
+		BackupRunning:    launchdStatus.BackupRunning,
+
+		// Stats
+		StartTime:           startTime,
+		ArchiveFilesCreated: archiveCount,
+		ErrorCount:          errorCount,
+
+		// Configuration
 		BackupDir:     s.config.BackupBaseDir,
 		WALArchiveDir: s.config.WALArchiveDir,
 		RetainDays:    s.config.RetainDays,
@@ -127,7 +252,35 @@ func (s *BackupService) GetStatus(ctx context.Context, logger *slog.Logger) (*Ba
 		s.getPGSettings(ctx, logger, status)
 	}
 
+	// Determine overall service status based on all factors
+	status.ServiceStatus = determineServiceStatus(status)
+
 	return status, nil
+}
+
+// determineServiceStatus determines the overall service status based on PostgreSQL
+// configuration and launchd job status
+func determineServiceStatus(status *BackupStatus) string {
+	// Check if PostgreSQL archiving is properly configured
+	archivingEnabled := status.ArchiveMode == "on" &&
+		status.ArchiveCommand != "" &&
+		status.ArchiveCommand != "(disabled)"
+
+	// Check if launchd jobs are loaded (for macOS)
+	scheduledJobsReady := status.BackupJobLoaded
+
+	// Determine overall status
+	if archivingEnabled && scheduledJobsReady {
+		return "active"
+	} else if archivingEnabled && !scheduledJobsReady {
+		// Archiving works but scheduled backups not set up
+		return "degraded (scheduled jobs not loaded)"
+	} else if !archivingEnabled && scheduledJobsReady {
+		// Jobs loaded but PostgreSQL archiving not enabled
+		return "degraded (archive_mode not enabled)"
+	} else {
+		return "not configured"
+	}
 }
 
 // getPGSettings retrieves PostgreSQL configuration settings
@@ -167,26 +320,54 @@ func (s *BackupService) PrintStatus(ctx context.Context, logger *slog.Logger) er
 	fmt.Println("=== PostgreSQL Backup Status ===")
 	fmt.Println()
 
-	// Configuration
-	fmt.Println("Configuration:")
-	fmt.Printf("  Backup Directory:     %s\n", status.BackupDir)
-	fmt.Printf("  WAL Archive Directory: %s\n", status.WALArchiveDir)
-	fmt.Printf("  Retention Policy:     %d days, minimum %d backups\n",
+	// Service Status
+	fmt.Printf("Status:                   %s\n", status.ServiceStatus)
+	fmt.Println()
+
+	// Scheduled Jobs (launchd)
+	fmt.Println("Scheduled Jobs:")
+	fmt.Printf("  Backup Job (daily):     %s\n", formatJobStatus(status.BackupJobLoaded, status.BackupRunning))
+	fmt.Printf("  Cleanup Job (weekly):   %s\n", formatJobStatus(status.CleanupJobLoaded, false))
+	fmt.Println()
+
+	// Archive Stats
+	fmt.Println("Archive Stats:")
+	fmt.Printf("  Files Archived:         %d\n", status.ArchiveFilesCreated)
+	fmt.Printf("  Errors:                 %d\n", status.ErrorCount)
+	if !status.StartTime.IsZero() {
+		fmt.Printf("  First Log Entry:        %s\n", status.StartTime.Format("2006-01-02 15:04:05"))
+	}
+	fmt.Println()
+
+	// Configurations
+	fmt.Println("Configurations:")
+	fmt.Printf("  Backup Directory:       %s\n", status.BackupDir)
+	fmt.Printf("  WAL Archive Directory:  %s\n", status.WALArchiveDir)
+	fmt.Printf("  Retention Policy:       %d days, minimum %d backups\n",
 		status.RetainDays, status.RetainCount)
+	if status.PGConfigured {
+		fmt.Printf("  wal_level:              %s\n", status.WALLevel)
+		fmt.Printf("  archive_mode:           %s\n", status.ArchiveMode)
+		if status.ArchiveCommand != "" && status.ArchiveCommand != "(disabled)" {
+			fmt.Printf("  archive_command:        (configured)\n")
+		} else {
+			fmt.Printf("  archive_command:        NOT CONFIGURED\n")
+		}
+	}
 	fmt.Println()
 
 	// Backups summary
 	fmt.Println("Backups:")
-	fmt.Printf("  Total Backups:        %d\n", status.TotalBackups)
-	fmt.Printf("  Total Size:           %.2f MB\n", float64(status.TotalSizeBytes)/(1024*1024))
+	fmt.Printf("  Total Backups:          %d\n", status.TotalBackups)
+	fmt.Printf("  Total Size:             %.2f MB\n", float64(status.TotalSizeBytes)/(1024*1024))
 	if status.LatestBackupID != "" {
-		fmt.Printf("  Latest Backup:        %s (%s ago)\n",
+		fmt.Printf("  Latest Backup:          %s (%s ago)\n",
 			status.LatestBackupID,
 			formatDuration(time.Since(status.LatestBackupTime)))
-		fmt.Printf("  Latest Backup Size:   %.2f MB\n", float64(status.LatestBackupSize)/(1024*1024))
+		fmt.Printf("  Latest Backup Size:     %.2f MB\n", float64(status.LatestBackupSize)/(1024*1024))
 	}
 	if status.OldestBackupID != "" {
-		fmt.Printf("  Oldest Backup:        %s (%s ago)\n",
+		fmt.Printf("  Oldest Backup:          %s (%s ago)\n",
 			status.OldestBackupID,
 			formatDuration(time.Since(status.OldestBackupTime)))
 	}
@@ -194,37 +375,24 @@ func (s *BackupService) PrintStatus(ctx context.Context, logger *slog.Logger) er
 
 	// WAL archive
 	fmt.Println("WAL Archive:")
-	fmt.Printf("  WAL Files:            %d\n", status.WALFileCount)
-	fmt.Printf("  WAL Size:             %.2f MB\n", float64(status.WALSizeBytes)/(1024*1024))
+	fmt.Printf("  WAL Files:              %d\n", status.WALFileCount)
+	fmt.Printf("  WAL Size:               %.2f MB\n", float64(status.WALSizeBytes)/(1024*1024))
 	if status.OldestWAL != "" {
-		fmt.Printf("  Oldest WAL:           %s\n", status.OldestWAL)
+		fmt.Printf("  Oldest WAL:             %s\n", status.OldestWAL)
 	}
 	if status.NewestWAL != "" {
-		fmt.Printf("  Newest WAL:           %s\n", status.NewestWAL)
+		fmt.Printf("  Newest WAL:             %s\n", status.NewestWAL)
 	}
 	fmt.Println()
 
 	// Recovery window
 	if !status.RecoveryWindowStart.IsZero() {
 		fmt.Println("Recovery Window:")
-		fmt.Printf("  From:                 %s\n", status.RecoveryWindowStart.Format(time.RFC3339))
+		fmt.Printf("  From:                   %s\n", status.RecoveryWindowStart.Format(time.RFC3339))
 		if !status.RecoveryWindowEnd.IsZero() {
-			fmt.Printf("  To:                   %s\n", status.RecoveryWindowEnd.Format(time.RFC3339))
+			fmt.Printf("  To:                     %s\n", status.RecoveryWindowEnd.Format(time.RFC3339))
 		} else {
-			fmt.Printf("  To:                   now (continuous archiving)\n")
-		}
-		fmt.Println()
-	}
-
-	// PostgreSQL configuration (if available)
-	if status.PGConfigured {
-		fmt.Println("PostgreSQL Configuration:")
-		fmt.Printf("  wal_level:            %s\n", status.WALLevel)
-		fmt.Printf("  archive_mode:         %s\n", status.ArchiveMode)
-		if status.ArchiveCommand != "" && status.ArchiveCommand != "(disabled)" {
-			fmt.Printf("  archive_command:      (configured)\n")
-		} else {
-			fmt.Printf("  archive_command:      NOT CONFIGURED\n")
+			fmt.Printf("  To:                     now (continuous archiving)\n")
 		}
 		fmt.Println()
 	}
@@ -246,6 +414,17 @@ func (s *BackupService) PrintStatus(ctx context.Context, logger *slog.Logger) er
 	}
 
 	return nil
+}
+
+// formatJobStatus formats the launchd job status for display
+func formatJobStatus(loaded bool, running bool) string {
+	if !loaded {
+		return "not loaded"
+	}
+	if running {
+		return "loaded (currently running)"
+	}
+	return "loaded"
 }
 
 // formatDuration formats a duration in a human-readable way

@@ -134,7 +134,7 @@ func IsSafeOrigin(c echo.Context) bool {
 	referer := c.Request().Header.Get("Referer")
 
 	// Get allowed domain from environment
-	appDomain := os.Getenv("APP_DOMAIN_NAME")
+	appDomain := os.Getenv("APP_BASE_URL")
 	if appDomain == "" {
 		// If no domain configured, reject all cross-origin requests in production
 		if os.Getenv("ENV") == "production" {

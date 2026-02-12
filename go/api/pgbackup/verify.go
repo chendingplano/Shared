@@ -19,12 +19,12 @@ const (
 
 // VerifyResult contains information about a verification operation
 type VerifyResult struct {
-	BackupID     string   `json:"backup_id"`
-	Success      bool     `json:"success"`
-	TarFiles     []string `json:"tar_files"`
-	TarFilesOK   bool     `json:"tar_files_ok"`
-	WALContinuity bool    `json:"wal_continuity"`
-	Issues       []string `json:"issues,omitempty"`
+	BackupID      string   `json:"backup_id"`
+	Success       bool     `json:"success"`
+	TarFiles      []string `json:"tar_files"`
+	TarFilesOK    bool     `json:"tar_files_ok"`
+	WALContinuity bool     `json:"wal_continuity"`
+	Issues        []string `json:"issues,omitempty"`
 }
 
 // Verify checks the integrity of a backup
@@ -166,19 +166,20 @@ func (s *BackupService) verifyTarGz(ctx context.Context, tarPath string) error {
 }
 
 // verifyWALContinuity checks if WAL files form a continuous sequence
-func (s *BackupService) verifyWALContinuity(ctx context.Context, logger *slog.Logger, backupID string) (bool, []string) {
+func (s *BackupService) verifyWALContinuity(_ context.Context, logger *slog.Logger, backupID string) (bool, []string) {
 	var issues []string
 
 	// Check if WAL archive directory exists
 	if _, err := os.Stat(s.config.WALArchiveDir); os.IsNotExist(err) {
-		issues = append(issues, "WAL archive directory does not exist - PITR will not be possible")
+		msg := fmt.Sprintf("WAL archive directory does not exist - PITR will not be possible, backupID:%s", backupID)
+		issues = append(issues, msg)
 		return false, issues
 	}
 
 	// Count WAL files
 	entries, err := os.ReadDir(s.config.WALArchiveDir)
 	if err != nil {
-		issues = append(issues, fmt.Sprintf("failed to read WAL archive: %v", err))
+		issues = append(issues, fmt.Sprintf("failed to read WAL archive: %v, backupID:%s", err, backupID))
 		return false, issues
 	}
 
@@ -200,7 +201,7 @@ func (s *BackupService) verifyWALContinuity(ctx context.Context, logger *slog.Lo
 		return false, issues
 	}
 
-	logger.Info("WAL files found", "count", len(walFiles))
+	logger.Info("WAL files found", "count", len(walFiles), "backupID", backupID)
 
 	// Check for gaps in WAL sequence
 	// WAL file names follow format: TTTTTTTTSSSSSSSSNNNNNNNN

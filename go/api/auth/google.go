@@ -375,12 +375,6 @@ func HandleGoogleCallbackBase(
 	redirect_url := ApiUtils.GetOAuthRedirectURL(rc, auth_token, user_name)
 	msg2 := fmt.Sprintf("google login success, email:%s, session_id:%s, redirect_url:%s",
 		user_info.Email, ApiUtils.MaskToken(sessionID), redirect_url)
-	logger.Info(
-		"Google login success",
-		"email", user_info.Email,
-		"session_id", ApiUtils.MaskToken(sessionID),
-		"redirect_url", redirect_url,
-		"loc", "SHD_EML_316")
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
@@ -402,6 +396,7 @@ func HandleGoogleCallbackBase(
 		"returnURL", returnURL,
 		"email", googleUserInfo.Email,
 		"user_name", googleUserInfo.Name,
+		"session_id", ApiUtils.MaskToken(sessionID),
 		"http_only", "true")
 
 	msg3 := fmt.Sprintf("User %s (%s) logged in successfully, redirect to:%s, returnUrl:%s",
