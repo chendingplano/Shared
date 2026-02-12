@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -13,6 +12,13 @@ import (
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
 )
+
+// KratosAuthenticator is an optional fallback authenticator for Kratos sessions.
+// Set this from libmanager.InitLib() when AUTH_USE_KRATOS=true to enable
+// Kratos session validation as a fallback when the old session_id cookie is not found.
+// This uses the function-pointer pattern (same as DefaultAuthenticator) to avoid
+// circular imports between authmiddleware and auth packages.
+var KratosAuthenticator func(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error)
 
 func Init() {
 	// Register the authenticator with EchoFactory to break the import cycle.
@@ -31,30 +37,30 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		// 🔄 Replace the request context
 		// c.SetRequest(c.Request().WithContext(ctx))
 		rc := EchoFactory.NewFromEcho(c, "SHD_ATH_026")
+		logger := rc.GetLogger()
+		defer rc.Close()
 		ctx := c.Request().Context()
-		reqID := ctx.Value(ApiTypes.RequestIDKey).(string)
-		log.Printf("[req=%s] AuthMiddleware (SHD_AUT_028)", reqID)
 
 		path := c.Request().URL.Path
 		if isStaticAsset(path) {
 			// Let the request proceed without auth
-			log.Printf("[req=%s] path is a static asset (SHD_MAT_023):%s", reqID, path)
+			logger.Info("static path", "path", path)
 			return next(c)
 		}
 
-		log.Printf("[req=%s] ============= path is not a static asset (SHD_MAT_027):%s", reqID, path)
+		logger.Info("route path", "path", path)
 		user_info, err := IsAuthenticated(rc)
 		if err != nil {
 			if IsHTMLRequest(c) {
 				// It is an HTML request. Redirect the request to "/"
-				log.Printf("[req=%s] auth failed, err:%v, redirect (SHD_MAT_033):%s", reqID, err, path)
+				logger.Warn("auth failed, redirect", "error", err, "path", path)
 				return c.Redirect(http.StatusFound, "/")
 			}
 
 			// It is an API call. It should block the call since the requested
 			// is not a static asset, which means it requires login to access the asset,
 			// and the user is not logged in. Reject it.
-			log.Printf("[req=%s] Not an HTML Request, not authenicated, unauthorized (SHD_MAT_040):%s", reqID, path)
+			logger.Error("Not an HTML Request, not authenicated, unauthorized", "error", err, "path", path)
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"error": "Authentication required",
 			})
@@ -64,7 +70,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user_name := user_info.UserName
 		ctx = context.WithValue(c.Request().Context(), ApiTypes.UserContextKey, user_name)
 		c.SetRequest(c.Request().WithContext(ctx))
-		log.Printf("[req=%s] User authenicated, proceed (SHD_MAT_045):%s", reqID, path)
+		logger.Info("User authenicated, proceed", "path", path)
 		return next(c)
 	}
 }
@@ -284,6 +290,7 @@ func IsValidSessionPG(
 func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 	logger := rc.GetLogger()
 
+	// 1. Try existing session_id cookie (old PG-based sessions)
 	cookie := rc.GetCookie("session_id")
 	logger.Info("isAuthenticated invoked", "cookie", cookie)
 	if cookie != "" {
@@ -296,23 +303,21 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 		// Cookie exists but is invalid → delete it
 		logger.Info("Cookie invalid, removing cookie", "cookie", cookie)
 		rc.DeleteCookie("session_id")
-		return nil, nil
 	}
 
-	// 2. Try token-based auth (for API clients)
-	// It is not implemented yet. We do not have to implement this unless
-	// we want to support API clients.
-	/*
-		Need to import "github.com/chendingplano/Shared/go/api/auth/tokens"
-		authHeader := c.Request().Header.Get("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			if tokens.IsValid(token) { // ← you implement this
-				log.Printf("Token is valid (SHD_MAT_049): %s", token)
-				return "", true
-			}
+	// 2. Try Kratos session validation (when AUTH_USE_KRATOS=true)
+	// KratosAuthenticator is set from libmanager.InitLib() when Kratos is enabled.
+	if KratosAuthenticator != nil {
+		user_info, err := KratosAuthenticator(rc)
+		if err != nil {
+			logger.Info("Kratos auth failed", "error", err)
+			return nil, nil
 		}
-	*/
+		if user_info != nil {
+			logger.Info("Kratos session valid", "email", user_info.Email)
+			return user_info, nil
+		}
+	}
 
 	logger.Warn("isAuthenticated failed")
 	return nil, nil

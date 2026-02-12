@@ -130,7 +130,7 @@ Refer to the above section.
 ### 4. Configure PostgreSQL (as superuser):
 
 ```sql
-ALTER SYSTEM SET wal_level = 'replica';
+ALTER SYSTEM SET wal_level = 'logical';
 ALTER SYSTEM SET archive_mode = 'on';
 ALTER SYSTEM SET archive_command = '$PG_BACKUP_DIR/scripts/archive_wal.sh %p %f';
 ALTER SYSTEM SET archive_timeout = 300;  -- Archive every 5 minutes if no activity
@@ -209,6 +209,12 @@ The same is tru:
 # Unload and reload
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.shared.pgbackup-cleanup.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.shared.pgbackup-cleanup.plist
+```
+
+To unload the above:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.shared.pgbackup.plist 
+launchctl unload ~/Library/LaunchAgents/com.shared.pgbackup-cleanup.plist
 ```
 
 ## CLI Commands
@@ -305,6 +311,15 @@ Show comprehensive status:
 ```bash
 pgbackup status
 ```
+
+This command should show:
+| Name | Explanations |
+|:-----|:-------------|
+| Status | whether the backup service is running ('active') or not ('not running') |
+| Start Time | the service start time |
+| Number of Archive Files Created | the number of archive files created since start |
+| Errors | the number of errors encountered since start |
+| Configurations | the current configurations |
 
 ### `pgbackup list`
 

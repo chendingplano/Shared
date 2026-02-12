@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Overview
+## 1. Overview
 
 The `shared/` directory contains **two shared libraries** used across all applications in the workspace:
 
@@ -11,7 +11,7 @@ The `shared/` directory contains **two shared libraries** used across all applic
 
 These libraries provide common functionality to avoid code duplication across projects like `tax`, `ChenWeb`, and `deepdoc`.
 
-## Directory Structure
+## 2. Directory Structure
 
 ```
 shared/
@@ -39,7 +39,7 @@ shared/
 └── mise.toml                # Task runner configuration
 ```
 
-## Go Library (`shared/go`)
+## 3. Go Library (`shared/go`)
 
 ### Module Information
 
@@ -264,7 +264,7 @@ case ApiTypes.MysqlName:
 }
 ```
 
-## Svelte Library (`shared/svelte`)
+## 4. Svelte Library (`shared/svelte`)
 
 ### Package Information
 
@@ -561,7 +561,7 @@ The `stores/` directory contains comprehensive documentation:
 
 **Read these files** when working with the database store and query builders.
 
-## Type Synchronization (CRITICAL)
+## 5. Type Synchronization (CRITICAL)
 
 **⚠️ IMPORTANT: The Go and TypeScript type systems are synchronized manually.**
 
@@ -643,7 +643,7 @@ export type FieldDef = {
 
 **Note:** Go JSON tags (e.g., `json:"field_name"`) become TypeScript property names (e.g., `field_name`).
 
-## Development Workflow
+## 6. Development Workflow
 
 ### Working on Go Library
 
@@ -703,7 +703,7 @@ bun install  # Picks up local shared library via workspace
 mise dev
 ```
 
-## Common Patterns
+## 7. Common Patterns
 
 ### Database Operations
 
@@ -731,6 +731,21 @@ const users = await db_store.query({
   condition: cond_builder.atomic('verified', '=', true, 'boolean').build()
 });
 ```
+
+### Logging
+- Logging with traceability is extremely important!
+- Always use ApiTypes.JimoLogger (shared/go/ApiTypes/ApiTypes.go)
+
+```go
+"github.com/chendingplano/shared/go/api/loggerutil"
+
+func myfunc() {
+    var logger = loggerutil.CreateDefaultLogger(loc)
+}
+```
+ApiTypes.JimoLog is compatible with log/slog.
+
+'loc' specifies the location where the logger is created. It is a statically generated string in the format of "LOC_MMDDHHMMSS", where 'MM' is the month, 'DD' is day, 'HH' is hour, 'MM' is minute, 'SS' is the second. All are 0-padded two-digit strings.
 
 ### Authentication Flow
 
@@ -783,7 +798,7 @@ func getProfile(c echo.Context) error {
 {/if}
 ```
 
-## Versioning and Publishing
+## 8. Versioning and Publishing
 
 ### Go Library
 
@@ -815,7 +830,7 @@ npm publish
 
 **Current usage:** Projects use the local version via package manager workspace features.
 
-## Migration Notes
+## 9. Migration Notes
 
 ### From Application to Shared Library
 
@@ -840,13 +855,13 @@ When making breaking changes to the shared library:
 4. **Version appropriately** (major version bump)
 5. **Document migration path** in commit message
 
-## Best Practices
+## 10. Best Practices
 
 ### For Go Library
 
 - **Keep connection pools global** - `PG_DB_miner`, `MySql_DB_miner`
 - **Use RequestContext abstraction** - Framework-agnostic
-- **Log with structured logging** - Use `loggerutil.JimoLogger`
+- **Log with structured logging** - Use interface ApiTypes.JimoLogger, implemented by `loggerutil.JimoLogger`
 - **Handle both databases** - PostgreSQL and MySQL (when applicable)
 - **Return rich errors** - Use `fmt.Errorf("context: %w", err)`
 
@@ -866,7 +881,7 @@ When making breaking changes to the shared library:
 - **Test JSON marshaling** - Ensure Go JSON matches TypeScript
 - **Version together** - Type changes affect both libraries
 
-## Troubleshooting
+## 11. Troubleshooting
 
 ### "Cannot find module '@chendingplano/shared'"
 
@@ -923,7 +938,7 @@ func main() {
 ApiTypes.PG_DB_miner = initPostgresConnection()
 ```
 
-## See Also
+## 12. See Also
 
 - **Workspace CLAUDE.md** - `/Users/cding/Workspace/CLAUDE.md` for overall workspace structure
 - **Tax Project** - `tax/CLAUDE.md` for the primary application using this library

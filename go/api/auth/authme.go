@@ -46,7 +46,7 @@ func HandleAuthMeBase(
 	}
 
 	user_info_str, _ := json.Marshal(user_info)
-	base_url := os.Getenv("APP_DOMAIN_NAME")
+	base_url := os.Getenv("APP_BASE_URL")
 	var resp = ApiTypes.JimoResponse{
 		Status:     true,
 		ErrorMsg:   "",

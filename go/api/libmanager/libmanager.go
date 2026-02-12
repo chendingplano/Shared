@@ -25,6 +25,13 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	logger.Info("Lib Config", "test", ApiTypes.LibConfig.SystemTableNames.TableNameTest)
 
 	authmiddleware.Init()
+
+	// Wire up Kratos authenticator when AUTH_USE_KRATOS is enabled
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		authmiddleware.KratosAuthenticator = auth.IsAuthenticatedKratosFromRC
+		logger.Info("Kratos authenticator enabled")
+	}
+
 	auth.SetAuthInfo(ApiTypes.GetDBType(),
 		ApiUtils.GetDefahotHomeURL(),
 		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions,

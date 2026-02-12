@@ -379,6 +379,7 @@ func sendVerificationEmail(
 
 func HandleEmailVerify(c echo.Context) error {
 	rc := EchoFactory.NewFromEcho(c, "SHD_EML_272")
+	defer rc.Close()
 	logger := rc.GetLogger()
 	logger.Info("Handle Email Verify (GET)")
 
@@ -393,6 +394,7 @@ func HandleEmailVerifyPost(c echo.Context) error {
 	//	?type=<type>
 	// Currently, it supports only type:'auth'
 	rc := EchoFactory.NewFromEcho(c, "SHD_EML_272")
+	defer rc.Close()
 	logger := rc.GetLogger()
 	logger.Info("Handle Email Verify (POST)")
 
@@ -422,7 +424,7 @@ func HandleEmailVerifyCommon(
 		// Cookie was already set in HandleEmailVerifyBase
 		redirectURL := resp["redirect_url"]
 		if len(redirectURL) <= 0 {
-			redirectURL = os.Getenv("APP_DOMAIN_NAME") + "/login"
+			redirectURL = os.Getenv("APP_BASE_URL") + "/login"
 			logger.Error("missing redirectURL",
 				"status_code", status_code,
 				"rediect_url", redirectURL,
@@ -448,7 +450,7 @@ func HandleEmailVerifyCommon(
 			errorType = "verify_expired"
 		}
 
-		domainName := os.Getenv("APP_DOMAIN_NAME")
+		domainName := os.Getenv("APP_BASE_URL")
 		c.Redirect(http.StatusSeeOther, domainName+"/login?error="+errorType)
 		return
 	}
@@ -698,7 +700,7 @@ func HandleEmailVerifyBase(
 		"is_admin", user_info.Admin,
 		"email", user_info.Email)
 
-	base_url := os.Getenv("APP_DOMAIN_NAME")
+	base_url := os.Getenv("APP_BASE_URL")
 	user_name := user_info.FirstName + " " + user_info.LastName
 	response := map[string]string{
 		"name":         user_name,
@@ -872,9 +874,9 @@ func HandleEmailSignupBase(
 		return http.StatusInternalServerError, resp
 	}
 
-	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	home_domain := os.Getenv("APP_BASE_URL")
 	if home_domain == "" {
-		logger.Error("missing APP_DOMAIN_NAME env var", "email", req.Email)
+		logger.Error("missing APP_BASE_URL env var", "email", req.Email)
 	}
 
 	// 4. Send verification email
@@ -882,6 +884,7 @@ func HandleEmailSignupBase(
 	// SECURITY: Do not log full verification URLs or tokens - they allow account takeover
 	logger.Info("sending verification email",
 		"to", req.Email,
+		"verificationURL", verificationURL,
 		"token", ApiUtils.MaskToken(token))
 
 	rc.PushCallFlow("SHD_EML_642")
@@ -1046,9 +1049,9 @@ func HandleForgotPasswordBase(
 	token := uuid.NewString()
 	rc.UpdateTokenByEmail(req.Email, token)
 
-	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	home_domain := os.Getenv("APP_BASE_URL")
 	if home_domain == "" {
-		logger.Error("APP_DOMAIN_NAME not set")
+		logger.Error("APP_BASE_URLnot set")
 		return http.StatusBadRequest, map[string]string{
 			"status":  "error",
 			"message": "server error (env var not set)",
@@ -1126,9 +1129,9 @@ func HandleResetLinkBase(
 	}
 
 	// Redirect to frontend reset form
-	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	home_domain := os.Getenv("APP_BASE_URL")
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var (SHD_EML_808)"
+		error_msg := "missing APP_BASE_URL env var (SHD_EML_808)"
 		log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
 	}
 	redirect_url := fmt.Sprintf("%s/reset-password?token=%s", home_domain, token)

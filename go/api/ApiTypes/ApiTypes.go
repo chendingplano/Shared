@@ -28,8 +28,8 @@ type IDRecordDef struct {
 
 type ContextKey string
 
-const CallFlowKey = "jimo_call_flow"
-const RequestIDKey = "jimo_req_id"
+const CallFlowKey ContextKey = "jimo_call_flow"
+const RequestIDKey ContextKey = "jimo_req_id"
 
 type LibConfigDef struct {
 	IDStartValue int `mapstructure:"id_start_value"`

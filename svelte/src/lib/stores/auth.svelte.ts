@@ -16,9 +16,64 @@ appAuthStore.stopImpersonation();
 ********************************************************/
 
 import { writable } from 'svelte/store';
-import type { UserInfo, JimoResponse } from '../types/CommonTypes';
+import type { UserInfo, FileNameString } from '../types/CommonTypes';
 
 export let onNavigate = (path: string) => {}; // passed from the host app
+
+// Kratos session/identity types (from Ory Kratos API)
+interface KratosIdentity {
+  id: string;
+  traits: {
+    email: string;
+    name?: { first?: string; last?: string };
+  };
+  metadata_public?: {
+    admin?: boolean;
+    is_owner?: boolean;
+    avatar?: string;
+  };
+  state?: string; // "active" | "inactive"
+  created_at: string;
+  updated_at: string;
+}
+
+interface KratosSession {
+  id: string;
+  active: boolean;
+  expires_at: string;
+  authenticated_at: string;
+  identity: KratosIdentity;
+}
+
+// Response format from backend /auth/me endpoint
+interface AuthMeResponse {
+  session: KratosSession;
+  base_url: string;
+}
+
+// Response format from backend /auth/email/login endpoint
+interface LoginResponse {
+  session: KratosSession;
+  redirect_url: string;
+}
+
+// Response format from backend /auth/logout endpoint
+interface LogoutResponse {
+  redirect_url: string;
+}
+
+// Response format from backend /auth/email/signup endpoint
+interface SignupResponse {
+  session?: KratosSession;
+  message?: string;
+  redirect_url?: string;
+}
+
+// Response format from backend /auth/verify-status endpoint
+interface VerifyStatusResponse {
+  verified: boolean;
+  redirect_url?: string;
+}
 
 interface AuthStoreState {
   isLoggedIn:       boolean;
@@ -54,7 +109,7 @@ interface AuthStore {
   login:            (email: string, password: string) => Promise<LoginResults>;
   logout:           () => void;
   register: (userData: {
-    user_id:          string;
+    user_id?:         string;
     email:            string;
     password:         string;
     passwordConfirm:  string;
@@ -78,6 +133,26 @@ interface AuthStore {
   getIsImpersonating: () => boolean;
   getImpersonatedClientId: () => string | null;
   getImpersonatedClientName: () => string | null;
+}
+
+// Helper function to map Kratos identity to UserInfo
+function mapKratosIdentityToUserInfo(identity: KratosIdentity): UserInfo {
+  const traits = identity.traits;
+  const metadata = identity.metadata_public || {};
+
+  return {
+    id: identity.id,
+    email: traits.email,
+    first_name: traits.name?.first ?? '',
+    last_name: traits.name?.last ?? '',
+    name: traits.name ? `${traits.name.first ?? ''} ${traits.name.last ?? ''}`.trim() : undefined,
+    user_status: identity.state ?? 'active',
+    admin: metadata.admin ?? false,
+    is_owner: metadata.is_owner ?? false,
+    avatar: metadata.avatar as FileNameString | undefined,
+    verified: true, // If we have a session, email is verified (per Kratos config)
+    auth_type: 'kratos',
+  };
 }
 
 function createAuthStore(): AuthStore {
@@ -156,7 +231,7 @@ function createAuthStore(): AuthStore {
         return currentState.baseURL;
     };
 
-    // ✅ NEW: Check if user is already logged in (via session/cookie)
+    // Check if user is already logged in via Kratos session cookie
     const checkAuthStatus = async () => {
         // If already logged in with user info, skip the check
         if (currentState.isLoggedIn && currentState.user) {
@@ -166,43 +241,60 @@ function createAuthStore(): AuthStore {
         try {
             const response = await fetch('/auth/me', {
                 method: 'GET',
-                credentials: 'include', // essential for cookies
+                credentials: 'include', // essential for Kratos session cookies
             });
 
-            const resp_text = await response.text()
             if (response.ok) {
-                const resp_json = JSON.parse(resp_text) as JimoResponse
-                const results_str = resp_json.results as string
-                const base_url = resp_json.base_url
-                if (base_url === null || base_url === "") {
-                    console.error('Missing base_url in /auth/me response (SHD_ATH_185)')
+                const data = await response.json() as AuthMeResponse;
+                const session = data.session;
+                const base_url = data.base_url;
+
+                if (!base_url) {
+                    console.error('Missing base_url in /auth/me response (SHD_ATH_185)');
                 }
-                if (typeof results_str === 'string' && results_str.length > 0) {
-                    const userInfo = JSON.parse(results_str) as UserInfo;
+
+                if (session && session.active) {
+                    const userInfo = mapKratosIdentityToUserInfo(session.identity);
 
                     // Restore impersonation from sessionStorage if present
                     const persisted = getPersistedImpersonation();
                     update(() => ({
-                        isLoggedIn: !!userInfo,
+                        isLoggedIn: true,
                         status: 'success',
                         error_msg: '',
                         user: userInfo,
-                        isAdmin: userInfo?.admin ?? false,
-                        isOwner: userInfo?.is_owner ?? false,
-                        baseURL: base_url ,
+                        isAdmin: userInfo.admin ?? false,
+                        isOwner: userInfo.is_owner ?? false,
+                        baseURL: base_url ?? '',
                         isImpersonating: persisted !== null,
                         impersonatedClientId: persisted?.clientId ?? null,
                         impersonatedClientName: persisted?.clientName ?? null,
                     }));
+                } else {
+                    // Session exists but not active
+                    clearPersistedImpersonation();
+                    update(() => ({
+                        isLoggedIn: false,
+                        status: 'login',
+                        user: null,
+                        error_msg: '',
+                        isAdmin: false,
+                        isOwner: false,
+                        baseURL: '',
+                        isImpersonating: false,
+                        impersonatedClientId: null,
+                        impersonatedClientName: null,
+                    }));
                 }
             } else {
                 // Not logged in — clear everything including persisted impersonation
+                console.log(`user not logged in (SHD_0207182800)`)
                 clearPersistedImpersonation();
                 update(() => ({
                     isLoggedIn: false,
                     status: 'login',
                     user: null,
-                    error_msg: 'failed check login',
+                    error_msg: '',
                     isAdmin: false,
                     isOwner: false,
                     baseURL: '',
@@ -227,7 +319,7 @@ function createAuthStore(): AuthStore {
                 impersonatedClientName: null,
             }));
         } finally {
-            // 👇 Resolve the ready promise regardless of success/failure
+            // Resolve the ready promise regardless of success/failure
             readyResolve();
         }
     };
@@ -248,50 +340,44 @@ function createAuthStore(): AuthStore {
               method: 'POST',
               body: JSON.stringify({ email, password }),
               headers: { 'Content-Type': 'application/json' },
+              credentials: 'include', // Important: receive Kratos session cookie
             });
+
             if (!response.ok) {
                 const errorData = await response.json();
-                var error_msg: string
-                if (errorData.message && typeof errorData.message === 'string') {
-                  error_msg = errorData.message
-                } else {
-                  const status = response.status;
-                  error_msg = response.statusText;
-                }
-                const result : LoginResults = {
+                const error_msg = errorData.message ?? response.statusText;
+                return {
                   status: false,
                   error_msg: error_msg,
-                  redirect_url: "",
-                  LOC: ""
-                }
-                return result
+                  redirect_url: '',
+                  LOC: 'SHD_ATH_LOGIN'
+                };
             }
 
-            const userData = await response.json();
-            const userInfo: UserInfo | null = userData.user || null;
+            // Backend returns: { session: KratosSession, redirect_url: string }
+            const data = await response.json() as LoginResponse;
+            const session = data.session;
+            const userInfo = mapKratosIdentityToUserInfo(session.identity);
 
-            update((current) => {
-              return {
-                ...current,
-                user: userInfo,
-                isLoggedIn: userInfo !== null,
-                isAdmin: userInfo?.admin ?? false,
-                isOwner: userInfo?.is_owner?? false,
-                status: 'success',
-              }
-            });
+            update((current) => ({
+              ...current,
+              user: userInfo,
+              isLoggedIn: true,
+              isAdmin: userInfo.admin ?? false,
+              isOwner: userInfo.is_owner ?? false,
+              status: 'success',
+            }));
 
-            let redirect_url = userData.redirect_url;
-            alert("Login successful! redirect to:" + redirect_url);
+            const redirect_url = data.redirect_url || '/dashboard';
             window.location.href = redirect_url;
             return {
-              status : true,
-              error_msg: "",
+              status: true,
+              error_msg: '',
               redirect_url: redirect_url,
-              LOC: userData.LOC || ""
-            }
+              LOC: ''
+            };
         } catch (error) {
-            const error_msg = error instanceof Error ? error.message : "Unknown error"
+            const error_msg = error instanceof Error ? error.message : 'Unknown error';
             console.error('Login error:', error_msg);
 
             update(current => ({
@@ -306,28 +392,32 @@ function createAuthStore(): AuthStore {
             return {
               status: false,
               error_msg: error_msg,
-              redirect_url: "",
-              LOC: ""
-            }
+              redirect_url: '',
+              LOC: 'SHD_ATH_LOGIN_ERR'
+            };
         }
     }
 
     async function logout(): Promise<void> {
         try {
-            const user = currentState.user;
-            const user_name = user ? user.name:''
-            const email = user ? user.email : ''
+            // Backend handles Kratos logout flow
             const response = await fetch('/auth/logout', {
               method: 'POST',
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_name, email}),
               credentials: 'include',
             });
 
-            if (!response.ok) {
-              throw new Error(`Server logout failed (Status: ${response.status})`);
+            // Parse response for redirect URL (backend may return Kratos logout URL)
+            let redirect_url = '/login';
+            if (response.ok) {
+                try {
+                    const data = await response.json() as LogoutResponse;
+                    redirect_url = data.redirect_url || '/login';
+                } catch {
+                    // Response may not be JSON, use default redirect
+                }
             }
 
+            // Clear local state
             if (typeof window !== 'undefined') {
               clearPersistedImpersonation();
               update(current => ({
@@ -341,19 +431,32 @@ function createAuthStore(): AuthStore {
                 impersonatedClientId: null,
                 impersonatedClientName: null,
               }));
-            }
 
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login';
+              window.location.href = redirect_url;
             }
-
         } catch (error) {
             console.error('Logout process failed:', error instanceof Error ? error.message : 'Unknown error');
+            // Even on error, clear local state and redirect
+            if (typeof window !== 'undefined') {
+              clearPersistedImpersonation();
+              update(current => ({
+                ...current,
+                status: 'logout',
+                user: null,
+                isLoggedIn: false,
+                isAdmin: false,
+                isOwner: false,
+                isImpersonating: false,
+                impersonatedClientId: null,
+                impersonatedClientName: null,
+              }));
+              window.location.href = '/login';
+            }
         }
     }
 
     async function register(userData: {
-        user_id: string;
+        user_id?: string;
         email: string;
         password: string;
         passwordConfirm: string;
@@ -361,134 +464,140 @@ function createAuthStore(): AuthStore {
         last_name: string;
         is_admin: boolean;
     }): Promise<void> {
-    try {
-        const user_id = userData.user_id
-        const email = userData.email
-        const password = userData.password
-        const first_name = userData.first_name
-        const last_name = userData.last_name
-        const is_admin = userData.is_admin
+        const { email, password, first_name, last_name } = userData;
+
+        // Validate passwords match
         if (userData.password !== userData.passwordConfirm) {
-          update(current => ({
-            ...current,
-            status: 'error',
-            error_msg: 'Passwords do not match',
-            user: {
-              id: user_id,
-              userName: email,
-              password: password,
-              firstName: first_name,
-              lastName: last_name,
-              email: email,
-              authType: "email",
-              admin: is_admin,
-              userStatus: "signup"
-            },
-            isLoggedIn: false,
-            isAdmin: false,
-            isOwner: false,
-          }));
-        }
-
-        const res = await fetch("/auth/email/signup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ first_name, last_name, email, password })
-        });
-
-        if (res.ok) {
-            const msg = "An email has been sent to your email:" + email +
-              ". Please check your email and click the link to activate your account." +
-              "Note: if you cannot find the email, check the Junk Mail section! (TAX_LFM_066)"
-            alert(msg)
             update(current => ({
                 ...current,
-                status:"signup",
+                status: 'error',
+                error_msg: 'Passwords do not match',
                 isLoggedIn: false,
-            }))
-        } else {
-            const error_msg = "Registration failed: " + await res.text();
-            alert(error_msg);
+                isAdmin: false,
+                isOwner: false,
+            }));
+            return;
+        }
+
+        try {
+            // Backend handles Kratos registration flow
+            // Send data in Kratos traits format
+            const res = await fetch('/auth/email/signup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    traits: {
+                        email,
+                        name: { first: first_name, last: last_name }
+                    },
+                    password
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json() as SignupResponse;
+
+                // Kratos may auto-login after registration (configured via hooks)
+                if (data.session) {
+                    const userInfo = mapKratosIdentityToUserInfo(data.session.identity);
+                    update(current => ({
+                        ...current,
+                        user: userInfo,
+                        isLoggedIn: true,
+                        isAdmin: userInfo.admin ?? false,
+                        isOwner: userInfo.is_owner ?? false,
+                        status: 'success',
+                        error_msg: '',
+                    }));
+
+                    // Redirect to dashboard or specified URL
+                    if (typeof window !== 'undefined') {
+                        window.location.href = data.redirect_url || '/dashboard';
+                    }
+                } else {
+                    // Verification email sent, user needs to verify
+                    const msg = `An email has been sent to ${email}. ` +
+                        'Please check your email and click the link to verify your account. ' +
+                        'Note: if you cannot find the email, check the Junk Mail section!';
+                    alert(msg);
+                    update(current => ({
+                        ...current,
+                        status: 'signup',
+                        isLoggedIn: false,
+                        error_msg: '',
+                    }));
+                }
+            } else {
+                const errorData = await res.json().catch(() => ({ message: 'Registration failed' }));
+                const error_msg = errorData.message || 'Registration failed';
+                alert(error_msg);
+                update(current => ({
+                    ...current,
+                    error_msg: error_msg,
+                    status: 'error',
+                }));
+            }
+        } catch (error) {
+            const error_msg = error instanceof Error ? error.message : 'Network error';
+            alert('Network error: ' + error_msg);
             update(current => ({
                 ...current,
                 error_msg: error_msg,
-                status: "error",
-            }))
+                status: 'error',
+            }));
         }
-    } catch (NetworkError) {
-        alert('Network error: ' + (NetworkError instanceof Error ? NetworkError.message : 'unknown'));
-    }
   }
 
   async function verifyEmail(token: string, _loc: string): Promise<VerifyEmailResults> {
     try {
-        const response = await fetch(`/auth/email/verify?token=${token}&type=auth`, {
+        // Kratos verification is handled via its own flow
+        // This endpoint checks verification status and may return session
+        const response = await fetch(`/auth/verify-status?token=${token}`, {
             method: 'GET',
-            credentials: 'include', // Important: include cookies
+            credentials: 'include',
         });
 
-        const resp_text = await response.text();
         if (!response.ok) {
-            console.error('Email verification failed:', resp_text);
+            const errorData = await response.json().catch(() => ({ message: 'Verification failed' }));
+            console.error('Email verification failed:', errorData.message);
             return {
                 status: false,
-                error_msg: resp_text || 'Email verification failed',
+                error_msg: errorData.message || 'Email verification failed',
                 redirect_url: '',
-                LOC: 'SHD_ATH_395'
+                LOC: 'SHD_ATH_VERIFY_FAIL'
             };
         }
 
-        // Parse the JSON response which contains user_info and redirect_url
-        const resp_json = JSON.parse(resp_text);
-        const base_url = resp_json.base_url
-        if (base_url === null || base_url === '') {
-            console.error('Missing base_url in email verify response (SHD_ATH_447)')
-        }
+        const data = await response.json() as VerifyStatusResponse;
 
-        const redirect_url = resp_json.redirect_url || '/dashboard';
-        const user_info_str = resp_json.user_info;
-
-        if (typeof user_info_str === 'string' && user_info_str.length > 0) {
-            const userInfo = JSON.parse(user_info_str) as UserInfo;
-
-            update(() => ({
-                isLoggedIn: true,
-                status: 'success',
-                error_msg: '',
-                user: userInfo,
-                isAdmin: userInfo?.admin ?? false,
-                isOwner: userInfo?.is_owner?? false,
-                baseURL: base_url,
-                isImpersonating: false,
-                impersonatedClientId: null,
-                impersonatedClientName: null,
-            }));
-
+        if (data.verified) {
+            // Re-fetch session to get updated user state
+            await checkAuthStatus();
             return {
                 status: true,
                 error_msg: '',
-                redirect_url: redirect_url,
-                LOC: 'SHD_ATH_428'
+                redirect_url: data.redirect_url || '/dashboard',
+                LOC: 'SHD_ATH_VERIFY_OK'
             };
         }
 
-        // user_info not present in response, verification succeeded but can't update store
-        console.warn('Email verified but user_info missing in response (SHD_ATH_438)');
+        // Verification not complete
         return {
             status: false,
-            error_msg: 'Email verified but failed to get user info',
+            error_msg: 'Email verification pending',
             redirect_url: '',
-            LOC: 'SHD_ATH_438'
+            LOC: 'SHD_ATH_VERIFY_PENDING'
         };
     } catch (error) {
-        const error_msg = error instanceof Error ? error.message : "Unknown error";
+        const error_msg = error instanceof Error ? error.message : 'Unknown error';
         console.error('Email verification error:', error_msg);
 
         return {
             status: false,
             error_msg: error_msg,
             redirect_url: '',
-            LOC: 'SHD_ATH_448'
+            LOC: 'SHD_ATH_VERIFY_ERR'
         };
     }
   }

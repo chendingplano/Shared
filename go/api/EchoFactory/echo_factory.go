@@ -156,17 +156,17 @@ func (e *echoContext) DeleteCookie(name string) {
 }
 
 func (e *echoContext) ReqID() string {
-	if id, ok := e.c.Get(ApiTypes.RequestIDKey).(string); ok && id != "" {
+	if id, ok := e.c.Get(string(ApiTypes.RequestIDKey)).(string); ok && id != "" {
 		return id
 	}
 	// Generate and store
 	id := ApiUtils.GenerateRequestID("e")
-	e.c.Set(ApiTypes.RequestIDKey, id)
+	e.c.Set(string(ApiTypes.RequestIDKey), id)
 	return id
 }
 
 func (e *echoContext) SetReqID(reqID string) {
-	e.c.Set(ApiTypes.RequestIDKey, reqID)
+	e.c.Set(string(ApiTypes.RequestIDKey), reqID)
 }
 
 func (e *echoContext) GetLogger() ApiTypes.JimoLogger {

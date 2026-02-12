@@ -8,7 +8,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func CreateTables(logger ApiTypes.JimoLogger) error {
+func CreateSysTables(logger ApiTypes.JimoLogger) error {
 	// This function creates all the tables.
 	var db *sql.DB
 	database_type := ApiTypes.DatabaseInfo.DBType

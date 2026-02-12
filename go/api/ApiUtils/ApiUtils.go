@@ -11,6 +11,7 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ const (
 
 // EmailSenderFunc is the signature for custom email sender functions.
 // Apps can register their own email sender to use their preferred email service and styling.
-// Parameters: reqID (for logging), to (recipient), subject, textBody, htmlBody, loc (caller location for logging)
+// Parameters: to (recipient), subject, textBody, htmlBody, loc (caller location for logging)
 type EmailSenderFunc func(
 	rc ApiTypes.RequestContext,
 	to string,
@@ -61,9 +62,6 @@ func SetEmailSender(sender EmailSenderFunc) {
 
 // SendMail sends an email using either the custom sender (if registered) or default SMTP.
 // The emailType parameter identifies the template type (use EmailType* constants).
-// Example usage:
-//
-//	err := SendMail(reqID, "user@example.com", "Verify your email", "Plain text", "<p>HTML body</p>", "CALLER_LOC")
 func SendMail(rc ApiTypes.RequestContext, to, subject, textBody, htmlBody string, emailType string) error {
 	// Use custom sender if registered
 	if customEmailSender != nil {
@@ -269,15 +267,15 @@ func GetOAuthRedirectURL(
 	user_name string) string {
 	// Redirect to backend (vite dev server)
 	// This ensures the pb_auth cookie is set on the correct domain
-	home_domain := os.Getenv("APP_DOMAIN_NAME")
+	home_domain := os.Getenv("APP_BASE_URL")
 	logger := rc.GetLogger()
 	if home_domain == "" {
-		error_msg := "missing APP_DOMAIN_NAME env var"
+		error_msg := "missing APP_BASE_URL env var"
 		logger.Error(error_msg)
 	}
 
 	// Ensure home_domain has a scheme (http:// or https://)
-	// APP_DOMAIN_NAME should include the scheme, but add legacy support
+	// APP_BASE_URL should include the scheme, but add legacy support
 	if !strings.HasPrefix(home_domain, "http://") && !strings.HasPrefix(home_domain, "https://") {
 		if strings.HasPrefix(home_domain, "localhost") {
 			home_domain = "http://" + home_domain
@@ -311,7 +309,7 @@ func GenerateRequestID(key string) string {
 }
 
 func GetDefahotHomeURL() string {
-	var url = fmt.Sprintf("%s/%s", os.Getenv("APP_DOMAIN_NAME"), os.Getenv("APP_DEFAULT_APP"))
+	var url = fmt.Sprintf("%s/%s", os.Getenv("APP_BASE_URL"), os.Getenv("VITE_DEFAULT_NORM_ROUTE"))
 	return url
 }
 
@@ -449,6 +447,8 @@ func GenerateUUID() string {
 // - Does not contain backslashes (browser interpretation varies)
 // - Does not contain "javascript:" or "data:" schemes
 // - Does not contain "://" (absolute URL)
+//
+// NOTE: For OAuth flows that require absolute URLs, use IsSafeAbsoluteReturnURL instead.
 func IsSafeReturnURL(returnURL string) bool {
 	if returnURL == "" {
 		return false
@@ -492,6 +492,113 @@ func IsSafeReturnURL(returnURL string) bool {
 	}
 
 	return true
+}
+
+// IsSafeAbsoluteReturnURL validates that an absolute return URL is safe for redirection.
+// This is used for OAuth flows where absolute URLs are required.
+// The URL must be an allowed origin (from ALLOWED_OAUTH_ORIGINS env var or defaults).
+//
+// Returns true only if the URL:
+// - Is a valid URL
+// - Uses http or https scheme
+// - Host matches one of the allowed origins
+// - Does not contain dangerous payloads (javascript:, data:, etc.)
+func IsSafeAbsoluteReturnURL(returnURL string) bool {
+	if returnURL == "" {
+		return false
+	}
+
+	// Reject dangerous schemes before parsing
+	lowerURL := strings.ToLower(returnURL)
+	if strings.Contains(lowerURL, "javascript:") || strings.Contains(lowerURL, "data:") {
+		return false
+	}
+
+	// Parse the URL
+	parsed, err := url.Parse(returnURL)
+	if err != nil {
+		return false
+	}
+
+	// Must be http or https
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+
+	// Get allowed origins from environment or use defaults
+	allowedOrigins := getOAuthAllowedOrigins()
+
+	// Extract the origin (scheme + host) from the return URL
+	returnOrigin := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	// Check if the origin is allowed
+	for _, allowed := range allowedOrigins {
+		if strings.EqualFold(returnOrigin, allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// getOAuthAllowedOrigins returns the list of allowed origins for OAuth redirects.
+// Reads from ALLOWED_OAUTH_ORIGINS env var (comma-separated) or uses defaults.
+func getOAuthAllowedOrigins() []string {
+	// Check for explicit configuration
+	originsEnv := os.Getenv("ALLOWED_OAUTH_ORIGINS")
+	if originsEnv != "" {
+		origins := strings.Split(originsEnv, ",")
+		var result []string
+		for _, o := range origins {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				result = append(result, o)
+			}
+		}
+		if len(result) > 0 {
+			return result
+		}
+	}
+
+	// Build default list from common environment variables
+	var defaults []string
+
+	if appDomain := os.Getenv("APP_BASE_URL"); appDomain != "" {
+		defaults = append(defaults, appDomain)
+	}
+
+	// Add common localhost origins for development
+	devOrigins := []string{
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://localhost:8080",
+		"http://127.0.0.1:8080",
+		"http://localhost:4455",
+		"http://127.0.0.1:4455",
+	}
+
+	for _, dev := range devOrigins {
+		found := false
+		for _, d := range defaults {
+			if d == dev {
+				found = true
+				break
+			}
+		}
+		if !found {
+			defaults = append(defaults, dev)
+		}
+	}
+
+	return defaults
+}
+
+// GetSafeAbsoluteReturnURL returns the returnURL if it's safe for OAuth, otherwise returns the fallback.
+func GetSafeAbsoluteReturnURL(returnURL string, fallback string) string {
+	if IsSafeAbsoluteReturnURL(returnURL) {
+		return returnURL
+	}
+	return fallback
 }
 
 // GetSafeReturnURL returns the returnURL if it's safe, otherwise returns the fallback.
@@ -562,4 +669,52 @@ func LoadLibConfig(loc string) {
 		}
 		slog.Info("Loading config success (SHD_LMG_564)")
 	})
+}
+
+func GetSafeString(mapObj map[string]interface{}, key string) (string, bool) {
+	if mapObj == nil {
+		return "", false
+	}
+
+	val, exists := mapObj[key]
+	if !exists {
+		return "", false
+	}
+
+	switch v := val.(type) {
+	case string:
+		return v, true
+	case int:
+		return strconv.Itoa(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+func GetSafeSubObj(mapObj map[string]interface{}, key string) (map[string]interface{}, bool) {
+	if mapObj == nil {
+		return nil, false
+	}
+
+	val, exists := mapObj[key]
+	if !exists {
+		return nil, false
+	}
+
+	switch v := val.(type) {
+	case map[string]interface{}:
+		return v, true
+
+	case map[string]string:
+		result := make(map[string]interface{})
+		for k, c := range v {
+			result[k] = c
+		}
+		return result, true
+
+	default:
+		return nil, false
+	}
 }
