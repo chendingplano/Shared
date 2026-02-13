@@ -757,7 +757,7 @@ func HandleEmailSignupBase(
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("invalid request body (SHD_EML_534), log_id:%d, err:%v", log_id, err)
 		resp := EmailSignupResponse{
-			Message: error_msg,
+			Message: "Invalid request. Please try again.",
 			LOC:     "SHD_EML_311",
 		}
 
@@ -780,7 +780,7 @@ func HandleEmailSignupBase(
 		log_id := sysdatastores.NextActivityLogID()
 		error_msg := fmt.Sprintf("invalid email format, email:%s, log_id:%d (SHD_EML_547)", req.Email, log_id)
 		resp := EmailSignupResponse{
-			Message: error_msg,
+			Message: "Please enter a valid email address.",
 			LOC:     "SHD_EML_547",
 		}
 
@@ -837,10 +837,19 @@ func HandleEmailSignupBase(
 	user_info, exist := rc.GetUserInfoByEmail(req.Email)
 	if exist {
 		if user_info.Verified {
-			error_msg := fmt.Sprintf("email already exist (SHD_EML_588), email:%s", req.Email)
 			logger.Warn("email already exists", "email", req.Email)
+
+			log_msg := fmt.Sprintf("signup attempt with existing email:%s", req.Email)
+			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+				ActivityName: ApiTypes.ActivityName_Auth,
+				ActivityType: ApiTypes.ActivityType_BadRequest,
+				AppName:      ApiTypes.AppName_Auth,
+				ModuleName:   ApiTypes.ModuleName_EmailAuth,
+				ActivityMsg:  &log_msg,
+				CallerLoc:    "SHD_EML_588"})
+
 			resp := EmailSignupResponse{
-				Message: error_msg,
+				Message: "An account with this email address already exists. Please log in or use a different email.",
 				LOC:     "SHD_EML_588",
 			}
 			return http.StatusConflict, resp
@@ -867,8 +876,16 @@ func HandleEmailSignupBase(
 		error_msg := fmt.Sprintf("failed creating user (SHD_EML_710), error:%v", err1)
 		logger.Error("failed creating user account", "error", err1, "email", req.Email)
 
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_DatabaseError,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EML_715"})
+
 		resp := EmailSignupResponse{
-			Message: error_msg,
+			Message: "Unable to create account. Please try again later.",
 			LOC:     "SHD_EML_715",
 		}
 		return http.StatusInternalServerError, resp
