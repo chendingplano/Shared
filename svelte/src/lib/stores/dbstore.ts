@@ -146,7 +146,7 @@ class DBStore {
     private file_dir: string;
 
     constructor() {
-        this.home_url = "http://localhost:5173"
+        this.home_url = "http://localhost:8080"
         this.data_home = "Data"
         this.file_dir = "CustomerFiles"
     }
