@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -35,6 +36,49 @@ type AuthenticatorFunc func(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, err
 // (shared/go/api/authmiddleware/auth.go)
 // This breaks the import cycle by using runtime registration instead of compile-time imports.
 var DefaultAuthenticator AuthenticatorFunc
+
+// GetUserInfoByUserIDFunc should be set by kratos.go to break compile-time circular imports!!!
+type GetUserInfoByUserIDFuncDef func(logger ApiTypes.JimoLogger, user_id string) (*ApiTypes.UserInfo, error)
+
+var GetUserInfoByUserIDFunc GetUserInfoByUserIDFuncDef
+
+// GetUserInfoByEmailFunc should be set by kratos.go to break compile-time circular imports!!!
+type GetUserInfoByEmailFuncDef func(logger ApiTypes.JimoLogger, email string) (*ApiTypes.UserInfo, error)
+
+var GetUserInfoByEmailFunc GetUserInfoByEmailFuncDef
+
+// KratosMarkUserVerifiedFunc should be set by kratos.go to break compile-time circular imports!!!
+// This function marks a user as verified by setting their identity state to "active"
+type KratosMarkUserVerifiedFuncDef func(logger ApiTypes.JimoLogger, email string) error
+
+var KratosMarkUserVerifiedFunc KratosMarkUserVerifiedFuncDef
+
+// KratosUpdateIdentityFunc should be set by kratos.go to break compile-time circular imports!!!
+// This function updates a Kratos identity's traits, metadata_public, and state
+type KratosUpdateIdentityFuncDef func(
+	logger ApiTypes.JimoLogger,
+	identityID string,
+	traits map[string]interface{},
+	metadataPublic map[string]interface{},
+	state *string) error
+
+var KratosUpdateIdentityFunc KratosUpdateIdentityFuncDef
+
+// UpdateAppTokenByEmailFuncDef
+type UpdateAppTokenByEmailFuncDef func(
+	logger ApiTypes.JimoLogger,
+	email string,
+	tokenName string,
+	token string) error
+
+var UpdateAppTokenByEmailFunc UpdateAppTokenByEmailFuncDef
+
+type GetUserInfoByAppTokenFuncDef func(
+	logger ApiTypes.JimoLogger,
+	token_name string,
+	token string) ([]*ApiTypes.UserInfo, error)
+
+var GetUserInfoByAppTokenFunc GetUserInfoByAppTokenFuncDef
 
 type echoContext struct {
 	c            echo.Context
@@ -188,6 +232,24 @@ func (e *echoContext) GenerateAuthToken(email string) (string, error) {
 func (e *echoContext) UpdatePassword(
 	email string,
 	plaintextPassword string) (bool, int, string) {
+
+	// With Kratos, password updates are handled through recovery/settings flows,
+	// not direct API calls. Use HandleResetPasswordConfirmKratos instead.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		error_msg := "Direct password updates not supported with Kratos - use recovery flow (HandleResetPasswordConfirmKratos) (SHD_EFC_194)"
+		e.logger.Error("UpdatePassword called with Kratos enabled", "email", email)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EFC_194"})
+
+		return false, http.StatusBadRequest, error_msg
+	}
+
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -229,6 +291,30 @@ func (e *echoContext) VerifyUserPassword(
 	password string) (bool, int, string) {
 
 	logger := e.logger
+
+	// With Kratos, password verification is handled through login flows,
+	// not direct bcrypt comparison. Use HandleEmailLoginKratos instead.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		error_msg := "Direct password verification not supported with Kratos - use login flow (HandleEmailLoginKratos) (SHD_EFC_233)"
+		logger.Error("VerifyUserPassword called with Kratos enabled",
+			"email", func() string {
+				if userInfo != nil {
+					return userInfo.Email
+				}
+				return "nil"
+			}())
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_InvalidPassword,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &error_msg,
+			CallerLoc:    "SHD_EFC_233"})
+
+		return false, http.StatusBadRequest, error_msg
+	}
+
 	if userInfo == nil {
 		logger.Warn("userInfo is nil")
 		return false, http.StatusNotFound, "userInfo is nil (SHD_RCE_131)"
@@ -272,6 +358,16 @@ func (e *echoContext) GetUserInfoByToken(token string) (*ApiTypes.UserInfo, bool
 		return e.user_info, true
 	}
 
+	// Note: Verification tokens (VToken) are managed by Kratos flows when AUTH_USE_KRATOS=true.
+	// This function is only used in non-Kratos flows (e.g., portal invites with old auth).
+	// If needed with Kratos, tokens should be stored in identity metadata_public.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		e.logger.Warn("GetUserInfoByToken called with Kratos enabled - VTokens managed by Kratos flows",
+			"token", ApiUtils.MaskToken(token))
+		// For now, fall through to old implementation for backwards compatibility
+		// TODO: Migrate portal invites to use Kratos-managed tokens
+	}
+
 	user_info, err := sysdatastores.GetUserInfoByToken(e, token)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -289,11 +385,48 @@ func (e *echoContext) GetUserInfoByToken(token string) (*ApiTypes.UserInfo, bool
 	return user_info, true
 }
 
+func (e *echoContext) GetUserInfoByAppToken(token_name string, token string) (*ApiTypes.UserInfo, bool) {
+	if e.user_info != nil {
+		return e.user_info, true
+	}
+
+	if os.Getenv("AUTH_USE_KRATOS") != "true" {
+		e.logger.Error("GetUserInfoByAppToken is accessible with Kratos only, token_name:%s, token:%s",
+			token_name, ApiUtils.MaskToken(token))
+		return nil, false
+	}
+
+	user_infos, err := GetUserInfoByAppTokenFunc(e.logger, token_name, token)
+	if err != nil {
+		e.logger.Error("failed retrieving user info by token", "error", err,
+			"token_name", token_name, "token", ApiUtils.MaskToken(token))
+		return nil, false
+	}
+
+	if len(user_infos) == 0 {
+		e.logger.Warn("User not found", "token_name", token_name, "token", ApiUtils.MaskToken(token))
+		return nil, false
+	}
+
+	if len(user_infos) > 1 {
+		e.logger.Warn("Token matches multiple users", "token_name", token_name, "token", ApiUtils.MaskToken(token))
+	}
+	return user_infos[0], true
+}
+
 func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool) {
 	if e.user_info != nil {
 		return e.user_info, true
 	}
-	user_info, err := sysdatastores.GetUserInfoByEmail(e, email)
+
+	var user_info *ApiTypes.UserInfo
+	var err error
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		user_info, err = GetUserInfoByEmailFunc(e.logger, email)
+	} else {
+		user_info, err = sysdatastores.GetUserInfoByEmail(e, email)
+	}
+
 	if err != nil {
 		// Possible reasons:
 		// 1. user not found: user not found
@@ -325,7 +458,14 @@ func (e *echoContext) GetUserInfoByUserID(user_id string) (*ApiTypes.UserInfo, b
 		return e.user_info, true
 	}
 
-	user_info, err := sysdatastores.GetUserInfoByUserID(e, user_id)
+	var user_info *ApiTypes.UserInfo
+	var err error
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		user_info, err = GetUserInfoByUserIDFunc(e.logger, user_id)
+	} else {
+		user_info, err = sysdatastores.GetUserInfoByUserID(e, user_id)
+	}
+
 	if err != nil {
 		// Possible reasons:
 		// 1. user not found: user not found
@@ -357,18 +497,61 @@ func (e *echoContext) SaveSession(
 	user_email string,
 	expiry time.Time,
 	need_update_user bool) error {
+
+	// With Kratos, sessions are managed by Kratos, not our database.
+	// Kratos maintains its own session store and provides session management APIs.
+	// We don't need to save sessions to our database for Kratos-based authentication.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		e.logger.Info("SaveSession called with Kratos enabled - sessions managed by Kratos",
+			"login_method", login_method,
+			"user_email", user_email)
+		// Sessions are managed by Kratos - no need to save in our database
+		// If you need audit logging of logins, consider adding activity logs instead
+		return nil
+	}
+
 	return sysdatastores.SaveSession(e, login_method, session_id, auth_token,
 		user_name, user_name_type, user_reg_id,
 		user_email, expiry, need_update_user)
 }
 
 func (e *echoContext) MarkUserVerified(email string) error {
+	// With Kratos, email verification is managed by Kratos flows.
+	// However, for admin override or manual verification, we can update the identity state.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		return KratosMarkUserVerifiedFunc(e.logger, email)
+	}
+
 	return sysdatastores.MarkUserVerified(e, email)
 }
 
 func (e *echoContext) UpdateTokenByEmail(email string, token string) error {
+	// With Kratos, verification tokens are managed by Kratos flows, not stored in our database.
+	// Email verification is handled through Kratos verification flows.
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		e.logger.Warn("UpdateTokenByEmail called with Kratos enabled - tokens managed by Kratos flows",
+			"email", email)
+		// Verification tokens are managed by Kratos, not stored in our database
+		// Return error to indicate this operation is not supported with Kratos
+		return fmt.Errorf("[SHD_0214081800] UpdateTokenByEmail not supported with Kratos - use Kratos verification flows")
+	}
+
 	return databaseutil.UpdateVTokenByEmail(e, ApiTypes.DatabaseInfo.DBType,
 		ApiTypes.LibConfig.SystemTableNames.TableNameUsers, email, token)
+}
+
+func (e *echoContext) UpdateAppTokenByEmail(email string, token_name string, token string) error {
+	if os.Getenv("AUTH_USE_KRATOS") != "true" {
+		return fmt.Errorf("[SHD_0214081801] UpdateAppTokenByEmail is supported with Kratos only!")
+	}
+
+	err := UpdateAppTokenByEmailFunc(e.logger, email, token_name, token)
+	if err == nil {
+		e.logger.Info("App token updated", "token_name", token_name, "token", ApiUtils.MaskToken(token))
+		return nil
+	}
+
+	return fmt.Errorf("[SHD_0214094100] failed updating app token, token_name:%s, token:%s", token_name, token)
 }
 
 func (e *echoContext) UpsertUser(
@@ -382,6 +565,124 @@ func (e *echoContext) UpsertUser(
 
 	logger := e.logger
 	logger.Trace("upsert user")
+
+	// With Kratos, user management is different:
+	// - User creation: handled by signup flows (HandleEmailSignupKratos)
+	// - User updates: use KratosUpdateIdentity to update traits and metadata_public
+	// - Passwords: cannot be directly set (must use recovery/settings flows)
+	if os.Getenv("AUTH_USE_KRATOS") == "true" {
+		logger.Info("UpsertUser called with Kratos - delegating to Kratos identity management",
+			"email", user_info.Email)
+
+		if plain_password != "" {
+			logger.Warn("Password cannot be set directly with Kratos - use recovery/settings flows",
+				"email", user_info.Email)
+			// Continue without setting password
+		}
+
+		// Check if user exists
+		var user_info_found *ApiTypes.UserInfo
+		var found bool
+		if need_read {
+			user_info_found, found = e.GetUserInfoByEmail(user_info.Email)
+			if !found {
+				// User doesn't exist - creation should go through signup flows
+				logger.Error("User not found - creation should use signup flows", "email", user_info.Email)
+				return nil, fmt.Errorf("user creation with Kratos should use signup flows (SHD_EFC_479)")
+			}
+		} else {
+			// Without need_read, we assume user exists and we're updating
+			user_info_found, found = e.GetUserInfoByEmail(user_info.Email)
+			if !found {
+				logger.Error("User not found for update", "email", user_info.Email)
+				return nil, fmt.Errorf("user not found for update (SHD_EFC_480)")
+			}
+		}
+
+		// Build Kratos update
+		traits := make(map[string]interface{})
+		metadataPublic := make(map[string]interface{})
+		var state *string
+		isDirty := false
+
+		// Update traits (email, firstName, lastName)
+		if user_info.Email != "" && user_info.Email != user_info_found.Email {
+			traits["email"] = user_info.Email
+			isDirty = true
+		}
+		if user_info.FirstName != "" && user_info.FirstName != user_info_found.FirstName {
+			if traits["name"] == nil {
+				traits["name"] = make(map[string]interface{})
+			}
+			traits["name"].(map[string]interface{})["first"] = user_info.FirstName
+			isDirty = true
+		}
+		if user_info.LastName != "" && user_info.LastName != user_info_found.LastName {
+			if traits["name"] == nil {
+				traits["name"] = make(map[string]interface{})
+			}
+			traits["name"].(map[string]interface{})["last"] = user_info.LastName
+			isDirty = true
+		}
+
+		// Update metadata_public (admin, is_owner, avatar, etc.)
+		if admin != user_info_found.Admin {
+			metadataPublic["admin"] = admin
+			isDirty = true
+		}
+		if is_owner != user_info_found.IsOwner {
+			metadataPublic["is_owner"] = is_owner
+			isDirty = true
+		}
+		if user_info.Avatar != "" && user_info.Avatar != user_info_found.Avatar {
+			metadataPublic["avatar"] = user_info.Avatar
+			isDirty = true
+		}
+
+		// Update state based on verified flag and user_status
+		if user_info.UserStatus != "" && user_info.UserStatus != user_info_found.UserStatus {
+			state = &user_info.UserStatus
+			isDirty = true
+		} else if verified != user_info_found.Verified {
+			newState := "active"
+			if !verified {
+				newState = "inactive"
+			}
+			state = &newState
+			isDirty = true
+		}
+
+		if !isDirty {
+			logger.Info("No changes for user", "email", user_info.Email)
+			e.user_info = user_info_found
+			return e.user_info, nil
+		}
+
+		// Perform update via Kratos
+		if KratosUpdateIdentityFunc == nil {
+			logger.Error("KratosUpdateIdentityFunc not initialized")
+			return nil, fmt.Errorf("Kratos functions not initialized (SHD_EFC_481)")
+		}
+
+		err := KratosUpdateIdentityFunc(logger, user_info_found.UserId, traits, metadataPublic, state)
+		if err != nil {
+			logger.Error("Failed to update user in Kratos", "email", user_info.Email, "error", err)
+			return nil, fmt.Errorf("failed to update user in Kratos (SHD_EFC_481): %w", err)
+		}
+
+		// Re-fetch updated user info
+		updated_user, found := e.GetUserInfoByEmail(user_info.Email)
+		if !found {
+			logger.Error("Failed to fetch updated user", "email", user_info.Email)
+			return nil, fmt.Errorf("failed to fetch updated user (SHD_EFC_482)")
+		}
+
+		e.user_info = updated_user
+		logger.Info("Updated user in Kratos", "email", user_info.Email, "identity_id", updated_user.UserId)
+		return e.user_info, nil
+	}
+
+	// Original implementation for non-Kratos mode
 	var is_dirty bool = false
 	if need_read {
 		// Check if user exists
