@@ -453,9 +453,11 @@ type RequestContext interface {
 	QueryParam(key string) string
 	GetUserInfoByEmail(email string) (*UserInfo, bool)
 	GetUserInfoByToken(token string) (*UserInfo, bool)
+	GetUserInfoByAppToken(token_name string, token string) (*UserInfo, bool)
 	GetUserInfoByUserID(user_id string) (*UserInfo, bool)
 	MarkUserVerified(email string) error
 	UpdateTokenByEmail(email string, token string) error
+	UpdateAppTokenByEmail(email string, token_name string, token string) error
 	VerifyUserPassword(userInfo *UserInfo, plaintextPassword string) (bool, int, string)
 	UpdatePassword(email string, plaintextPassword string) (bool, int, string)
 	SendHTMLResp(html_str string) error

@@ -115,6 +115,21 @@ GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
 GOOGLE_OAUTH_REDIRECT_URL=http://localhost:8080/auth/google/callback
 ```
 
+**Configure Google**
+You need to add Authorized redirect URIs to Google, use this link:
+```url
+https://console.cloud.google.com/auth/clients
+```
+
+Normally, you need to add:
+```text
+http://localhost:4433/self-service/methods/oidc/callback/google
+https://www.miraitaxcpa.com/auth/google/callback
+https://miraitaxcpa.com/auth/google/callback
+http://localhost:8080/auth/google/callback
+http://localhost:5173/api/auth/callback/google
+```
+
 **File: `ChenWeb/mise.local.toml`** (local overrides):
 
 ```toml

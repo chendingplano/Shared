@@ -119,3 +119,7 @@ type RscType string
 const (
 	RscType_Table RscType = "table"
 )
+
+const (
+	AppTokenName_Invite = "token_invite"
+)
