@@ -2312,6 +2312,176 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 	})
 }
 
+// HandleVerificationFlowKratos proxies the GET request to fetch a Kratos
+// verification flow's state. The frontend sends the flow ID as a query param;
+// this handler fetches the flow from Kratos server-side and returns it.
+func HandleVerificationFlowKratos(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_0214150001")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
+	flowID := c.QueryParam("id")
+	if flowID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Missing flow ID",
+			"loc":     "SHD_0214150002",
+		})
+	}
+
+	if kratosClient == nil {
+		InitKratosClient()
+	}
+
+	// Fetch the verification flow from Kratos Public API
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	kratosURL := fmt.Sprintf("%s/self-service/verification/flows?id=%s",
+		kratosClient.publicURL, url.QueryEscape(flowID))
+	req, err := http.NewRequestWithContext(ctx, "GET", kratosURL, nil)
+	if err != nil {
+		logger.Error("Failed to create Kratos request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214150003",
+		})
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to fetch verification flow from Kratos", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214150004",
+		})
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// Pass through the Kratos response status and body
+	c.Response().Header().Set("Content-Type", "application/json")
+	return c.JSONBlob(resp.StatusCode, body)
+}
+
+// HandleVerificationSubmitKratos proxies the POST request to submit a
+// verification code to Kratos. The frontend sends the flow ID and code;
+// this handler forwards it to Kratos server-side.
+func HandleVerificationSubmitKratos(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_0214150005")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
+	// SECURITY: Validate request origin to prevent CSRF attacks
+	if !IsSafeOrigin(c) {
+		logger.Warn("CSRF protection: rejected cross-origin request",
+			"origin", c.Request().Header.Get("Origin"),
+			"referer", c.Request().Header.Get("Referer"))
+		return c.JSON(http.StatusForbidden, map[string]string{
+			"status":  "error",
+			"message": "Invalid request origin",
+			"loc":     "SHD_0214150006",
+		})
+	}
+
+	var reqBody struct {
+		FlowID string `json:"flow_id"`
+		Code   string `json:"code"`
+	}
+	if err := c.Bind(&reqBody); err != nil {
+		logger.Error("Invalid request body", "error", err)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Invalid request body",
+			"loc":     "SHD_0214150007",
+		})
+	}
+
+	if reqBody.FlowID == "" || reqBody.Code == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Flow ID and code are required",
+			"loc":     "SHD_0214150008",
+		})
+	}
+
+	if kratosClient == nil {
+		InitKratosClient()
+	}
+
+	// Submit the verification code to Kratos Public API
+	ctx := context.Background()
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+		// Don't follow redirects — Kratos returns 303 on success
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	kratosURL := fmt.Sprintf("%s/self-service/verification?flow=%s",
+		kratosClient.publicURL, url.QueryEscape(reqBody.FlowID))
+
+	jsonBody, _ := json.Marshal(map[string]string{
+		"code":   reqBody.Code,
+		"method": "code",
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", kratosURL, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		logger.Error("Failed to create Kratos request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214150009",
+		})
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to submit verification to Kratos", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214150010",
+		})
+	}
+	defer resp.Body.Close()
+
+	// Kratos returns 303 redirect on success
+	if resp.StatusCode == http.StatusSeeOther {
+		logger.Info("Verification successful (Kratos 303 redirect)")
+		return c.JSON(http.StatusOK, map[string]string{
+			"status": "verified",
+			"state":  "passed_challenge",
+		})
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// Check if the response indicates success
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err == nil {
+		if state, ok := result["state"].(string); ok && state == "passed_challenge" {
+			logger.Info("Verification successful")
+			return c.JSON(http.StatusOK, map[string]string{
+				"status": "verified",
+				"state":  "passed_challenge",
+			})
+		}
+	}
+
+	// Pass through the Kratos response (includes error messages)
+	c.Response().Header().Set("Content-Type", "application/json")
+	return c.JSONBlob(resp.StatusCode, body)
+}
+
 // ============================================================
 // Kratos Admin API Helpers for User Management
 // ============================================================

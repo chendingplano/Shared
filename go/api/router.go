@@ -88,6 +88,16 @@ func RegisterRoutes(e *echo.Echo) {
 		e.POST("/auth/totp/verify", func(c echo.Context) error {
 			return auth.HandleTOTPVerifyKratos(c)
 		})
+
+		// Register email verification proxy endpoints (Kratos verification flows)
+		logger.Info("Register /auth/verification/flow route (Kratos)")
+		e.GET("/auth/verification/flow", func(c echo.Context) error {
+			return auth.HandleVerificationFlowKratos(c)
+		})
+		logger.Info("Register /auth/verification route (Kratos)")
+		e.POST("/auth/verification", func(c echo.Context) error {
+			return auth.HandleVerificationSubmitKratos(c)
+		})
 	}
 
 	logger.Info("Register /auth/email/signup route", "use_kratos", useKratos)
