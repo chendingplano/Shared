@@ -122,8 +122,9 @@ Replace sysdatastores.GetUserInfoByUserID(rc, userID) → auth.KratosGetIdentity
 ### 4c. HandleGetAdminUsers (users_handler.go:15)
 Replace sysdatastores.GetAllAdmins(rc, isAdmin):
 
-Call auth.KratosListAllIdentities(logger)
-Filter by user.Admin == isAdmin
+- Call auth.KratosListAllIdentities(logger)
+- Filter by user.Admin == isAdmin
+
 Consultant filtering logic (appdatastores.GetAllConsultantUserIDs) unchanged
 
 ### 4d. HandleToggleAdmin (user_management_handlers.go:49)
