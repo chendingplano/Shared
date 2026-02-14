@@ -60,7 +60,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			// It is an API call. It should block the call since the requested
 			// is not a static asset, which means it requires login to access the asset,
 			// and the user is not logged in. Reject it.
-			logger.Error("Not an HTML Request, not authenicated, unauthorized", "error", err, "path", path)
+			logger.Error("Not an HTML Request, not authenticated, unauthorized", "error", err, "path", path)
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"error": "Authentication required",
 			})
@@ -70,7 +70,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user_name := user_info.UserName
 		ctx = context.WithValue(c.Request().Context(), ApiTypes.UserContextKey, user_name)
 		c.SetRequest(c.Request().WithContext(ctx))
-		logger.Info("User authenicated, proceed", "path", path)
+		logger.Info("User authenticated, proceed", "path", path)
 		return next(c)
 	}
 }
