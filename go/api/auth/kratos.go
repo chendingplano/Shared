@@ -882,11 +882,12 @@ type KratosSignupName struct {
 
 // KratosSignupResponse represents the signup response
 type KratosSignupResponse struct {
-	Status      string                 `json:"status"`
-	Message     string                 `json:"message,omitempty"`
-	RedirectURL string                 `json:"redirect_url,omitempty"`
-	Session     map[string]interface{} `json:"session,omitempty"`
-	LOC         string                 `json:"loc"`
+	Status             string                 `json:"status"`
+	Message            string                 `json:"message,omitempty"`
+	RedirectURL        string                 `json:"redirect_url,omitempty"`
+	Session            map[string]interface{} `json:"session,omitempty"`
+	VerificationFlowID string                 `json:"verification_flow_id,omitempty"`
+	LOC                string                 `json:"loc"`
 }
 
 // HandleEmailSignupKratos handles email/password registration via Ory Kratos.
@@ -1240,11 +1241,22 @@ func HandleEmailSignupKratosBase(
 
 		redirectURL := GetRedirectURL(rc, email, isAdmin, false)
 
+		// Extract verification flow ID from Kratos continue_with
+		var verificationFlowID string
+		for _, cw := range successfulReg.ContinueWith {
+			if cw.ContinueWithVerificationUi != nil {
+				verificationFlowID = cw.ContinueWithVerificationUi.Flow.Id
+				logger.Info("Verification flow ID extracted", "flow_id", verificationFlowID)
+				break
+			}
+		}
+
 		return http.StatusOK, KratosSignupResponse{
-			Status:      "ok",
-			Message:     "Registration successful",
-			RedirectURL: redirectURL,
-			LOC:         "SHD_0211103021",
+			Status:             "ok",
+			Message:            "Registration successful",
+			RedirectURL:        redirectURL,
+			VerificationFlowID: verificationFlowID,
+			LOC:                "SHD_0211103021",
 			Session: map[string]interface{}{
 				"id":               session.Id,
 				"active":           session.Active,
