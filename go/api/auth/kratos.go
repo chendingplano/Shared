@@ -40,15 +40,33 @@ var kratosClient *KratosClient
 
 // InitKratosClient initializes the global Kratos client.
 // Call this during application startup.
-func InitKratosClient(kratosPublicURL string) {
+func InitKratosClient() {
+	kratosPublicURL := os.Getenv("KRATOS_PUBLIC_URL")
+	err_msg := ""
+	if kratosPublicURL == "" {
+		err_msg = "missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433"
+		kratosPublicURL = "http://localhost:4433"
+	}
+
 	config := ory.NewConfiguration()
 	logger := loggerutil.CreateDefaultLogger("SHD_0207142900")
+	if err_msg != "" {
+		logger.Error(err_msg)
+	}
+
 	config.Servers = ory.ServerConfigurations{{URL: kratosPublicURL}}
 	kratosClient = &KratosClient{
 		client:    ory.NewAPIClient(config),
 		publicURL: kratosPublicURL,
 		logger:    logger,
 	}
+
+	EchoFactory.GetUserInfoByUserIDFunc = KratosGetIdentityByID
+	EchoFactory.GetUserInfoByEmailFunc = KratosGetIdentityByEmail
+	EchoFactory.KratosMarkUserVerifiedFunc = KratosMarkUserVerified
+	EchoFactory.KratosUpdateIdentityFunc = KratosUpdateIdentityWrapper
+	EchoFactory.UpdateAppTokenByEmailFunc = UpdateAppTokenByEmail
+	EchoFactory.GetUserInfoByAppTokenFunc = KratosGetUserInfoByAppToken
 }
 
 // GetKratosClient returns the global Kratos client.
@@ -196,12 +214,7 @@ func HandleEmailLoginKratosBase(
 	logger.Info("HandleEmailLoginKratos called")
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	// Parse request
@@ -662,12 +675,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 	logger := rc.GetLogger()
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	// Validate session with Kratos
@@ -749,12 +757,7 @@ func HandleLogoutKratos(c echo.Context) error {
 	logger := rc.GetLogger()
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	ctx := context.Background()
@@ -832,11 +835,7 @@ func getMapKeys(m map[string]interface{}) []string {
 func KratosAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if kratosClient == nil {
-			kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-			if kratosURL == "" {
-				kratosURL = "http://localhost:4433"
-			}
-			InitKratosClient(kratosURL)
+			InitKratosClient()
 		}
 
 		session, err := kratosClient.ValidateSession(c)
@@ -939,12 +938,7 @@ func HandleEmailSignupKratosBase(
 	logger.Info("HandleEmailSignupKratos called")
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	// Parse request - support both Kratos format and legacy format
@@ -1306,12 +1300,7 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 	logger := rc.GetLogger()
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	session, err := kratosClient.ValidateSession(c)
@@ -1384,12 +1373,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	logger := rc.GetLogger()
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	req := rc.GetRequest()
@@ -1745,11 +1729,7 @@ func HandleForgotPasswordKratos(c echo.Context) error {
 	successMsg := "If an account exists with this email, a password reset link has been sent."
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	// Look up identity in Kratos by email via Admin API
@@ -2121,12 +2101,7 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 	}
 
 	if kratosClient == nil {
-		kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
-		if kratosURL == "" {
-			logger.Error("missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433")
-			kratosURL = "http://localhost:4433"
-		}
-		InitKratosClient(kratosURL)
+		InitKratosClient()
 	}
 
 	// Parse the TOTP code from request
@@ -2496,6 +2471,177 @@ func KratosGetIdentityByID(logger ApiTypes.JimoLogger, identityID string) (*ApiT
 	return userInfo, nil
 }
 
+// KratosGetIdentityByEmail fetches a single Kratos identity by email via the Admin API
+// and returns it as *ApiTypes.UserInfo.
+// Uses credentials_identifier query parameter to search by email.
+func KratosGetIdentityByEmail(logger ApiTypes.JimoLogger, email string) (*ApiTypes.UserInfo, error) {
+	adminURL := getKratosAdminURL()
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	reqURL := fmt.Sprintf("%s/admin/identities?credentials_identifier=%s", adminURL, url.QueryEscape(email))
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		logger.Error("Failed to create get identity by email request", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to create request (SHD_KAH_015): %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to get identity by email from Kratos", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to get identity by email (SHD_KAH_016): %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API error getting identity by email",
+			"status", resp.StatusCode, "body", string(body), "email", email)
+		return nil, fmt.Errorf("kratos error getting identity by email (SHD_KAH_017): status %d", resp.StatusCode)
+	}
+
+	var identities []map[string]interface{}
+	if err := json.Unmarshal(body, &identities); err != nil {
+		logger.Error("Failed to parse identities response", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to parse identities (SHD_KAH_018): %w", err)
+	}
+
+	if len(identities) == 0 {
+		logger.Warn("No identity found for email", "email", email)
+		return nil, fmt.Errorf("identity not found for email (SHD_KAH_019): %s", email)
+	}
+
+	// Return first match (email should be unique)
+	userInfo := KratosIdentityToUserInfo(identities[0])
+	logger.Info("Fetched Kratos identity by email", "email", email, "identity_id", userInfo.UserId)
+	return userInfo, nil
+}
+
+// KratosGetUserInfoByAppToken fetches all Kratos identities that have a matching app token
+// in their metadata_public field and returns them as []*ApiTypes.UserInfo.
+// App tokens are stored in metadata_public as {"token_name": "token_value"} pairs.
+// This function matches both the token name AND the token value.
+// One token may match multiple users.
+func KratosGetUserInfoByAppToken(
+	logger ApiTypes.JimoLogger,
+	token_name string,
+	token string) ([]*ApiTypes.UserInfo, error) {
+	adminURL := getKratosAdminURL()
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+
+	// Step 1: List all identities
+	reqURL := fmt.Sprintf("%s/admin/identities?per_page=1000", adminURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		logger.Error("Failed to create list identities request for app token search", "error", err, "token_name", token_name)
+		return nil, fmt.Errorf("failed to create request (SHD_KAH_050): %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to list identities for app token search", "error", err, "token_name", token_name)
+		return nil, fmt.Errorf("failed to list identities (SHD_KAH_051): %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API error listing identities for app token",
+			"status", resp.StatusCode, "body", string(body), "token_name", token_name)
+		return nil, fmt.Errorf("kratos error listing identities (SHD_KAH_052): status %d", resp.StatusCode)
+	}
+
+	var identities []map[string]interface{}
+	if err := json.Unmarshal(body, &identities); err != nil {
+		logger.Error("Failed to parse identities response for app token search", "error", err, "token_name", token_name)
+		return nil, fmt.Errorf("failed to parse identities (SHD_KAH_053): %w", err)
+	}
+
+	// Step 2: Filter identities that have the matching app token name AND value in metadata_public
+	matchedUsers := make([]*ApiTypes.UserInfo, 0)
+	for _, identity := range identities {
+		if metadataPublic, ok := identity["metadata_public"].(map[string]interface{}); ok {
+			// Check if the token_name exists in metadata_public
+			if tokenValue, exists := metadataPublic[token_name]; exists && tokenValue != nil {
+				// Convert token value to string and check if it matches the provided token
+				if tokenStr, ok := tokenValue.(string); ok && tokenStr == token {
+					userInfo := KratosIdentityToUserInfo(identity)
+					matchedUsers = append(matchedUsers, userInfo)
+					logger.Info("Found identity with matching app token",
+						"identity_id", userInfo.UserId, "email", userInfo.Email, "token_name", token_name)
+				}
+			}
+		}
+	}
+
+	if len(matchedUsers) == 0 {
+		logger.Warn("No identities found with matching app token", "token_name", token_name)
+		return []*ApiTypes.UserInfo{}, nil // Return empty array instead of error
+	}
+
+	logger.Info("Found identities with matching app token", "token_name", token_name, "count", len(matchedUsers))
+	return matchedUsers, nil
+}
+
+// UpdateAppTokenByEmail updates or deletes an app token for a user identified by email.
+// App tokens are stored in metadata_public as {"token_name": "xxx", "token": "xxx"}.
+// If token is empty, the app token identified by tokenName is deleted.
+// Returns an error if the user is not found or the update fails.
+func UpdateAppTokenByEmail(logger ApiTypes.JimoLogger, email string, tokenName string, token string) error {
+	// Step 1: Get the identity by email to retrieve the identity ID
+	userInfo, err := KratosGetIdentityByEmail(logger, email)
+	if err != nil {
+		logger.Error("Failed to get identity by email for app token update",
+			"error", err, "email", email, "token_name", tokenName)
+		return fmt.Errorf("failed to get identity by email (SHD_KAH_040): %w", err)
+	}
+
+	// Step 2: Get the raw identity to access metadata_public
+	rawIdentity, err := kratosGetRawIdentity(userInfo.UserId)
+	if err != nil {
+		logger.Error("Failed to get raw identity for app token update",
+			"error", err, "identity_id", userInfo.UserId, "token_name", tokenName)
+		return fmt.Errorf("failed to get raw identity (SHD_KAH_041): %w", err)
+	}
+
+	// Step 3: Extract existing metadata_public
+	metadataPublic := make(map[string]interface{})
+	if mp, ok := rawIdentity["metadata_public"].(map[string]interface{}); ok {
+		// Copy existing metadata_public
+		for k, v := range mp {
+			metadataPublic[k] = v
+		}
+	}
+
+	// Step 4: Update or delete the app token
+	if token == "" {
+		// Delete the app token if token is empty
+		delete(metadataPublic, tokenName)
+		logger.Info("Deleting app token from metadata_public",
+			"email", email, "identity_id", userInfo.UserId, "token_name", tokenName)
+	} else {
+		// Update or add the app token
+		metadataPublic[tokenName] = token
+		logger.Info("Updating app token in metadata_public",
+			"email", email, "identity_id", userInfo.UserId, "token_name", tokenName)
+	}
+
+	// Step 5: Update the identity using KratosUpdateIdentityWrapper
+	err = KratosUpdateIdentityWrapper(logger, userInfo.UserId, nil, metadataPublic, nil)
+	if err != nil {
+		logger.Error("Failed to update identity with app token",
+			"error", err, "identity_id", userInfo.UserId, "token_name", tokenName)
+		return fmt.Errorf("failed to update identity with app token (SHD_KAH_042): %w", err)
+	}
+
+	logger.Info("Successfully updated app token",
+		"email", email, "identity_id", userInfo.UserId, "token_name", tokenName, "is_delete", token == "")
+	return nil
+}
+
 // kratosGetRawIdentity fetches the raw JSON identity from Kratos Admin API.
 // Used internally by KratosUpdateIdentity for the GET-then-PUT pattern.
 func kratosGetRawIdentity(identityID string) (map[string]interface{}, error) {
@@ -2662,4 +2808,53 @@ func KratosDeleteIdentitySessions(logger ApiTypes.JimoLogger, identityID string)
 
 	logger.Info("Deleted all sessions for identity", "identity_id", identityID)
 	return nil
+}
+
+// KratosMarkUserVerified marks a user as verified by setting their identity state to "active".
+// This is used for admin override or manual verification.
+// With Kratos, email verification is normally handled by Kratos flows automatically.
+func KratosMarkUserVerified(logger ApiTypes.JimoLogger, email string) error {
+	// Get identity by email to find the identity ID
+	userInfo, err := KratosGetIdentityByEmail(logger, email)
+	if err != nil {
+		logger.Error("Failed to get user by email for verification", "email", email, "error", err)
+		return fmt.Errorf("failed to get user for verification (SHD_KAH_050): %w", err)
+	}
+
+	// Update identity state to "active"
+	activeState := "active"
+	err = KratosUpdateIdentity(logger, userInfo.UserId, KratosIdentityUpdate{
+		State: &activeState,
+	})
+	if err != nil {
+		logger.Error("Failed to mark user verified in Kratos", "email", email, "identity_id", userInfo.UserId, "error", err)
+		return fmt.Errorf("failed to mark user verified (SHD_KAH_051): %w", err)
+	}
+
+	logger.Info("Marked user verified in Kratos", "email", email, "identity_id", userInfo.UserId)
+	return nil
+}
+
+// KratosUpdateIdentityWrapper is a wrapper for KratosUpdateIdentity that matches the function pointer signature
+// used in EchoFactory to avoid import cycles.
+func KratosUpdateIdentityWrapper(
+	logger ApiTypes.JimoLogger,
+	identityID string,
+	traits map[string]interface{},
+	metadataPublic map[string]interface{},
+	state *string) error {
+
+	update := KratosIdentityUpdate{}
+
+	if len(traits) > 0 {
+		update.Traits = traits
+	}
+	if len(metadataPublic) > 0 {
+		update.MetadataPublic = metadataPublic
+	}
+	if state != nil {
+		update.State = state
+	}
+
+	return KratosUpdateIdentity(logger, identityID, update)
 }
