@@ -62,7 +62,10 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 		ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog,
 		db)
 
-	// 1. Upsert the activity_log id record
+	// 1. InitKratosClient
+	auth.InitKratosClient()
+
+	// 2. Upsert the activity_log id record
 	rc := EchoFactory.NewRCAsAdmin("SHD_LMG_089")
 	defer rc.Close()
 	err := sysdatastores.UpsertActivityLogIDDef(rc)
@@ -71,10 +74,10 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 		os.Exit(1)
 	}
 
-	// 2. Init SessionLog
+	// 3. Init SessionLog
 	sysdatastores.InitSessionLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
 
-	// 3. Init the icon service
+	// 4. Init the icon service
 	icons.InitIconService(admin_rc)
 }
 

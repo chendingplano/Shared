@@ -718,3 +718,26 @@ func GetSafeSubObj(mapObj map[string]interface{}, key string) (map[string]interf
 		return nil, false
 	}
 }
+
+func MaskString(s string, prefixLen, suffixLen int, maskChar rune) string {
+	if s == "" || prefixLen < 0 || suffixLen < 0 {
+		return s
+	}
+
+	runes := []rune(s)
+	totalLen := len(runes)
+
+	// If string is too short to mask, return original
+	if totalLen <= prefixLen+suffixLen {
+		return s
+	}
+
+	prefix := string(runes[:prefixLen])
+	suffix := string(runes[totalLen-suffixLen:])
+	maskCount := totalLen - prefixLen - suffixLen
+
+	// Build mask efficiently
+	mask := strings.Repeat(string(maskChar), maskCount)
+
+	return prefix + mask + suffix
+}

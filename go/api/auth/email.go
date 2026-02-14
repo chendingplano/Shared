@@ -964,16 +964,6 @@ func HandleForgotPassword(c echo.Context) error {
 	return nil
 }
 
-/*
-func HandleForgotPasswordPocket(p *core.RequestEvent) error {
-	rc := RequestHandlers.NewFromPocket(p)
-	reqID := rc.ReqID()
-	status_code, resp := HandleForgotPasswordBase(rc, reqID)
-	p.JSON(status_code, resp)
-	return nil
-}
-*/
-
 func HandleForgotPasswordBase(
 	rc ApiTypes.RequestContext,
 	reqID string) (int, map[string]string) {
@@ -1063,6 +1053,7 @@ func HandleForgotPasswordBase(
 		}
 	}
 
+	// Will report errors if authentication is managed by Kratos!
 	token := uuid.NewString()
 	rc.UpdateTokenByEmail(req.Email, token)
 
