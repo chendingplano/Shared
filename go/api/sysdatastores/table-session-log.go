@@ -94,12 +94,31 @@ func CreateSessionLogTable(
 		return err1
 	}
 
-	if db_type == ApiTypes.PgName {
+	// Ensure columns added after initial table creation exist (safe for both new and existing tables).
+	switch db_type {
+	case ApiTypes.PgName:
+		alterStmts := []string{
+			`ALTER TABLE ` + table_name + ` ADD COLUMN IF NOT EXISTS auth_token VARCHAR(64) NOT NULL DEFAULT ''`,
+		}
+		for _, s := range alterStmts {
+			if err := databaseutil.ExecuteStatement(db, s); err != nil {
+				logger.Warn("ALTER TABLE warning (non-fatal)", "stmt", s, "error", err)
+			}
+		}
+
 		idx1 := `CREATE INDEX IF NOT EXISTS idx_expires ON ` + table_name + ` (expires_at);`
 		databaseutil.ExecuteStatement(db, idx1)
 
 		idx2 := `CREATE INDEX IF NOT EXISTS idx_session_id ON ` + table_name + ` (session_id);`
 		databaseutil.ExecuteStatement(db, idx2)
+
+	case ApiTypes.MysqlName:
+		// MySQL doesn't support ADD COLUMN IF NOT EXISTS natively; use a procedure-style workaround.
+		alterStmt := `ALTER TABLE ` + table_name + ` ADD COLUMN auth_token VARCHAR(64) NOT NULL DEFAULT ''`
+		if err := databaseutil.ExecuteStatement(db, alterStmt); err != nil {
+			// "Duplicate column name" error is expected if column already exists — ignore it.
+			logger.Info("ALTER TABLE auth_token (may already exist)", "error", err)
+		}
 	}
 
 	logger.Info("Create table success", "table_name", table_name)
