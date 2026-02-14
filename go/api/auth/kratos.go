@@ -64,6 +64,7 @@ func InitKratosClient() {
 	EchoFactory.GetUserInfoByUserIDFunc = KratosGetIdentityByID
 	EchoFactory.GetUserInfoByEmailFunc = KratosGetIdentityByEmail
 	EchoFactory.KratosMarkUserVerifiedFunc = KratosMarkUserVerified
+	EchoFactory.KratosUpdatePasswordFunc = KratosUpdatePassword
 	EchoFactory.KratosUpdateIdentityFunc = KratosUpdateIdentityWrapper
 	EchoFactory.UpdateAppTokenByEmailFunc = UpdateAppTokenByEmail
 	EchoFactory.GetUserInfoByAppTokenFunc = KratosGetUserInfoByAppToken
@@ -3014,6 +3015,126 @@ func KratosMarkUserVerified(logger ApiTypes.JimoLogger, email string) error {
 	}
 
 	logger.Info("Marked user verified in Kratos", "email", email, "identity_id", userInfo.UserId)
+	return nil
+}
+
+// KratosUpdatePassword updates a user's password in Kratos via the Admin API.
+// This function:
+//  1. Gets the identity by email
+//  2. Fetches the current identity from Kratos
+//  3. Updates the password via the credentials field
+//
+// Note: Password updates require the credentials field to be set, which is
+// separate from the traits/metadata updates handled by KratosUpdateIdentity.
+func KratosUpdatePassword(logger ApiTypes.JimoLogger, email string, plaintextPassword string) error {
+	// Step 1: Get identity by email to find the identity ID
+	userInfo, err := KratosGetIdentityByEmail(logger, email)
+	if err != nil {
+		logger.Error("Failed to get user by email for password update", "email", email, "error", err)
+		return fmt.Errorf("failed to get user for password update (SHD_KAH_060): %w", err)
+	}
+
+	identityID := userInfo.UserId
+
+	// Step 2: Fetch current identity to preserve all fields
+	adminURL := getKratosAdminURL()
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	getReq, err := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID), nil)
+	if err != nil {
+		logger.Error("Failed to create get identity request", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to create get request (SHD_KAH_061): %w", err)
+	}
+	getReq.Header.Set("Accept", "application/json")
+
+	getResp, err := httpClient.Do(getReq)
+	if err != nil {
+		logger.Error("Failed to fetch identity from Kratos", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to fetch identity (SHD_KAH_062): %w", err)
+	}
+	defer getResp.Body.Close()
+
+	getBody, _ := io.ReadAll(getResp.Body)
+	if getResp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API error fetching identity",
+			"status", getResp.StatusCode, "body", string(getBody), "identity_id", identityID)
+		return fmt.Errorf("kratos error fetching identity (SHD_KAH_063): status %d", getResp.StatusCode)
+	}
+
+	var currentIdentity map[string]interface{}
+	if err := json.Unmarshal(getBody, &currentIdentity); err != nil {
+		logger.Error("Failed to parse identity", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to parse identity (SHD_KAH_064): %w", err)
+	}
+
+	// Step 3: Update the identity with the new password
+	updateBody := map[string]interface{}{
+		"schema_id": currentIdentity["schema_id"],
+		"state":     "active",
+		"traits":    currentIdentity["traits"],
+		"credentials": map[string]interface{}{
+			"password": map[string]interface{}{
+				"config": map[string]interface{}{
+					"password": plaintextPassword,
+				},
+			},
+		},
+	}
+
+	// Preserve metadata_public if present
+	if mp, ok := currentIdentity["metadata_public"]; ok && mp != nil {
+		updateBody["metadata_public"] = mp
+	}
+	// Preserve metadata_admin if present
+	if ma, ok := currentIdentity["metadata_admin"]; ok && ma != nil {
+		updateBody["metadata_admin"] = ma
+	}
+
+	updateJSON, err := json.Marshal(updateBody)
+	if err != nil {
+		logger.Error("Failed to marshal update body", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to marshal update (SHD_KAH_065): %w", err)
+	}
+
+	putReq, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID),
+		strings.NewReader(string(updateJSON)))
+	if err != nil {
+		logger.Error("Failed to create update request", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to create update request (SHD_KAH_066): %w", err)
+	}
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("Accept", "application/json")
+
+	putResp, err := httpClient.Do(putReq)
+	if err != nil {
+		logger.Error("Failed to update password in Kratos", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to update password (SHD_KAH_067): %w", err)
+	}
+	defer putResp.Body.Close()
+
+	putBody, _ := io.ReadAll(putResp.Body)
+	if putResp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API error updating password",
+			"status", putResp.StatusCode, "body", string(putBody), "identity_id", identityID)
+		return fmt.Errorf("kratos error updating password (SHD_KAH_068): status %d, body: %s",
+			putResp.StatusCode, string(putBody))
+	}
+
+	logger.Info("Password updated successfully in Kratos",
+		"email", email, "identity_id", identityID)
+
+	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_Success,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg:  func() *string { s := fmt.Sprintf("Kratos password update success, email:%s", email); return &s }(),
+		CallerLoc:    "SHD_KAH_069",
+	})
+
 	return nil
 }
 

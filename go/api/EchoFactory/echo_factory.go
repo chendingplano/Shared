@@ -53,6 +53,12 @@ type KratosMarkUserVerifiedFuncDef func(logger ApiTypes.JimoLogger, email string
 
 var KratosMarkUserVerifiedFunc KratosMarkUserVerifiedFuncDef
 
+// KratosUpdatePasswordFunc should be set by kratos.go to break compile-time circular imports!!!
+// This function updates a user's password in Kratos
+type KratosUpdatePasswordFuncDef func(logger ApiTypes.JimoLogger, email string, plaintextPassword string) error
+
+var KratosUpdatePasswordFunc KratosUpdatePasswordFuncDef
+
 // KratosUpdateIdentityFunc should be set by kratos.go to break compile-time circular imports!!!
 // This function updates a Kratos identity's traits, metadata_public, and state
 type KratosUpdateIdentityFuncDef func(
@@ -233,21 +239,24 @@ func (e *echoContext) UpdatePassword(
 	email string,
 	plaintextPassword string) (bool, int, string) {
 
-	// With Kratos, password updates are handled through recovery/settings flows,
-	// not direct API calls. Use HandleResetPasswordConfirmKratos instead.
+	var err error
 	if os.Getenv("AUTH_USE_KRATOS") == "true" {
-		error_msg := "Direct password updates not supported with Kratos - use recovery flow (HandleResetPasswordConfirmKratos) (SHD_EFC_194)"
-		e.logger.Error("UpdatePassword called with Kratos enabled", "email", email)
+		err = KratosUpdatePasswordFunc(e.logger, email, plaintextPassword)
+		if err != nil {
+			error_msg := fmt.Sprintf("failed to update password in Kratos, email:%s, err:%v", email, err)
+			e.logger.Error("failed to update password in Kratos", "email", email, "error", err)
 
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg:  &error_msg,
-			CallerLoc:    "SHD_EFC_194"})
+			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+				ActivityName: ApiTypes.ActivityName_Auth,
+				ActivityType: ApiTypes.ActivityType_PasswordUpdateFailure,
+				AppName:      ApiTypes.AppName_Auth,
+				ModuleName:   ApiTypes.ModuleName_EmailAuth,
+				ActivityMsg:  &error_msg,
+				CallerLoc:    "SHD_EFC_248"})
 
-		return false, http.StatusBadRequest, error_msg
+			return false, http.StatusInternalServerError, error_msg
+		}
+		return true, 0, ""
 	}
 
 	// Hash password
@@ -362,10 +371,9 @@ func (e *echoContext) GetUserInfoByToken(token string) (*ApiTypes.UserInfo, bool
 	// This function is only used in non-Kratos flows (e.g., portal invites with old auth).
 	// If needed with Kratos, tokens should be stored in identity metadata_public.
 	if os.Getenv("AUTH_USE_KRATOS") == "true" {
-		e.logger.Warn("GetUserInfoByToken called with Kratos enabled - VTokens managed by Kratos flows",
+		e.logger.Error("GetUserInfoByToken called with Kratos enabled - Tokens managed by Kratos flows",
 			"token", ApiUtils.MaskToken(token))
-		// For now, fall through to old implementation for backwards compatibility
-		// TODO: Migrate portal invites to use Kratos-managed tokens
+		return nil, false
 	}
 
 	user_info, err := sysdatastores.GetUserInfoByToken(e, token)
@@ -502,12 +510,10 @@ func (e *echoContext) SaveSession(
 	// Kratos maintains its own session store and provides session management APIs.
 	// We don't need to save sessions to our database for Kratos-based authentication.
 	if os.Getenv("AUTH_USE_KRATOS") == "true" {
-		e.logger.Info("SaveSession called with Kratos enabled - sessions managed by Kratos",
+		e.logger.Error("SaveSession called with Kratos enabled - sessions managed by Kratos",
 			"login_method", login_method,
 			"user_email", user_email)
-		// Sessions are managed by Kratos - no need to save in our database
-		// If you need audit logging of logins, consider adding activity logs instead
-		return nil
+		// Fall back to sysdatastores.SaveSession(...)
 	}
 
 	return sysdatastores.SaveSession(e, login_method, session_id, auth_token,

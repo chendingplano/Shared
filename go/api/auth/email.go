@@ -1160,9 +1160,9 @@ type ResetConfirmRequest struct {
 }
 
 func HandleResetPasswordConfirm(c echo.Context) error {
-	log.Printf("Handle reset password confirm (SHD_EML_820)")
 	rc := EchoFactory.NewFromEcho(c, "SHD_EML_859")
 	logger := rc.GetLogger()
+	logger.Info("Handle reset password confirm")
 
 	// SECURITY: Validate request origin to prevent CSRF attacks
 	if !IsSafeOrigin(c) {
@@ -1183,50 +1183,9 @@ func HandleResetPasswordConfirm(c echo.Context) error {
 	return nil
 }
 
-/*
-func HandleResetPasswordConfirmPocket(e *core.RequestEvent) error {
-	log.Printf("Handle Reset Password Confirm (SHD_EML_827)")
-	rc := RequestHandlers.NewFromPocket(e)
-	ctx := rc.Context()
-	call_flow := fmt.Sprintf("%s->SHD_EML_838", ctx.Value(ApiTypes.CallFlowKey))
-	new_ctx := context.WithValue(ctx, ApiTypes.CallFlowKey, call_flow)
-
-	// Note that Pocketbase does not offer a way to replace requests
-	// in 'e'. We generally do not need to create a new request, anyway.
-	// In all function calls, always pass 'ctx' instead of letting functions
-	// retrieve ctx (context.Context) from request.
-	status_code, msg := HandleResetPasswordConfirmBase(new_ctx, rc)
-	e.String(status_code, msg)
-	return nil
-}
-*/
-
 func HandleResetPasswordConfirmBase(
 	ctx context.Context,
 	rc ApiTypes.RequestContext) (int, string) {
-
-	// The frontend (routes/reset-password/+page.svelte)
-	// fetches (POST) this endpoint with Token and Password.
-	// It retrieves the Token and Password.
-	/*
-		user_name, ok := rc.Context().Value(ApiTypes.UserContextKey).(string)
-		if !ok {
-			log_id := sysdatastores.NextActivityLogID()
-			error_msg := fmt.Sprintf("internal error (SHD_EML_693), log_id:%d", log_id)
-			log.Printf("[req=%s] ***** Alarm:%s", reqID, error_msg)
-
-			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-				LogID:        log_id,
-				ActivityName: ApiTypes.ActivityName_Auth,
-				ActivityType: ApiTypes.ActivityType_InternalError,
-				AppName:      ApiTypes.AppName_Auth,
-				ModuleName:   ApiTypes.ModuleName_EmailAuth,
-				ActivityMsg:  &error_msg,
-				CallerLoc:    "SHD_EML_703"})
-
-			return http.StatusBadRequest, error_msg
-		}
-	*/
 
 	reqID := rc.ReqID()
 	var req ResetConfirmRequest
