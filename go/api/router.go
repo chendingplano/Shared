@@ -46,10 +46,6 @@ func RegisterRoutes(e *echo.Echo) {
 	e.POST("/auth/email/signup", emailSignup)
 	e.GET("/auth/me", authMe)
 
-	// Email verification (shared across both auth modes)
-	e.POST("/auth/email/verify", auth.HandleEmailVerifyPost)
-	e.GET("/auth/email/verify", auth.HandleEmailVerify)
-
 	// Kratos-only routes
 	if useKratos {
 		e.POST("/auth/logout", auth.HandleLogoutKratos)
