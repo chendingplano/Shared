@@ -461,10 +461,6 @@ func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool
 }
 
 func (e *echoContext) GetUserInfoByUserID(user_id string) (*ApiTypes.UserInfo, bool) {
-	if e.user_info != nil {
-		return e.user_info, true
-	}
-
 	var user_info *ApiTypes.UserInfo
 	var err error
 	if os.Getenv("AUTH_USE_KRATOS") == "true" {
@@ -490,8 +486,7 @@ func (e *echoContext) GetUserInfoByUserID(user_id string) (*ApiTypes.UserInfo, b
 		return nil, false
 	}
 
-	e.user_info = user_info
-	return e.user_info, true
+	return user_info, true
 }
 
 func (e *echoContext) SaveSession(
