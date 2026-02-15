@@ -238,12 +238,6 @@ func CheckSignupRateLimit(ip string) (bool, int, time.Duration) {
 	return signupRateLimiter.Allow(ip)
 }
 
-// CheckPasswordResetRateLimit checks if a password reset attempt is allowed
-func CheckPasswordResetRateLimit(ip string) (bool, int, time.Duration) {
-	initRateLimiters()
-	return passwordResetRateLimiter.Allow(ip)
-}
-
 // GetLoginRateLimiter returns the login rate limiter for middleware use
 func GetLoginRateLimiter() *RateLimiter {
 	initRateLimiters()

@@ -34,9 +34,8 @@ func GenerateSecureToken(length int) string {
 
 // Email type constants for identifying email templates
 const (
-	EmailTypeGeneric       = "generic"        // Default, wrapped in basic layout
-	EmailTypeVerification  = "verification"   // Email verification with CTA button
-	EmailTypePasswordReset = "password_reset" // Password reset with CTA button
+	EmailTypeGeneric      = "generic"      // Default, wrapped in basic layout
+	EmailTypeVerification = "verification" // Email verification with CTA button
 )
 
 // EmailSenderFunc is the signature for custom email sender functions.
@@ -155,34 +154,33 @@ func sendMailSMTP(
 }
 
 func GetRequestInfo(c echo.Context) ApiTypes.RequestInfo {
-	// This function retrieves the following values from URL:
 	req := c.Request()
-	full_url := req.URL.String()
+	fullURL := req.URL.String()
 	path := req.URL.Path
 	scheme := req.URL.Scheme
 	host := req.URL.Host
 
 	// Get original scheme (if proxy sets X-Forwarded-Proto)
 	forwardedProto := req.Header.Get(echo.HeaderXForwardedProto)
-	original_scheme := scheme
+	originalScheme := scheme
 	if forwardedProto != "" {
-		original_scheme = forwardedProto
+		originalScheme = forwardedProto
 	}
 
 	// Get original host (if proxy sets X-Forwarded-Host)
 	forwardedHost := req.Header.Get("X-Forwarded-Host")
-	original_host := host
+	originalHost := host
 	if forwardedHost != "" {
-		original_host = forwardedHost
+		originalHost = forwardedHost
 	}
 
 	return ApiTypes.RequestInfo{
-		FullURL:        full_url,
+		FullURL:        fullURL,
 		PATH:           path,
 		Scheme:         scheme,
 		Host:           host,
-		OriginalScheme: original_scheme,
-		OriginalHost:   original_host,
+		OriginalScheme: originalScheme,
+		OriginalHost:   originalHost,
 	}
 }
 
@@ -199,45 +197,36 @@ func IsDuplicateKeyError(err error) bool {
 	return false
 }
 
-func ConvertToJSON(json_str string) (map[string]interface{}, error) {
+func ConvertToJSON(jsonStr string) (map[string]interface{}, error) {
 	var jsonData map[string]interface{}
-	err := json.Unmarshal([]byte(json_str), &jsonData) // Deserialization: string -> Go object
-	if err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &jsonData); err != nil {
 		return nil, fmt.Errorf("deserialization error: %v", err)
 	}
 	return jsonData, nil
 }
 
+// ConvertToAny deserializes a JSON string into an interface{} and returns the object and its type.
 func ConvertToAny(str string) (interface{}, string, error) {
-	// This function converts 'json_str' to an object of type 'any' (or interface{})
-	// It returns the object, the type.
-	var generic_obj interface{}
-	err := json.Unmarshal([]byte(str), &generic_obj) // Deserialization: string -> Go object
-	if err != nil {
+	var genericObj interface{}
+	if err := json.Unmarshal([]byte(str), &genericObj); err != nil {
 		return nil, "", fmt.Errorf("deserialization error: %v", err)
 	}
 
-	switch generic_obj.(type) {
+	switch genericObj.(type) {
 	case map[string]interface{}:
-		return generic_obj, "map", nil
-
+		return genericObj, "map", nil
 	case []interface{}:
-		return generic_obj, "array", nil
-
+		return genericObj, "array", nil
 	case nil:
-		return generic_obj, "nil", nil
-
+		return genericObj, "nil", nil
 	case bool:
-		return generic_obj, "bool", nil
-
+		return genericObj, "bool", nil
 	case float64:
-		return generic_obj, "float64", nil
-
+		return genericObj, "float64", nil
 	case string:
-		return generic_obj, "string", nil
-
+		return genericObj, "string", nil
 	default:
-		return generic_obj, "error", nil
+		return genericObj, "error", nil
 	}
 }
 
@@ -264,38 +253,35 @@ func IsSecure() bool {
 func GetOAuthRedirectURL(
 	rc ApiTypes.RequestContext,
 	token string,
-	user_name string) string {
+	userName string) string {
 	// Redirect to backend (vite dev server)
 	// This ensures the pb_auth cookie is set on the correct domain
-	home_domain := os.Getenv("APP_BASE_URL")
+	homeDomain := os.Getenv("APP_BASE_URL")
 	logger := rc.GetLogger()
-	if home_domain == "" {
-		error_msg := "missing APP_BASE_URL env var"
-		logger.Error(error_msg)
+	if homeDomain == "" {
+		logger.Error("missing APP_BASE_URL env var")
 	}
 
-	// Ensure home_domain has a scheme (http:// or https://)
-	// APP_BASE_URL should include the scheme, but add legacy support
-	if !strings.HasPrefix(home_domain, "http://") && !strings.HasPrefix(home_domain, "https://") {
-		if strings.HasPrefix(home_domain, "localhost") {
-			home_domain = "http://" + home_domain
+	// Ensure homeDomain has a scheme — APP_BASE_URL should include it, but add legacy support
+	if !strings.HasPrefix(homeDomain, "http://") && !strings.HasPrefix(homeDomain, "https://") {
+		if strings.HasPrefix(homeDomain, "localhost") {
+			homeDomain = "http://" + homeDomain
 		} else {
-			home_domain = "https://" + home_domain
+			homeDomain = "https://" + homeDomain
 		}
 	}
 
-	redirect_url := fmt.Sprintf("%s/oauth/callback", home_domain)
-	redirectURL := fmt.Sprintf("%s?token=%s&name=%s",
-		redirect_url,
+	callbackURL := fmt.Sprintf("%s/oauth/callback", homeDomain)
+	return fmt.Sprintf("%s?token=%s&name=%s",
+		callbackURL,
 		url.QueryEscape(token),
-		url.QueryEscape(user_name))
-	return redirectURL
+		url.QueryEscape(userName))
 }
 
-func AddCallFlow(ctx context.Context, current_flow string) context.Context {
-	parent_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	new_flow := fmt.Sprintf("%s->%s", parent_flow, current_flow)
-	return context.WithValue(ctx, ApiTypes.CallFlowKey, new_flow)
+func AddCallFlow(ctx context.Context, currentFlow string) context.Context {
+	parentFlow, _ := ctx.Value(ApiTypes.CallFlowKey).(string)
+	newFlow := fmt.Sprintf("%s->%s", parentFlow, currentFlow)
+	return context.WithValue(ctx, ApiTypes.CallFlowKey, newFlow)
 }
 
 // Helper to generate a short, random request ID
@@ -308,9 +294,8 @@ func GenerateRequestID(key string) string {
 	return key + "-" + hex.EncodeToString(bytes)
 }
 
-func GetDefahotHomeURL() string {
-	var url = fmt.Sprintf("%s/%s", os.Getenv("APP_BASE_URL"), os.Getenv("VITE_DEFAULT_NORM_ROUTE"))
-	return url
+func GetDefaultHomeURL() string {
+	return fmt.Sprintf("%s/%s", os.Getenv("APP_BASE_URL"), os.Getenv("VITE_DEFAULT_NORM_ROUTE"))
 }
 
 // GeneratePassword creates a cryptographically secure random password
@@ -373,7 +358,7 @@ func GeneratePasswordCustom(
 
 	if len(charset) == 0 {
 		logger.Error(
-			"***** Alarm", "invalid charset", length,
+			"***** Alarm", "invalid charset", charset,
 			"default to", "12", "loc", "SHD_UTL_458")
 		length = 12
 		return GeneratePassword(rc, length)
@@ -635,9 +620,8 @@ var libConfigOnce sync.Once
 
 func LoadLibConfig(loc string) {
 	libConfigOnce.Do(func() {
-
-		config_path := os.Getenv("SHARED_LIB_CONFIG_DIR")
-		if len(config_path) <= 0 {
+		configPath := os.Getenv("SHARED_LIB_CONFIG_DIR")
+		if configPath == "" {
 			slog.Error("missing SHARED_LIB_CONFIG_DIR env variable (SHD_LMG_024)")
 			return
 		}
@@ -645,14 +629,14 @@ func LoadLibConfig(loc string) {
 		// config_path should be "~/Workspace/Shared/libconfig.toml"
 		// 1. DB Must be initialized properly
 
-		slog.Info("Loading config (SHD_LMG_542)", "config_path", config_path)
-		viper.SetConfigFile(config_path)
+		slog.Info("Loading config (SHD_LMG_542)", "config_path", configPath)
+		viper.SetConfigFile(configPath)
 		viper.SetConfigType("toml")
 
 		// Read config file
 		if err := viper.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-				slog.Error("config file not found (SHD_LMG_054)", "config_path", config_path)
+				slog.Error("config file not found (SHD_LMG_054)", "config_path", configPath)
 				os.Exit(1)
 			}
 			slog.Error("error reading config (SHD_LMG_056)", "error", err)

@@ -9,9 +9,11 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -42,16 +44,16 @@ var kratosClient *KratosClient
 // Call this during application startup.
 func InitKratosClient() {
 	kratosPublicURL := os.Getenv("KRATOS_PUBLIC_URL")
-	err_msg := ""
+	errMsg := ""
 	if kratosPublicURL == "" {
-		err_msg = "missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433"
+		errMsg = "missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433"
 		kratosPublicURL = "http://localhost:4433"
 	}
 
 	config := ory.NewConfiguration()
 	logger := loggerutil.CreateDefaultLogger("SHD_0207142900")
-	if err_msg != "" {
-		logger.Error(err_msg)
+	if errMsg != "" {
+		logger.Error(errMsg)
 	}
 
 	config.Servers = ory.ServerConfigurations{{URL: kratosPublicURL}}
@@ -164,7 +166,7 @@ func HandleEmailLoginKratos(c echo.Context) error {
 
 	// SECURITY: Rate limiting to prevent brute-force attacks
 	clientIP := c.RealIP()
-	allowed, remaining, retryAfter := CheckLoginRateLimit(clientIP)
+	allowed, _, retryAfter := CheckLoginRateLimit(clientIP)
 	if !allowed {
 		logger.Warn("Rate limit exceeded for login",
 			"ip", clientIP,
@@ -175,7 +177,6 @@ func HandleEmailLoginKratos(c echo.Context) error {
 			LOC:     "SHD_0207143400",
 		})
 	}
-	_ = remaining
 
 	// SECURITY: Validate request origin to prevent CSRF attacks
 	if !IsSafeOrigin(c) {
@@ -324,20 +325,8 @@ func HandleEmailLoginKratosBase(
 		if resp != nil {
 			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized {
 				logger.Warn("Login failed", "email", req.Email, "error", err, "statusCode", resp.StatusCode)
-				// Read the error body for more details
 				if respBody, readErr := io.ReadAll(resp.Body); readErr == nil {
-					var kratosError map[string]interface{}
-					if jsonErr := json.Unmarshal(respBody, &kratosError); jsonErr == nil {
-						if ui, ok := kratosError["ui"].(map[string]interface{}); ok {
-							if messages, ok := ui["messages"].([]interface{}); ok && len(messages) > 0 {
-								if msg, ok := messages[0].(map[string]interface{}); ok {
-									if text, ok := msg["text"].(string); ok {
-										errorMessage = text
-									}
-								}
-							}
-						}
-					}
+					errorMessage = parseKratosUIError(respBody, errorMessage)
 				}
 			} else {
 				logger.Warn("Login failed (unrecog status code)",
@@ -397,10 +386,7 @@ func HandleEmailLoginKratosBase(
 			"session_id", session.Id,
 			"email", req.Email)
 
-		adminURL := os.Getenv("KRATOS_ADMIN_URL")
-		if adminURL == "" {
-			adminURL = "http://localhost:4434"
-		}
+		adminURL := getKratosAdminURL()
 
 		// Use direct HTTP request to Admin API for better control
 		httpClient := &http.Client{Timeout: 10 * time.Second}
@@ -434,67 +420,8 @@ func HandleEmailLoginKratosBase(
 		}
 	}
 
-	// Now check if identity has TOTP credentials configured (indicating 2FA is required)
-	// We need to fetch the identity with credentials to check this properly
-	identityHasTOTP := false
-
-	// First check if credentials are already present in the identity
-	if identity != nil && identity.Credentials != nil {
-		creds := *identity.Credentials
-		if _, hasTOTP := creds["totp"]; hasTOTP {
-			identityHasTOTP = true
-			logger.Info("TOTP found in identity credentials")
-		}
-	}
-
-	// If credentials not present, fetch identity with credentials from Admin API
-	if identity != nil && !identityHasTOTP {
-		adminURL := os.Getenv("KRATOS_ADMIN_URL")
-		if adminURL == "" {
-			adminURL = "http://localhost:4434"
-		}
-
-		httpClient := &http.Client{Timeout: 10 * time.Second}
-		// Fetch specific identity with credentials included
-		credReq, _ := http.NewRequestWithContext(ctx, "GET",
-			fmt.Sprintf("%s/admin/identities/%s?include_credential=totp", adminURL, identity.Id), nil)
-		credReq.Header.Set("Accept", "application/json")
-
-		credResp, credErr := httpClient.Do(credReq)
-		if credErr != nil {
-			logger.Warn("Failed to fetch identity with credentials", "error", credErr)
-		} else {
-			defer credResp.Body.Close()
-			credBody, _ := io.ReadAll(credResp.Body)
-
-			logger.Info("Admin API credentials response",
-				"status", credResp.StatusCode,
-				"body_length", len(credBody))
-
-			if credResp.StatusCode == http.StatusOK {
-				// Parse as raw JSON to check for totp credentials
-				// The ory.Identity struct may not properly unmarshal credentials
-				var rawIdentity map[string]interface{}
-				if jsonErr := json.Unmarshal(credBody, &rawIdentity); jsonErr == nil {
-					if creds, ok := rawIdentity["credentials"].(map[string]interface{}); ok {
-						logger.Info("Credentials found in response", "credential_types", getMapKeys(creds))
-						if _, hasTOTP := creds["totp"]; hasTOTP {
-							// TOTP credential exists - this means 2FA is configured
-							// Note: TOTP credentials don't have "identifiers" like password credentials
-							identityHasTOTP = true
-							logger.Info("TOTP found via Admin API credentials check",
-								"identity_id", identity.Id)
-						}
-					} else {
-						logger.Info("No credentials field in response or wrong type")
-					}
-				} else {
-					logger.Warn("Failed to parse identity with credentials",
-						"parse_error", jsonErr)
-				}
-			}
-		}
-	}
+	// Check if identity has TOTP configured (indicating 2FA is required)
+	identityHasTOTP := checkIdentityHasTOTP(ctx, identity, logger)
 
 	// If identity has TOTP and session is AAL1, user needs to complete 2FA
 	if identityHasTOTP && sessionAAL == ory.AUTHENTICATORASSURANCELEVEL_AAL1 {
@@ -504,19 +431,7 @@ func HandleEmailLoginKratosBase(
 
 		// Set the session token cookie so the 2FA verification can use it
 		if successfulLogin.SessionToken != nil {
-			sessionToken := *successfulLogin.SessionToken
-			expiredTime := time.Now().Add(cookie_timeout_hours * time.Hour)
-
-			cookie := &http.Cookie{
-				Name:     "session_token",
-				Value:    sessionToken,
-				Path:     "/",
-				Expires:  expiredTime,
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteLaxMode,
-			}
-			c.SetCookie(cookie)
+			setSessionTokenCookie(c, *successfulLogin.SessionToken)
 		}
 
 		// Return response indicating 2FA is required
@@ -545,59 +460,26 @@ func HandleEmailLoginKratosBase(
 		}
 	}
 
-	if identity.Traits != nil {
-		traits, ok := identity.Traits.(map[string]interface{})
-		if ok {
-			email = traits["email"].(string)
-			if name, ok := traits["name"].(map[string]interface{}); ok {
-				if first, ok := name["first"].(string); ok {
-					firstName = first
-				}
-				if last, ok := name["last"].(string); ok {
-					lastName = last
-				}
-			}
-		}
-	}
-
-	avatar := ""
-	if identity.MetadataPublic != nil {
-		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-			isAdmin = admin
-		}
-		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-			isOwner = owner
-		}
-		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
-			avatar = av
-		}
-	}
+	info := extractIdentityInfo(identity)
+	email = info.Email
+	firstName = info.FirstName
+	lastName = info.LastName
+	isAdmin = info.IsAdmin
+	isOwner = info.IsOwner
+	avatar := info.Avatar
 
 	// Set the session token as a cookie for the frontend
-	// Kratos returns a session_token for native flows that we need to pass back
 	// IMPORTANT: We use "session_token" cookie name (not "ory_kratos_session") because:
 	// - "ory_kratos_session" is reserved for browser flow cookies set by Kratos itself
 	// - Native/API flow tokens must be passed via X-Session-Token header to Kratos
 	// - ValidateSession reads from "session_token" cookie and passes to Kratos via X-Session-Token
 	if successfulLogin.SessionToken != nil {
 		sessionToken := *successfulLogin.SessionToken
-		expiredTime := time.Now().Add(cookie_timeout_hours * time.Hour)
-
-		// Set the session token in our custom cookie
-		cookie := &http.Cookie{
-			Name:     "session_token",
-			Value:    sessionToken,
-			Path:     "/",
-			Expires:  expiredTime,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-		}
-		c.SetCookie(cookie)
+		setSessionTokenCookie(c, sessionToken)
 
 		// Also log the session
 		customLayout := "2006-01-02 15:04:05"
-		expiredTimeStr := expiredTime.Format(customLayout)
+		expiredTimeStr := time.Now().Add(cookie_timeout_hours * time.Hour).Format(customLayout)
 
 		sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
 			LoginMethod:  "kratos_login",
@@ -691,33 +573,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 	}
 
 	identity := session.Identity
-	traits := identity.Traits.(map[string]interface{})
-	email, _ := ApiUtils.GetSafeString(traits, "email")
-
-	var firstName, lastName string
-	if name, ok := ApiUtils.GetSafeSubObj(traits, "name"); ok {
-		if first, ok := name["first"].(string); ok {
-			firstName = first
-		}
-		if last, ok := name["last"].(string); ok {
-			lastName = last
-		}
-	}
-
-	isAdmin := false
-	isOwner := false
-	avatarMe := ""
-	if identity.MetadataPublic != nil {
-		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-			isAdmin = admin
-		}
-		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-			isOwner = owner
-		}
-		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
-			avatarMe = av
-		}
-	}
+	info := extractIdentityInfo(identity)
 
 	baseURL := os.Getenv("APP_BASE_URL")
 
@@ -732,16 +588,16 @@ func HandleAuthMeKratos(c echo.Context) error {
 			"identity": map[string]interface{}{
 				"id": identity.Id,
 				"traits": map[string]interface{}{
-					"email": email,
+					"email": info.Email,
 					"name": map[string]interface{}{
-						"first": firstName,
-						"last":  lastName,
+						"first": info.FirstName,
+						"last":  info.LastName,
 					},
 				},
 				"metadata_public": map[string]interface{}{
-					"admin":    isAdmin,
-					"is_owner": isOwner,
-					"avatar":   avatarMe,
+					"admin":    info.IsAdmin,
+					"is_owner": info.IsOwner,
+					"avatar":   info.Avatar,
 				},
 				"state":      identity.State,
 				"created_at": identity.CreatedAt,
@@ -829,6 +685,169 @@ func getMapKeys(m map[string]interface{}) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// ---------------------------------------------------------------------------
+// Helpers: extracted to reduce duplication across handlers
+// ---------------------------------------------------------------------------
+
+// identityInfo holds extracted user fields from a Kratos identity.
+type identityInfo struct {
+	Email     string
+	FirstName string
+	LastName  string
+	IsAdmin   bool
+	IsOwner   bool
+	Avatar    string
+}
+
+// extractIdentityInfo extracts common user fields from a Kratos identity's
+// untyped traits and metadata_public maps.
+func extractIdentityInfo(identity *ory.Identity) identityInfo {
+	var info identityInfo
+	if identity == nil {
+		return info
+	}
+	if identity.Traits != nil {
+		if traits, ok := identity.Traits.(map[string]interface{}); ok {
+			if email, ok := traits["email"].(string); ok {
+				info.Email = email
+			}
+			if name, ok := traits["name"].(map[string]interface{}); ok {
+				if first, ok := name["first"].(string); ok {
+					info.FirstName = first
+				}
+				if last, ok := name["last"].(string); ok {
+					info.LastName = last
+				}
+			}
+		}
+	}
+	if identity.MetadataPublic != nil {
+		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
+			info.IsAdmin = admin
+		}
+		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
+			info.IsOwner = owner
+		}
+		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
+			info.Avatar = av
+		}
+	}
+	return info
+}
+
+// setSessionTokenCookie sets the session_token cookie for native API flow sessions.
+func setSessionTokenCookie(c echo.Context, sessionToken string) {
+	c.SetCookie(&http.Cookie{
+		Name:     "session_token",
+		Value:    sessionToken,
+		Path:     "/",
+		Expires:  time.Now().Add(cookie_timeout_hours * time.Hour),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// parseKratosUIError extracts a human-readable error message from a Kratos
+// error response body. Checks ui.messages, ui.nodes[].messages, and
+// error.message. Falls back to defaultMsg if none found.
+func parseKratosUIError(body []byte, defaultMsg string) string {
+	var kratosError map[string]interface{}
+	if err := json.Unmarshal(body, &kratosError); err != nil {
+		return defaultMsg
+	}
+	if ui, ok := kratosError["ui"].(map[string]interface{}); ok {
+		if messages, ok := ui["messages"].([]interface{}); ok && len(messages) > 0 {
+			if msg, ok := messages[0].(map[string]interface{}); ok {
+				if text, ok := msg["text"].(string); ok {
+					return text
+				}
+			}
+		}
+		if nodes, ok := ui["nodes"].([]interface{}); ok {
+			for _, node := range nodes {
+				if n, ok := node.(map[string]interface{}); ok {
+					if msgs, ok := n["messages"].([]interface{}); ok && len(msgs) > 0 {
+						if m, ok := msgs[0].(map[string]interface{}); ok {
+							if text, ok := m["text"].(string); ok && text != "" {
+								return text
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if errObj, ok := kratosError["error"].(map[string]interface{}); ok {
+		if message, ok := errObj["message"].(string); ok {
+			return message
+		}
+	}
+	return defaultMsg
+}
+
+// checkIdentityHasTOTP checks whether a Kratos identity has TOTP credentials
+// configured by first checking the identity object, then fetching from Admin API.
+func checkIdentityHasTOTP(ctx context.Context, identity *ory.Identity, logger ApiTypes.JimoLogger) bool {
+	if identity == nil {
+		return false
+	}
+
+	// Check if credentials are already present in the identity
+	if identity.Credentials != nil {
+		creds := *identity.Credentials
+		if _, hasTOTP := creds["totp"]; hasTOTP {
+			logger.Info("TOTP found in identity credentials")
+			return true
+		}
+	}
+
+	// Fetch identity with credentials from Admin API
+	adminURL := getKratosAdminURL()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	credReq, err := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("%s/admin/identities/%s?include_credential=totp", adminURL, identity.Id), nil)
+	if err != nil {
+		logger.Warn("Failed to create credentials request", "error", err)
+		return false
+	}
+	credReq.Header.Set("Accept", "application/json")
+
+	credResp, credErr := httpClient.Do(credReq)
+	if credErr != nil {
+		logger.Warn("Failed to fetch identity with credentials", "error", credErr)
+		return false
+	}
+	defer credResp.Body.Close()
+	credBody, _ := io.ReadAll(credResp.Body)
+
+	logger.Info("Admin API credentials response",
+		"status", credResp.StatusCode,
+		"body_length", len(credBody))
+
+	if credResp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var rawIdentity map[string]interface{}
+	if jsonErr := json.Unmarshal(credBody, &rawIdentity); jsonErr != nil {
+		logger.Warn("Failed to parse identity with credentials", "parse_error", jsonErr)
+		return false
+	}
+
+	if creds, ok := rawIdentity["credentials"].(map[string]interface{}); ok {
+		logger.Info("Credentials found in response", "credential_types", getMapKeys(creds))
+		if _, hasTOTP := creds["totp"]; hasTOTP {
+			logger.Info("TOTP found via Admin API credentials check", "identity_id", identity.Id)
+			return true
+		}
+	} else {
+		logger.Info("No credentials field in response or wrong type")
+	}
+
+	return false
 }
 
 // KratosAuthMiddleware requires a valid Kratos session.
@@ -1099,40 +1118,7 @@ func HandleEmailSignupKratosBase(
 		errorMessage := "Registration failed"
 		if resp != nil {
 			if respBody, readErr := io.ReadAll(resp.Body); readErr == nil {
-				var kratosError map[string]interface{}
-				if jsonErr := json.Unmarshal(respBody, &kratosError); jsonErr == nil {
-					// Check for UI messages (validation errors)
-					if ui, ok := kratosError["ui"].(map[string]interface{}); ok {
-						if messages, ok := ui["messages"].([]interface{}); ok && len(messages) > 0 {
-							if msg, ok := messages[0].(map[string]interface{}); ok {
-								if text, ok := msg["text"].(string); ok {
-									errorMessage = text
-								}
-							}
-						}
-						// Also check for node-level errors (field validation)
-						if nodes, ok := ui["nodes"].([]interface{}); ok {
-							for _, node := range nodes {
-								if n, ok := node.(map[string]interface{}); ok {
-									if msgs, ok := n["messages"].([]interface{}); ok && len(msgs) > 0 {
-										if m, ok := msgs[0].(map[string]interface{}); ok {
-											if text, ok := m["text"].(string); ok && text != "" {
-												errorMessage = text
-												break
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-					// Check for generic error message
-					if errMsg, ok := kratosError["error"].(map[string]interface{}); ok {
-						if message, ok := errMsg["message"].(string); ok {
-							errorMessage = message
-						}
-					}
-				}
+				errorMessage = parseKratosUIError(respBody, errorMessage)
 			}
 		}
 
@@ -1166,49 +1152,16 @@ func HandleEmailSignupKratosBase(
 	if successfulReg.Session != nil {
 		session := successfulReg.Session
 		identity := session.Identity
-		traitsMap := identity.Traits.(map[string]interface{})
-
-		// Extract user info
-		var regFirstName, regLastName string
-		if name, ok := traitsMap["name"].(map[string]interface{}); ok {
-			if first, ok := name["first"].(string); ok {
-				regFirstName = first
-			}
-			if last, ok := name["last"].(string); ok {
-				regLastName = last
-			}
-		}
-
-		isAdmin := false
-		isOwner := false
-		if identity.MetadataPublic != nil {
-			if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-				isAdmin = admin
-			}
-			if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-				isOwner = owner
-			}
-		}
+		regInfo := extractIdentityInfo(identity)
 
 		// Set the session token as a cookie (using custom cookie name for native flow tokens)
 		if successfulReg.SessionToken != nil {
 			sessionToken := *successfulReg.SessionToken
-			expiredTime := time.Now().Add(cookie_timeout_hours * time.Hour)
-
-			cookie := &http.Cookie{
-				Name:     "session_token",
-				Value:    sessionToken,
-				Path:     "/",
-				Expires:  expiredTime,
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteLaxMode,
-			}
-			c.SetCookie(cookie)
+			setSessionTokenCookie(c, sessionToken)
 
 			// Log the session
 			customLayout := "2006-01-02 15:04:05"
-			expiredTimeStr := expiredTime.Format(customLayout)
+			expiredTimeStr := time.Now().Add(cookie_timeout_hours * time.Hour).Format(customLayout)
 
 			sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
 				LoginMethod:  "kratos_signup",
@@ -1240,7 +1193,7 @@ func HandleEmailSignupKratosBase(
 			"identity_id", identity.Id,
 			"session_id", session.Id)
 
-		redirectURL := GetRedirectURL(rc, email, isAdmin, false)
+		redirectURL := GetRedirectURL(rc, email, regInfo.IsAdmin, false)
 
 		// Extract verification flow ID from Kratos continue_with
 		var verificationFlowID string
@@ -1268,13 +1221,13 @@ func HandleEmailSignupKratosBase(
 					"traits": map[string]interface{}{
 						"email": email,
 						"name": map[string]interface{}{
-							"first": regFirstName,
-							"last":  regLastName,
+							"first": regInfo.FirstName,
+							"last":  regInfo.LastName,
 						},
 					},
 					"metadata_public": map[string]interface{}{
-						"admin":    isAdmin,
-						"is_owner": isOwner,
+						"admin":    regInfo.IsAdmin,
+						"is_owner": regInfo.IsOwner,
 					},
 					"created_at": identity.CreatedAt,
 					"updated_at": identity.UpdatedAt,
@@ -1323,33 +1276,7 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 	}
 
 	identity := session.Identity
-	traits := identity.Traits.(map[string]interface{})
-	email := traits["email"].(string)
-
-	var firstName, lastName string
-	if name, ok := traits["name"].(map[string]interface{}); ok {
-		if first, ok := name["first"].(string); ok {
-			firstName = first
-		}
-		if last, ok := name["last"].(string); ok {
-			lastName = last
-		}
-	}
-
-	isAdmin := false
-	isOwner := false
-	avatarAuth := ""
-	if identity.MetadataPublic != nil {
-		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-			isAdmin = admin
-		}
-		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-			isOwner = owner
-		}
-		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
-			avatarAuth = av
-		}
-	}
+	info := extractIdentityInfo(identity)
 
 	userStatus := "active"
 	if identity.State != nil {
@@ -1358,23 +1285,23 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 
 	userInfo := &ApiTypes.UserInfo{
 		UserId:     identity.Id,
-		UserName:   email,
-		Email:      email,
-		FirstName:  firstName,
-		LastName:   lastName,
-		Admin:      isAdmin,
-		IsOwner:    isOwner,
-		Avatar:     avatarAuth,
+		UserName:   info.Email,
+		Email:      info.Email,
+		FirstName:  info.FirstName,
+		LastName:   info.LastName,
+		Admin:      info.IsAdmin,
+		IsOwner:    info.IsOwner,
+		Avatar:     info.Avatar,
 		UserStatus: userStatus,
 		Verified:   true, // Kratos sessions imply verified
 		AuthType:   "kratos",
 	}
 
 	logger.Info("Kratos session valid",
-		"email", email,
+		"email", info.Email,
 		"identity_id", identity.Id,
-		"is_admin", isAdmin,
-		"is_owner", isOwner)
+		"is_admin", info.IsAdmin,
+		"is_owner", info.IsOwner)
 
 	return userInfo, nil
 }
@@ -1420,58 +1347,32 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	}
 
 	identity := session.Identity
-	traits := identity.Traits.(map[string]interface{})
-	email := traits["email"].(string)
+	info := extractIdentityInfo(identity)
 
-	var firstName, lastName string
-	if name, ok := traits["name"].(map[string]interface{}); ok {
-		if first, ok := name["first"].(string); ok {
-			firstName = first
-		}
-		if last, ok := name["last"].(string); ok {
-			lastName = last
-		}
-	}
-
-	isAdmin := false
-	isOwner := false
-	avatarRC := ""
-	if identity.MetadataPublic != nil {
-		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-			isAdmin = admin
-		}
-		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-			isOwner = owner
-		}
-		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
-			avatarRC = av
-		}
-	}
-
-	userStatusRC := "active"
+	userStatus := "active"
 	if identity.State != nil {
-		userStatusRC = string(*identity.State)
+		userStatus = string(*identity.State)
 	}
 
 	userInfo := &ApiTypes.UserInfo{
 		UserId:     identity.Id,
-		UserName:   email,
-		Email:      email,
-		FirstName:  firstName,
-		LastName:   lastName,
-		Admin:      isAdmin,
-		IsOwner:    isOwner,
-		Avatar:     avatarRC,
-		UserStatus: userStatusRC,
+		UserName:   info.Email,
+		Email:      info.Email,
+		FirstName:  info.FirstName,
+		LastName:   info.LastName,
+		Admin:      info.IsAdmin,
+		IsOwner:    info.IsOwner,
+		Avatar:     info.Avatar,
+		UserStatus: userStatus,
 		Verified:   true,
 		AuthType:   "kratos",
 	}
 
 	logger.Info("Kratos session valid (RC)",
-		"email", email,
+		"email", info.Email,
 		"identity_id", identity.Id,
-		"is_admin", isAdmin,
-		"is_owner", isOwner)
+		"is_admin", info.IsAdmin,
+		"is_owner", info.IsOwner)
 
 	return userInfo, nil
 }
@@ -1628,7 +1529,11 @@ func HandleGoogleLoginKratos(c echo.Context) error {
 
 	// Step 2: Return an HTML page that auto-submits to Kratos
 	// This ensures the browser POSTs directly to Kratos and receives cookies
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	// SECURITY: Escape values interpolated into HTML to prevent injection
+	safeActionURL := html.EscapeString(actionURL)
+	safeCsrfToken := html.EscapeString(csrfToken)
+
+	autoSubmitHTML := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <title>Redirecting to Google...</title>
@@ -1674,416 +1579,9 @@ func HandleGoogleLoginKratos(c echo.Context) error {
         document.getElementById('oidc-form').submit();
     </script>
 </body>
-</html>`, actionURL, csrfToken)
+</html>`, safeActionURL, safeCsrfToken)
 
-	return c.HTML(http.StatusOK, html)
-}
-
-// PasswordResetTokenExpiry is the expiry for password reset JWT tokens (1 hour).
-const PasswordResetTokenExpiry = 1 * time.Hour
-
-// HandleForgotPasswordKratos handles forgot password requests when Kratos is enabled.
-// Instead of storing tokens in the old users table, it:
-// 1. Looks up the identity in Kratos by email via Admin API
-// 2. Generates a JWT token containing email and identity_id
-// 3. Sends a password reset email with the JWT token
-func HandleForgotPasswordKratos(c echo.Context) error {
-	rc := EchoFactory.NewFromEcho(c, "SHD_0211103023")
-	defer rc.Close()
-	logger := rc.GetLogger()
-
-	// SECURITY: Rate limiting to prevent abuse
-	clientIP := c.RealIP()
-	allowed, _, retryAfter := CheckPasswordResetRateLimit(clientIP)
-	if !allowed {
-		logger.Warn("Rate limit exceeded for password reset", "ip", clientIP)
-		return c.JSON(http.StatusTooManyRequests, map[string]string{
-			"status":  "error",
-			"message": "Too many password reset attempts. Please try again later.",
-			"loc":     "SHD_0211103024",
-		})
-	}
-	_ = retryAfter
-
-	// SECURITY: Validate request origin to prevent CSRF attacks
-	if !IsSafeOrigin(c) {
-		logger.Warn("CSRF protection: rejected cross-origin request",
-			"origin", c.Request().Header.Get("Origin"),
-			"referer", c.Request().Header.Get("Referer"))
-		return c.JSON(http.StatusForbidden, map[string]string{
-			"status":  "error",
-			"message": "Invalid request origin",
-			"loc":     "SHD_0211103025",
-		})
-	}
-
-	var req struct {
-		Email string `json:"email"`
-	}
-	if err := c.Bind(&req); err != nil {
-		logger.Error("invalid request body", "error", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"status":  "error",
-			"message": "Invalid request body",
-			"loc":     "SHD_0211103026",
-		})
-	}
-
-	if !isValidEmail(req.Email) {
-		logger.Warn("invalid email format", "email", req.Email)
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"status":  "error",
-			"message": "Invalid email format",
-			"loc":     "SHD_0211103027",
-		})
-	}
-
-	// SECURITY: Always return success to prevent user enumeration
-	successMsg := "If an account exists with this email, a password reset link has been sent."
-
-	if kratosClient == nil {
-		InitKratosClient()
-	}
-
-	// Look up identity in Kratos by email via Admin API
-	adminURL := os.Getenv("KRATOS_ADMIN_URL")
-	if adminURL == "" {
-		adminURL = "http://localhost:4434"
-	}
-
-	ctx := context.Background()
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	adminReq, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/admin/identities?credentials_identifier=%s", adminURL, url.QueryEscape(req.Email)), nil)
-	if err != nil {
-		logger.Error("Failed to create admin request", "error", err)
-		// Return success to prevent enumeration
-		return c.JSON(http.StatusOK, map[string]string{
-			"status":  "ok",
-			"message": successMsg,
-			"loc":     "SHD_0211103028",
-		})
-	}
-	adminReq.Header.Set("Accept", "application/json")
-
-	adminResp, err := httpClient.Do(adminReq)
-	if err != nil {
-		logger.Error("Failed to query Kratos Admin API", "error", err)
-		return c.JSON(http.StatusOK, map[string]string{
-			"status":  "ok",
-			"message": successMsg,
-			"loc":     "SHD_0211103029",
-		})
-	}
-	defer adminResp.Body.Close()
-
-	respBody, _ := io.ReadAll(adminResp.Body)
-	if adminResp.StatusCode != http.StatusOK {
-		logger.Error("Kratos Admin API error", "status", adminResp.StatusCode, "body", string(respBody))
-		return c.JSON(http.StatusOK, map[string]string{
-			"status":  "ok",
-			"message": successMsg,
-			"loc":     "SHD_0211103030",
-		})
-	}
-
-	var identities []ory.Identity
-	if err := json.Unmarshal(respBody, &identities); err != nil || len(identities) == 0 {
-		// User not found in Kratos - return success to prevent enumeration
-		logger.Warn("No identity found for email (or parse error)", "email", req.Email, "error", err)
-
-		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-			ActivityName: ApiTypes.ActivityName_Auth,
-			ActivityType: ApiTypes.ActivityType_UserNotFound,
-			AppName:      ApiTypes.AppName_Auth,
-			ModuleName:   ApiTypes.ModuleName_EmailAuth,
-			ActivityMsg: func() *string {
-				s := fmt.Sprintf("Password reset for non-existent Kratos identity: %s", req.Email)
-				return &s
-			}(),
-			CallerLoc: "SHD_0211103031",
-		})
-
-		return c.JSON(http.StatusOK, map[string]string{
-			"status":  "ok",
-			"message": successMsg,
-			"loc":     "SHD_0211103032",
-		})
-	}
-
-	identity := identities[0]
-
-	// Generate a JWT token containing the email and identity ID
-	token, err := GenerateToken(map[string]interface{}{
-		"email":       req.Email,
-		"identity_id": identity.Id,
-		"purpose":     "password_reset",
-	}, PasswordResetTokenExpiry)
-	if err != nil {
-		logger.Error("Failed to generate reset token", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"status":  "error",
-			"message": "Failed to process request",
-			"loc":     "SHD_0211103033",
-		})
-	}
-
-	// Send reset email
-	homeDomain := os.Getenv("APP_BASE_URL")
-	if homeDomain == "" {
-		logger.Error("APP_BASE_URL not set")
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"status":  "error",
-			"message": "Server configuration error",
-			"loc":     "SHD_0211103034",
-		})
-	}
-
-	// Get display name from traits
-	displayName := req.Email
-	if identity.Traits != nil {
-		if traits, ok := identity.Traits.(map[string]interface{}); ok {
-			if name, ok := traits["name"].(map[string]interface{}); ok {
-				if first, ok := name["first"].(string); ok && first != "" {
-					displayName = first
-				}
-			}
-		}
-	}
-
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", homeDomain, token)
-	htmlBody := fmt.Sprintf(`
-		<p>Hi %s,</p>
-		<p>Click the link below to reset your password:</p>
-		<p><a href="%s">%s</a></p>
-		<p>This link will expire in 1 hour.</p>
-	`, displayName, resetURL, resetURL)
-	textBody := fmt.Sprintf("Hi %s,\n\nClick the link below to reset your password:\n%s\n\nThis link will expire in 1 hour.", displayName, resetURL)
-
-	go ApiUtils.SendMail(rc, req.Email, "Password Reset", textBody, htmlBody, ApiUtils.EmailTypePasswordReset)
-
-	logger.Info("Password reset email sent (Kratos)", "email", req.Email)
-
-	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: ApiTypes.ActivityName_Auth,
-		ActivityType: ApiTypes.ActivityType_SentEmail,
-		AppName:      ApiTypes.AppName_Auth,
-		ModuleName:   ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg:  func() *string { s := fmt.Sprintf("Kratos password reset email sent to: %s", req.Email); return &s }(),
-		CallerLoc:    "SHD_0211103035",
-	})
-
-	return c.JSON(http.StatusOK, map[string]string{
-		"status":  "ok",
-		"message": successMsg,
-		"loc":     "SHD_0211103036",
-	})
-}
-
-// HandleResetLinkKratos handles the GET request when user clicks the password
-// reset link in their email. It validates the JWT token and redirects to
-// the frontend reset password page.
-func HandleResetLinkKratos(c echo.Context) error {
-	rc := EchoFactory.NewFromEcho(c, "SHD_0211103037")
-	defer rc.Close()
-	logger := rc.GetLogger()
-
-	token := c.QueryParam("token")
-	if token == "" {
-		return c.String(http.StatusBadRequest, "Missing reset token")
-	}
-
-	// Validate the JWT token
-	claims, err := ParseToken(token)
-	if err != nil {
-		logger.Warn("Invalid reset token", "error", err)
-		return c.String(http.StatusBadRequest, "Invalid or expired reset link (SHD_0211103038).")
-	}
-
-	// Verify this is a password reset token
-	purpose, _ := claims["purpose"].(string)
-	if purpose != "password_reset" {
-		logger.Warn("Token is not a password reset token", "purpose", purpose)
-		return c.String(http.StatusBadRequest, "Invalid reset link (SHD_0211103039).")
-	}
-
-	// Redirect to frontend reset form
-	homeDomain := os.Getenv("APP_BASE_URL")
-	if homeDomain == "" {
-		logger.Error("APP_BASE_URL not set")
-	}
-	redirectURL := fmt.Sprintf("%s/reset-password?token=%s", homeDomain, token)
-
-	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: ApiTypes.ActivityName_Auth,
-		ActivityType: ApiTypes.ActivityType_Redirect,
-		AppName:      ApiTypes.AppName_Auth,
-		ModuleName:   ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg:  func() *string { s := fmt.Sprintf("Kratos reset link redirect to: %s", redirectURL); return &s }(),
-		CallerLoc:    "SHD_0211103040",
-	})
-
-	return c.Redirect(http.StatusSeeOther, redirectURL)
-}
-
-// HandleResetPasswordConfirmKratos handles the password reset confirmation
-// when Kratos is enabled. It validates the JWT token and updates the password
-// in Kratos via the Admin API.
-func HandleResetPasswordConfirmKratos(c echo.Context) error {
-	rc := EchoFactory.NewFromEcho(c, "SHD_0211103041")
-	defer rc.Close()
-	logger := rc.GetLogger()
-
-	// SECURITY: Validate request origin to prevent CSRF attacks
-	if !IsSafeOrigin(c) {
-		logger.Warn("CSRF protection: rejected cross-origin request",
-			"origin", c.Request().Header.Get("Origin"),
-			"referer", c.Request().Header.Get("Referer"))
-		return c.String(http.StatusForbidden, "Invalid request origin")
-	}
-
-	// Parse request body
-	var req ResetConfirmRequest
-	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-		logger.Error("Invalid request payload", "error", err)
-		return c.String(http.StatusBadRequest, "Invalid request payload (SHD_0211103042).")
-	}
-
-	// Validate the JWT token
-	claims, err := ParseToken(req.Token)
-	if err != nil {
-		logger.Warn("Invalid reset token", "error", err)
-		return c.String(http.StatusBadRequest, "Invalid or expired reset token (SHD_0211103043).")
-	}
-
-	// Verify this is a password reset token
-	purpose, _ := claims["purpose"].(string)
-	if purpose != "password_reset" {
-		logger.Warn("Token is not a password reset token", "purpose", purpose)
-		return c.String(http.StatusBadRequest, "Invalid reset token (SHD_0211103044).")
-	}
-
-	email, _ := claims["email"].(string)
-	identityID, _ := claims["identity_id"].(string)
-	if email == "" || identityID == "" {
-		logger.Error("Token missing required claims", "email", email, "identity_id", identityID)
-		return c.String(http.StatusBadRequest, "Invalid reset token (SHD_0211103045).")
-	}
-
-	// SECURITY: Validate password strength
-	passwordResult := ValidatePasswordDefault(req.Password)
-	if !passwordResult.Valid {
-		errorDetails := "Password requirements not met"
-		if len(passwordResult.Errors) > 0 {
-			errorDetails = passwordResult.Errors[0]
-		}
-		logger.Warn("Password validation failed", "email", email)
-		return c.String(http.StatusBadRequest, errorDetails)
-	}
-
-	// Update the password in Kratos via Admin API
-	adminURL := os.Getenv("KRATOS_ADMIN_URL")
-	if adminURL == "" {
-		adminURL = "http://localhost:4434"
-	}
-
-	// Step 1: Get current identity to preserve traits
-	ctx := context.Background()
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-
-	getReq, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID), nil)
-	if err != nil {
-		logger.Error("Failed to create get identity request", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103046).")
-	}
-	getReq.Header.Set("Accept", "application/json")
-
-	getResp, err := httpClient.Do(getReq)
-	if err != nil {
-		logger.Error("Failed to get identity from Kratos", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103047).")
-	}
-	defer getResp.Body.Close()
-
-	getBody, _ := io.ReadAll(getResp.Body)
-	if getResp.StatusCode != http.StatusOK {
-		logger.Error("Kratos Admin API error getting identity",
-			"status", getResp.StatusCode, "body", string(getBody))
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103048).")
-	}
-
-	var currentIdentity map[string]interface{}
-	if err := json.Unmarshal(getBody, &currentIdentity); err != nil {
-		logger.Error("Failed to parse identity", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103049).")
-	}
-
-	// Step 2: Update the identity with the new password
-	updateBody := map[string]interface{}{
-		"schema_id": currentIdentity["schema_id"],
-		"state":     "active",
-		"traits":    currentIdentity["traits"],
-		"credentials": map[string]interface{}{
-			"password": map[string]interface{}{
-				"config": map[string]interface{}{
-					"password": req.Password,
-				},
-			},
-		},
-	}
-
-	// Preserve metadata if present
-	if mp, ok := currentIdentity["metadata_public"]; ok && mp != nil {
-		updateBody["metadata_public"] = mp
-	}
-	if ma, ok := currentIdentity["metadata_admin"]; ok && ma != nil {
-		updateBody["metadata_admin"] = ma
-	}
-
-	updateJSON, err := json.Marshal(updateBody)
-	if err != nil {
-		logger.Error("Failed to marshal update body", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103050).")
-	}
-
-	putReq, err := http.NewRequestWithContext(ctx, "PUT",
-		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID),
-		strings.NewReader(string(updateJSON)))
-	if err != nil {
-		logger.Error("Failed to create update request", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to process request (SHD_0211103051).")
-	}
-	putReq.Header.Set("Content-Type", "application/json")
-	putReq.Header.Set("Accept", "application/json")
-
-	putResp, err := httpClient.Do(putReq)
-	if err != nil {
-		logger.Error("Failed to update identity in Kratos", "error", err)
-		return c.String(http.StatusInternalServerError, "Failed to update password (SHD_0211103052).")
-	}
-	defer putResp.Body.Close()
-
-	putBody, _ := io.ReadAll(putResp.Body)
-	if putResp.StatusCode != http.StatusOK {
-		logger.Error("Kratos Admin API error updating identity",
-			"status", putResp.StatusCode, "body", string(putBody))
-		return c.String(http.StatusInternalServerError, "Failed to update password (SHD_0211103053).")
-	}
-
-	logger.Info("Password reset successful via Kratos Admin API",
-		"email", email, "identity_id", identityID)
-
-	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
-		ActivityName: ApiTypes.ActivityName_Auth,
-		ActivityType: ApiTypes.ActivityType_UserLoginSuccess,
-		AppName:      ApiTypes.AppName_Auth,
-		ModuleName:   ApiTypes.ModuleName_EmailAuth,
-		ActivityMsg:  func() *string { s := fmt.Sprintf("Kratos password reset success, email:%s", email); return &s }(),
-		CallerLoc:    "SHD_0211103054",
-	})
-
-	return c.String(http.StatusOK, "Password has been reset successfully.")
+	return c.HTML(http.StatusOK, autoSubmitHTML)
 }
 
 // HandleTOTPVerifyKratos handles TOTP verification to upgrade session from AAL1 to AAL2.
@@ -2194,18 +1692,7 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 		errorMessage := "Invalid TOTP code"
 		if resp != nil {
 			if respBody, readErr := io.ReadAll(resp.Body); readErr == nil {
-				var kratosError map[string]interface{}
-				if jsonErr := json.Unmarshal(respBody, &kratosError); jsonErr == nil {
-					if ui, ok := kratosError["ui"].(map[string]interface{}); ok {
-						if messages, ok := ui["messages"].([]interface{}); ok && len(messages) > 0 {
-							if msg, ok := messages[0].(map[string]interface{}); ok {
-								if text, ok := msg["text"].(string); ok {
-									errorMessage = text
-								}
-							}
-						}
-					}
-				}
+				errorMessage = parseKratosUIError(respBody, errorMessage)
 			}
 		}
 		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
@@ -2223,55 +1710,14 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 
 	// Update the session token cookie if a new one was issued
 	if successfulLogin.SessionToken != nil {
-		newSessionToken := *successfulLogin.SessionToken
-		expiredTime := time.Now().Add(cookie_timeout_hours * time.Hour)
-
-		cookie := &http.Cookie{
-			Name:     "session_token",
-			Value:    newSessionToken,
-			Path:     "/",
-			Expires:  expiredTime,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-		}
-		c.SetCookie(cookie)
+		setSessionTokenCookie(c, *successfulLogin.SessionToken)
 	}
 
 	// Extract user info for response
-	identity := session.Identity
-	var email, firstName, lastName string
-	isAdmin := false
-	isOwner := false
-
-	if identity != nil && identity.Traits != nil {
-		traits, ok := identity.Traits.(map[string]interface{})
-		if ok {
-			if e, ok := traits["email"].(string); ok {
-				email = e
-			}
-			if name, ok := traits["name"].(map[string]interface{}); ok {
-				if first, ok := name["first"].(string); ok {
-					firstName = first
-				}
-				if last, ok := name["last"].(string); ok {
-					lastName = last
-				}
-			}
-		}
-
-		if identity.MetadataPublic != nil {
-			if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-				isAdmin = admin
-			}
-			if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
-				isOwner = owner
-			}
-		}
-	}
+	info := extractIdentityInfo(session.Identity)
 
 	// Log successful 2FA
-	msg := fmt.Sprintf("TOTP verification success, email:%s, session upgraded to AAL2", email)
+	msg := fmt.Sprintf("TOTP verification success, email:%s, session upgraded to AAL2", info.Email)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
 		ActivityType: ApiTypes.ActivityType_UserLoginSuccess,
@@ -2282,7 +1728,7 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 	})
 
 	// Determine redirect URL
-	redirectURL := GetRedirectURL(rc, email, isAdmin, false)
+	redirectURL := GetRedirectURL(rc, info.Email, info.IsAdmin, false)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":       "ok",
@@ -2296,17 +1742,17 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 			"authenticated_at": session.AuthenticatedAt,
 			"aal":              session.GetAuthenticatorAssuranceLevel(),
 			"identity": map[string]interface{}{
-				"id": identity.Id,
+				"id": session.Identity.Id,
 				"traits": map[string]interface{}{
-					"email": email,
+					"email": info.Email,
 					"name": map[string]interface{}{
-						"first": firstName,
-						"last":  lastName,
+						"first": info.FirstName,
+						"last":  info.LastName,
 					},
 				},
 				"metadata_public": map[string]interface{}{
-					"admin":    isAdmin,
-					"is_owner": isOwner,
+					"admin":    info.IsAdmin,
+					"is_owner": info.IsOwner,
 				},
 			},
 		},
@@ -2432,7 +1878,7 @@ func HandleVerificationSubmitKratos(c echo.Context) error {
 		"method": "code",
 	})
 
-	req, err := http.NewRequestWithContext(ctx, "POST", kratosURL, strings.NewReader(string(jsonBody)))
+	req, err := http.NewRequestWithContext(ctx, "POST", kratosURL, bytes.NewReader(jsonBody))
 	if err != nil {
 		logger.Error("Failed to create Kratos request", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -2481,6 +1927,593 @@ func HandleVerificationSubmitKratos(c echo.Context) error {
 	// Pass through the Kratos response (includes error messages)
 	c.Response().Header().Set("Content-Type", "application/json")
 	return c.JSONBlob(resp.StatusCode, body)
+}
+
+// HandleRecoverySubmitKratos proxies recovery requests to Kratos.
+// It handles two states:
+// - Email submission (no flow_id): creates a recovery flow and submits the email
+// - Code submission (with flow_id and code): submits the recovery code
+func HandleRecoverySubmitKratos(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_0214160001")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
+	// SECURITY: Validate request origin to prevent CSRF attacks
+	if !IsSafeOrigin(c) {
+		logger.Warn("CSRF protection: rejected cross-origin request",
+			"origin", c.Request().Header.Get("Origin"),
+			"referer", c.Request().Header.Get("Referer"))
+		return c.JSON(http.StatusForbidden, map[string]string{
+			"status":  "error",
+			"message": "Invalid request origin",
+			"loc":     "SHD_0214160002",
+		})
+	}
+
+	var reqBody struct {
+		Email  string `json:"email"`
+		FlowID string `json:"flow_id"`
+		Code   string `json:"code"`
+	}
+	if err := c.Bind(&reqBody); err != nil {
+		logger.Error("Invalid request body", "error", err)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Invalid request body",
+			"loc":     "SHD_0214160003",
+		})
+	}
+
+	if kratosClient == nil {
+		InitKratosClient()
+	}
+
+	ctx := context.Background()
+
+	// Determine which state we're in based on presence of flow_id
+	if reqBody.FlowID == "" {
+		// ---- Email submission: create recovery flow, then submit email ----
+		if reqBody.Email == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": "Email is required",
+				"loc":     "SHD_0214160004",
+			})
+		}
+
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+
+		// Step 1: Create a new recovery flow via Kratos API
+		createURL := fmt.Sprintf("%s/self-service/recovery/api", kratosClient.publicURL)
+		createReq, err := http.NewRequestWithContext(ctx, "GET", createURL, nil)
+		if err != nil {
+			logger.Error("Failed to create Kratos recovery flow request", "error", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "Internal server error",
+				"loc":     "SHD_0214160005",
+			})
+		}
+		createReq.Header.Set("Accept", "application/json")
+
+		createResp, err := httpClient.Do(createReq)
+		if err != nil {
+			logger.Error("Failed to create recovery flow from Kratos", "error", err)
+			return c.JSON(http.StatusBadGateway, map[string]string{
+				"status":  "error",
+				"message": "Could not connect to the authentication service",
+				"loc":     "SHD_0214160006",
+			})
+		}
+		defer createResp.Body.Close()
+
+		createBody, _ := io.ReadAll(createResp.Body)
+
+		var flowResult map[string]interface{}
+		if err := json.Unmarshal(createBody, &flowResult); err != nil {
+			logger.Error("Failed to parse recovery flow response", "error", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "Internal server error",
+				"loc":     "SHD_0214160007",
+			})
+		}
+
+		flowID, ok := flowResult["id"].(string)
+		if !ok || flowID == "" {
+			logger.Error("Recovery flow response missing id", "response", string(createBody))
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "Internal server error",
+				"loc":     "SHD_0214160008",
+			})
+		}
+
+		// Step 2: Submit the email to the recovery flow
+		submitHTTPClient := &http.Client{
+			Timeout: 10 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+
+		submitURL := fmt.Sprintf("%s/self-service/recovery?flow=%s",
+			kratosClient.publicURL, url.QueryEscape(flowID))
+
+		jsonBody, _ := json.Marshal(map[string]string{
+			"email":  reqBody.Email,
+			"method": "code",
+		})
+
+		submitReq, err := http.NewRequestWithContext(ctx, "POST", submitURL, bytes.NewReader(jsonBody))
+		if err != nil {
+			logger.Error("Failed to create Kratos recovery submit request", "error", err)
+			// Always return success to not reveal if email exists
+			return c.JSON(http.StatusOK, map[string]string{
+				"status":  "code_sent",
+				"flow_id": flowID,
+			})
+		}
+		submitReq.Header.Set("Content-Type", "application/json")
+		submitReq.Header.Set("Accept", "application/json")
+
+		submitResp, err := submitHTTPClient.Do(submitReq)
+		if err != nil {
+			logger.Error("Failed to submit recovery email to Kratos", "error", err)
+			// Always return success to not reveal if email exists
+			return c.JSON(http.StatusOK, map[string]string{
+				"status":  "code_sent",
+				"flow_id": flowID,
+			})
+		}
+		defer submitResp.Body.Close()
+		io.ReadAll(submitResp.Body)
+
+		// Always return success regardless of whether email exists
+		return c.JSON(http.StatusOK, map[string]string{
+			"status":  "code_sent",
+			"flow_id": flowID,
+		})
+
+	} else {
+		// ---- Code submission: submit recovery code to existing flow ----
+		if reqBody.Code == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"status":  "error",
+				"message": "Code is required",
+				"loc":     "SHD_0214160009",
+			})
+		}
+
+		httpClient := &http.Client{
+			Timeout: 10 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+
+		submitURL := fmt.Sprintf("%s/self-service/recovery?flow=%s",
+			kratosClient.publicURL, url.QueryEscape(reqBody.FlowID))
+
+		jsonBody, _ := json.Marshal(map[string]string{
+			"code":   reqBody.Code,
+			"method": "code",
+		})
+
+		req, err := http.NewRequestWithContext(ctx, "POST", submitURL, bytes.NewReader(jsonBody))
+		if err != nil {
+			logger.Error("Failed to create Kratos recovery code request", "error", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "Internal server error",
+				"loc":     "SHD_0214160010",
+			})
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			logger.Error("Failed to submit recovery code to Kratos", "error", err)
+			return c.JSON(http.StatusBadGateway, map[string]string{
+				"status":  "error",
+				"message": "Could not connect to the authentication service",
+				"loc":     "SHD_0214160011",
+			})
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(body, &result); err != nil {
+			logger.Error("Failed to parse recovery code response", "error", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"status":  "error",
+				"message": "Internal server error",
+				"loc":     "SHD_0214160012",
+			})
+		}
+
+		// Kratos returns 422 "browser_location_change_required" when recovery code
+		// is VALID — even for API flows. This is the success case.
+		if resp.StatusCode == http.StatusUnprocessableEntity {
+			if errObj, ok := result["error"].(map[string]interface{}); ok {
+				if errID, ok := errObj["id"].(string); ok && errID == "browser_location_change_required" {
+					logger.Info("Recovery code verified successfully", "flow_id", reqBody.FlowID)
+
+					// Store recovery flow_id and email in short-lived cookies.
+					// These allow the set-password page to identify the user.
+					expiry := time.Now().Add(15 * time.Minute)
+					c.SetCookie(&http.Cookie{
+						Name:     "recovery_flow",
+						Value:    reqBody.FlowID,
+						Path:     "/",
+						Expires:  expiry,
+						HttpOnly: true,
+						Secure:   true,
+						SameSite: http.SameSiteLaxMode,
+					})
+					c.SetCookie(&http.Cookie{
+						Name:     "recovery_email",
+						Value:    reqBody.Email,
+						Path:     "/",
+						Expires:  expiry,
+						HttpOnly: true,
+						Secure:   true,
+						SameSite: http.SameSiteLaxMode,
+					})
+
+					return c.JSON(http.StatusOK, map[string]string{
+						"status": "success",
+					})
+				}
+			}
+		}
+
+		// Check for error messages in Kratos UI messages (invalid code, expired, etc.)
+		if ui, ok := result["ui"].(map[string]interface{}); ok {
+			if messages, ok := ui["messages"].([]interface{}); ok && len(messages) > 0 {
+				if msg, ok := messages[0].(map[string]interface{}); ok {
+					if text, ok := msg["text"].(string); ok {
+						logger.Warn("Recovery code error from Kratos", "message", text)
+						return c.JSON(http.StatusBadRequest, map[string]string{
+							"status":  "error",
+							"message": text,
+							"loc":     "SHD_0214160013",
+						})
+					}
+				}
+			}
+		}
+
+		// Pass through unexpected Kratos responses
+		logger.Warn("Recovery code submission returned unexpected response",
+			"status", resp.StatusCode, "body", string(body))
+		c.Response().Header().Set("Content-Type", "application/json")
+		return c.JSONBlob(resp.StatusCode, body)
+	}
+}
+
+// HandleSettingsFlowKratos verifies the user has a valid recovery session.
+// Called by the set-password page on load to confirm the user can set a new password.
+func HandleSettingsFlowKratos(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_0214160015")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
+	// Read recovery cookies set after successful code verification
+	flowCookie, err := c.Cookie("recovery_flow")
+	if err != nil || flowCookie.Value == "" {
+		logger.Warn("No recovery_flow cookie found")
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "No recovery session. Please start the recovery process again.",
+			"loc":     "SHD_0214160016",
+		})
+	}
+
+	emailCookie, err := c.Cookie("recovery_email")
+	if err != nil || emailCookie.Value == "" {
+		logger.Warn("No recovery_email cookie found")
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "No recovery session. Please start the recovery process again.",
+			"loc":     "SHD_0214160016b",
+		})
+	}
+
+	// Verify the recovery flow is in "passed_challenge" state via Kratos public API
+	if kratosClient == nil {
+		InitKratosClient()
+	}
+
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	kratosURL := fmt.Sprintf("%s/self-service/recovery/flows?id=%s",
+		kratosClient.publicURL, url.QueryEscape(flowCookie.Value))
+	req, err := http.NewRequestWithContext(ctx, "GET", kratosURL, nil)
+	if err != nil {
+		logger.Error("Failed to create Kratos flow check request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160017",
+		})
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to check recovery flow", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214160018",
+		})
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var flowResult map[string]interface{}
+	if err := json.Unmarshal(body, &flowResult); err != nil {
+		logger.Error("Failed to parse recovery flow response", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160017b",
+		})
+	}
+
+	state, _ := flowResult["state"].(string)
+	if state != "passed_challenge" {
+		logger.Warn("Recovery flow not in passed_challenge state", "state", state)
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "Recovery session expired or invalid. Please start over.",
+			"loc":     "SHD_0214160017c",
+		})
+	}
+
+	logger.Info("Recovery session verified", "flow_id", flowCookie.Value)
+	return c.JSON(http.StatusOK, map[string]string{
+		"status": "ok",
+	})
+}
+
+// HandleSettingsSubmitKratos sets a new password after recovery code verification.
+// It reads the recovery cookies, verifies the flow state, looks up the identity
+// by email, and updates the password via the Kratos Admin API.
+func HandleSettingsSubmitKratos(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_0214160019")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
+	// SECURITY: Validate request origin to prevent CSRF attacks
+	if !IsSafeOrigin(c) {
+		logger.Warn("CSRF protection: rejected cross-origin request",
+			"origin", c.Request().Header.Get("Origin"),
+			"referer", c.Request().Header.Get("Referer"))
+		return c.JSON(http.StatusForbidden, map[string]string{
+			"status":  "error",
+			"message": "Invalid request origin",
+			"loc":     "SHD_0214160020",
+		})
+	}
+
+	// Read recovery cookies
+	flowCookie, err := c.Cookie("recovery_flow")
+	if err != nil || flowCookie.Value == "" {
+		logger.Warn("No recovery_flow cookie found for password update")
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "No recovery session. Please start the recovery process again.",
+			"loc":     "SHD_0214160021",
+		})
+	}
+
+	emailCookie, err := c.Cookie("recovery_email")
+	if err != nil || emailCookie.Value == "" {
+		logger.Warn("No recovery_email cookie found for password update")
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "No recovery session. Please start the recovery process again.",
+			"loc":     "SHD_0214160021b",
+		})
+	}
+
+	var reqBody struct {
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&reqBody); err != nil {
+		logger.Error("Invalid request body", "error", err)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Invalid request body",
+			"loc":     "SHD_0214160022",
+		})
+	}
+
+	if reqBody.Password == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"status":  "error",
+			"message": "Password is required",
+			"loc":     "SHD_0214160023",
+		})
+	}
+
+	// Verify the recovery flow is in "passed_challenge" state
+	if kratosClient == nil {
+		InitKratosClient()
+	}
+
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	kratosURL := fmt.Sprintf("%s/self-service/recovery/flows?id=%s",
+		kratosClient.publicURL, url.QueryEscape(flowCookie.Value))
+	flowReq, err := http.NewRequestWithContext(ctx, "GET", kratosURL, nil)
+	if err != nil {
+		logger.Error("Failed to create flow check request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160024",
+		})
+	}
+	flowReq.Header.Set("Accept", "application/json")
+
+	flowResp, err := httpClient.Do(flowReq)
+	if err != nil {
+		logger.Error("Failed to verify recovery flow", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214160025",
+		})
+	}
+	defer flowResp.Body.Close()
+
+	flowBody, _ := io.ReadAll(flowResp.Body)
+	var flowResult map[string]interface{}
+	if err := json.Unmarshal(flowBody, &flowResult); err != nil {
+		logger.Error("Failed to parse flow response", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160024b",
+		})
+	}
+
+	state, _ := flowResult["state"].(string)
+	if state != "passed_challenge" {
+		logger.Warn("Recovery flow not in passed_challenge state for password update", "state", state)
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"status":  "error",
+			"message": "Recovery session expired or invalid. Please start over.",
+			"loc":     "SHD_0214160024c",
+		})
+	}
+
+	// Look up identity by email via Kratos Admin API
+	userInfo, err := KratosGetIdentityByEmail(logger, emailCookie.Value)
+	if err != nil || userInfo == nil {
+		logger.Error("Failed to find identity for recovery", "email", emailCookie.Value, "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Could not find account. Please try again.",
+			"loc":     "SHD_0214160026",
+		})
+	}
+
+	// Update password via Kratos Admin API
+	adminURL := getKratosAdminURL()
+	updateURL := fmt.Sprintf("%s/admin/identities/%s", adminURL, url.PathEscape(userInfo.UserId))
+
+	// First GET the current identity to preserve traits
+	getReq, err := http.NewRequestWithContext(ctx, "GET", updateURL, nil)
+	if err != nil {
+		logger.Error("Failed to create identity GET request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160027",
+		})
+	}
+	getReq.Header.Set("Accept", "application/json")
+
+	getResp, err := httpClient.Do(getReq)
+	if err != nil {
+		logger.Error("Failed to get identity from Kratos", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214160028",
+		})
+	}
+	defer getResp.Body.Close()
+
+	identityBody, _ := io.ReadAll(getResp.Body)
+	var identity map[string]interface{}
+	if err := json.Unmarshal(identityBody, &identity); err != nil {
+		logger.Error("Failed to parse identity response", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160029",
+		})
+	}
+
+	// Build the update payload: preserve traits and schema, set new password
+	updatePayload := map[string]interface{}{
+		"schema_id": identity["schema_id"],
+		"traits":    identity["traits"],
+		"state":     identity["state"],
+		"credentials": map[string]interface{}{
+			"password": map[string]interface{}{
+				"config": map[string]interface{}{
+					"password": reqBody.Password,
+				},
+			},
+		},
+	}
+
+	updateJSON, _ := json.Marshal(updatePayload)
+	putReq, err := http.NewRequestWithContext(ctx, "PUT", updateURL, bytes.NewReader(updateJSON))
+	if err != nil {
+		logger.Error("Failed to create identity update request", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Internal server error",
+			"loc":     "SHD_0214160030",
+		})
+	}
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("Accept", "application/json")
+
+	putResp, err := httpClient.Do(putReq)
+	if err != nil {
+		logger.Error("Failed to update identity password", "error", err)
+		return c.JSON(http.StatusBadGateway, map[string]string{
+			"status":  "error",
+			"message": "Could not connect to the authentication service",
+			"loc":     "SHD_0214160031",
+		})
+	}
+	defer putResp.Body.Close()
+
+	putBody, _ := io.ReadAll(putResp.Body)
+
+	if putResp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API password update failed",
+			"status", putResp.StatusCode, "body", string(putBody))
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"status":  "error",
+			"message": "Failed to update password. Please try again.",
+			"loc":     "SHD_0214160032",
+		})
+	}
+
+	logger.Info("Password updated successfully via Admin API", "identity_id", userInfo.UserId)
+
+	// Clear recovery cookies
+	for _, name := range []string{"recovery_flow", "recovery_email"} {
+		c.SetCookie(&http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Unix(0, 0),
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"status": "success",
+	})
 }
 
 // ============================================================
@@ -2708,7 +2741,7 @@ func KratosGetIdentityByEmail(logger ApiTypes.JimoLogger, email string) (*ApiTyp
 // One token may match multiple users.
 func KratosGetUserInfoByAppToken(
 	logger ApiTypes.JimoLogger,
-	token_name string,
+	tokenName string,
 	token string) ([]*ApiTypes.UserInfo, error) {
 	adminURL := getKratosAdminURL()
 	ctx := context.Background()
@@ -2718,14 +2751,14 @@ func KratosGetUserInfoByAppToken(
 	reqURL := fmt.Sprintf("%s/admin/identities?per_page=1000", adminURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
-		logger.Error("Failed to create list identities request for app token search", "error", err, "token_name", token_name)
+		logger.Error("Failed to create list identities request for app token search", "error", err, "token_name", tokenName)
 		return nil, fmt.Errorf("failed to create request (SHD_KAH_050): %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.Error("Failed to list identities for app token search", "error", err, "token_name", token_name)
+		logger.Error("Failed to list identities for app token search", "error", err, "token_name", tokenName)
 		return nil, fmt.Errorf("failed to list identities (SHD_KAH_051): %w", err)
 	}
 	defer resp.Body.Close()
@@ -2733,13 +2766,13 @@ func KratosGetUserInfoByAppToken(
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		logger.Error("Kratos Admin API error listing identities for app token",
-			"status", resp.StatusCode, "body", string(body), "token_name", token_name)
+			"status", resp.StatusCode, "body", string(body), "token_name", tokenName)
 		return nil, fmt.Errorf("kratos error listing identities (SHD_KAH_052): status %d", resp.StatusCode)
 	}
 
 	var identities []map[string]interface{}
 	if err := json.Unmarshal(body, &identities); err != nil {
-		logger.Error("Failed to parse identities response for app token search", "error", err, "token_name", token_name)
+		logger.Error("Failed to parse identities response for app token search", "error", err, "token_name", tokenName)
 		return nil, fmt.Errorf("failed to parse identities (SHD_KAH_053): %w", err)
 	}
 
@@ -2747,25 +2780,25 @@ func KratosGetUserInfoByAppToken(
 	matchedUsers := make([]*ApiTypes.UserInfo, 0)
 	for _, identity := range identities {
 		if metadataPublic, ok := identity["metadata_public"].(map[string]interface{}); ok {
-			// Check if the token_name exists in metadata_public
-			if tokenValue, exists := metadataPublic[token_name]; exists && tokenValue != nil {
+			// Check if the tokenName exists in metadata_public
+			if tokenValue, exists := metadataPublic[tokenName]; exists && tokenValue != nil {
 				// Convert token value to string and check if it matches the provided token
 				if tokenStr, ok := tokenValue.(string); ok && tokenStr == token {
 					userInfo := KratosIdentityToUserInfo(identity)
 					matchedUsers = append(matchedUsers, userInfo)
 					logger.Info("Found identity with matching app token",
-						"identity_id", userInfo.UserId, "email", userInfo.Email, "token_name", token_name)
+						"identity_id", userInfo.UserId, "email", userInfo.Email, "token_name", tokenName)
 				}
 			}
 		}
 	}
 
 	if len(matchedUsers) == 0 {
-		logger.Warn("No identities found with matching app token", "token_name", token_name)
+		logger.Warn("No identities found with matching app token", "token_name", tokenName)
 		return []*ApiTypes.UserInfo{}, nil // Return empty array instead of error
 	}
 
-	logger.Info("Found identities with matching app token", "token_name", token_name, "count", len(matchedUsers))
+	logger.Info("Found identities with matching app token", "token_name", tokenName, "count", len(matchedUsers))
 	return matchedUsers, nil
 }
 
@@ -2933,7 +2966,7 @@ func KratosUpdateIdentity(logger ApiTypes.JimoLogger, identityID string, update 
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT",
 		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID),
-		strings.NewReader(string(updateJSON)))
+		bytes.NewReader(updateJSON))
 	if err != nil {
 		logger.Error("Failed to create update request", "error", err, "identity_id", identityID)
 		return fmt.Errorf("failed to create update request (SHD_KAH_031): %w", err)
@@ -2971,13 +3004,13 @@ func KratosDeleteIdentitySessions(logger ApiTypes.JimoLogger, identityID string)
 		fmt.Sprintf("%s/admin/identities/%s/sessions", adminURL, identityID), nil)
 	if err != nil {
 		logger.Error("Failed to create delete sessions request", "error", err, "identity_id", identityID)
-		return fmt.Errorf("failed to create request (SHD_KAH_040): %w", err)
+		return fmt.Errorf("failed to create request (SHD_KAH_060): %w", err)
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		logger.Error("Failed to delete sessions from Kratos", "error", err, "identity_id", identityID)
-		return fmt.Errorf("failed to delete sessions (SHD_KAH_041): %w", err)
+		return fmt.Errorf("failed to delete sessions (SHD_KAH_061): %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -2986,7 +3019,7 @@ func KratosDeleteIdentitySessions(logger ApiTypes.JimoLogger, identityID string)
 		body, _ := io.ReadAll(resp.Body)
 		logger.Error("Kratos Admin API error deleting sessions",
 			"status", resp.StatusCode, "body", string(body), "identity_id", identityID)
-		return fmt.Errorf("kratos error deleting sessions (SHD_KAH_042): status %d", resp.StatusCode)
+		return fmt.Errorf("kratos error deleting sessions (SHD_KAH_062): status %d", resp.StatusCode)
 	}
 
 	logger.Info("Deleted all sessions for identity", "identity_id", identityID)
