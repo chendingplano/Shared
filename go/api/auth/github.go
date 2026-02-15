@@ -340,7 +340,7 @@ func HandleGitHubCallbackBase(
 	rc.SetCookie(sessionID)
 
 	// Construct redirect URL
-	redirect_url := ApiUtils.GetDefahotHomeURL()
+	redirect_url := ApiUtils.GetDefaultHomeURL()
 	if redirect_url == "" {
 		error_msg := "missing home_url config"
 		log.Printf("***** Alarm:%s (MID_GHB_104)", error_msg)

@@ -21,7 +21,6 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
-	"github.com/chendingplano/shared/go/api/databaseutil"
 	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
@@ -358,7 +357,7 @@ func (e *echoContext) VerifyUserPassword(
 		return false, http.StatusUnauthorized, error_msg
 	}
 
-	logger.Info("varify user password success", "email", userInfo.Email)
+	logger.Info("verify user password success", "email", userInfo.Email)
 	return true, 0, ""
 }
 
@@ -542,8 +541,33 @@ func (e *echoContext) UpdateTokenByEmail(email string, token string) error {
 		return fmt.Errorf("[SHD_0214081800] UpdateTokenByEmail not supported with Kratos - use Kratos verification flows")
 	}
 
-	return databaseutil.UpdateVTokenByEmail(e, ApiTypes.DatabaseInfo.DBType,
-		ApiTypes.LibConfig.SystemTableNames.TableNameUsers, email, token)
+	// Update the verification token in the users table
+	dbType := ApiTypes.DatabaseInfo.DBType
+	tableName := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	expiresAt := time.Now().Add(24 * time.Hour)
+
+	var db *sql.DB
+	var stmt string
+
+	switch dbType {
+	case ApiTypes.MysqlName:
+		db = ApiTypes.MySql_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = ?, v_token_expires_at = ? WHERE email = ?", tableName)
+	case ApiTypes.PgName:
+		db = ApiTypes.PG_DB_miner
+		stmt = fmt.Sprintf("UPDATE %s SET v_token = $1, v_token_expires_at = $2 WHERE email = $3", tableName)
+	default:
+		return fmt.Errorf("unsupported database type (SHD_EFC_539): %s", dbType)
+	}
+
+	_, err := db.Exec(stmt, token, expiresAt, email)
+	if err != nil {
+		e.logger.Error("failed updating token", "error", err, "email", email)
+		return fmt.Errorf("failed to update token (SHD_EFC_545): %w", err)
+	}
+
+	e.logger.Info("Update token success", "email", email, "expires_at", expiresAt)
+	return nil
 }
 
 func (e *echoContext) UpdateAppTokenByEmail(email string, token_name string, token string) error {
@@ -885,7 +909,7 @@ func (e *echoContext) IsAuthenticated() *ApiTypes.UserInfo {
 
 	logger := e.logger
 	if DefaultAuthenticator == nil {
-		logger.Error("Default authenticator not set - auth middleware not initalized")
+		logger.Error("Default authenticator not set - auth middleware not initialized")
 		return nil
 	}
 

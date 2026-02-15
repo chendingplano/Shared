@@ -18,141 +18,59 @@ func RegisterCSRFMiddleware(e *echo.Echo) {
 }
 
 func RegisterRoutes(e *echo.Echo) {
-	var logger = loggerutil.CreateDefaultLogger("SHD_RTR_020")
-
-	// Check if Kratos authentication is enabled
+	logger := loggerutil.CreateDefaultLogger("SHD_RTR_020")
 	useKratos := os.Getenv("AUTH_USE_KRATOS") == "true"
 
-	logger.Info("Register /auth/google/login route", "use_kratos", useKratos)
+	// Google OAuth
+	googleLogin := echo.HandlerFunc(auth.HandleGoogleLogin)
 	if useKratos {
-		// Use Kratos OIDC for Google login - Kratos handles the full OAuth flow
-		e.GET("/auth/google/login", func(c echo.Context) error {
-			return auth.HandleGoogleLoginKratos(c)
-		})
-		// Note: With Kratos OIDC, the callback is handled by Kratos internally
-		// at /self-service/methods/oidc/callback/google
-		// We still register the legacy callback route for backwards compatibility
-		e.GET("/auth/google/callback", func(c echo.Context) error {
-			return auth.HandleGoogleCallback(c)
-		})
-	} else {
-		e.GET("/auth/google/login", func(c echo.Context) error {
-			return auth.HandleGoogleLogin(c)
-		})
-		e.GET("/auth/google/callback", func(c echo.Context) error {
-			return auth.HandleGoogleCallback(c)
-		})
+		googleLogin = auth.HandleGoogleLoginKratos
 	}
+	e.GET("/auth/google/login", googleLogin)
+	e.GET("/auth/google/callback", auth.HandleGoogleCallback)
 
-	logger.Info("Register /auth/github/login route")
-	e.GET("/auth/github/login", func(c echo.Context) error {
-		return auth.HandleGitHubLogin(c)
-	})
+	// GitHub OAuth
+	e.GET("/auth/github/login", auth.HandleGitHubLogin)
+	e.GET("/auth/github/callback", auth.HandleGitHubCallback)
 
-	logger.Info("Register /auth/github/callback route")
-	e.GET("/auth/github/callback", func(c echo.Context) error {
-		return auth.HandleGitHubCallback(c)
-	})
-
-	logger.Info("Register /auth/email/login route", "use_kratos", useKratos)
+	// Email auth
+	emailLogin := echo.HandlerFunc(auth.HandleEmailLogin)
+	emailSignup := echo.HandlerFunc(auth.HandleEmailSignup)
+	authMe := echo.HandlerFunc(auth.HandleAuthMe)
 	if useKratos {
-		e.POST("/auth/email/login", func(c echo.Context) error {
-			return auth.HandleEmailLoginKratos(c)
-		})
-	} else {
-		e.POST("/auth/email/login", func(c echo.Context) error {
-			return auth.HandleEmailLogin(c)
-		})
+		emailLogin = auth.HandleEmailLoginKratos
+		emailSignup = auth.HandleEmailSignupKratos
+		authMe = auth.HandleAuthMeKratos
 	}
+	e.POST("/auth/email/login", emailLogin)
+	e.POST("/auth/email/signup", emailSignup)
+	e.GET("/auth/me", authMe)
 
-	logger.Info("Register /auth/me route", "use_kratos", useKratos)
-	if useKratos {
-		e.GET("/auth/me", func(c echo.Context) error {
-			return auth.HandleAuthMeKratos(c)
-		})
-	} else {
-		e.GET("/auth/me", func(c echo.Context) error {
-			return auth.HandleAuthMe(c)
-		})
-	}
-
-	// Register logout endpoint (Kratos-only, as existing logout is handled differently)
-	if useKratos {
-		logger.Info("Register /auth/logout route (Kratos)")
-		e.POST("/auth/logout", func(c echo.Context) error {
-			return auth.HandleLogoutKratos(c)
-		})
-
-		// Register TOTP verification endpoint for 2FA
-		logger.Info("Register /auth/totp/verify route (Kratos)")
-		e.POST("/auth/totp/verify", func(c echo.Context) error {
-			return auth.HandleTOTPVerifyKratos(c)
-		})
-
-		// Register email verification proxy endpoints (Kratos verification flows)
-		logger.Info("Register /auth/verification/flow route (Kratos)")
-		e.GET("/auth/verification/flow", func(c echo.Context) error {
-			return auth.HandleVerificationFlowKratos(c)
-		})
-		logger.Info("Register /auth/verification route (Kratos)")
-		e.POST("/auth/verification", func(c echo.Context) error {
-			return auth.HandleVerificationSubmitKratos(c)
-		})
-	}
-
-	logger.Info("Register /auth/email/signup route", "use_kratos", useKratos)
-	if useKratos {
-		e.POST("/auth/email/signup", func(c echo.Context) error {
-			return auth.HandleEmailSignupKratos(c)
-		})
-	} else {
-		e.POST("/auth/email/signup", func(c echo.Context) error {
-			return auth.HandleEmailSignup(c)
-		})
-	}
-
-	logger.Info("Register /auth/email/reset/confirm route", "use_kratos", useKratos)
-	if useKratos {
-		e.POST("/auth/email/reset/confirm", func(c echo.Context) error {
-			return auth.HandleResetPasswordConfirmKratos(c)
-		})
-	} else {
-		e.POST("/auth/email/reset/confirm", auth.HandleResetPasswordConfirm) // user submits new password
-	}
-
-	logger.Info("Register /auth/email/verify route")
+	// Email verification (shared across both auth modes)
 	e.POST("/auth/email/verify", auth.HandleEmailVerifyPost)
-
-	logger.Info("Register /auth/email/verify route")
 	e.GET("/auth/email/verify", auth.HandleEmailVerify)
 
-	logger.Info("Register /auth/email/forgot route", "use_kratos", useKratos)
+	// Kratos-only routes
 	if useKratos {
-		e.POST("/auth/email/forgot", func(c echo.Context) error {
-			return auth.HandleForgotPasswordKratos(c)
-		})
-	} else {
-		e.POST("/auth/email/forgot", auth.HandleForgotPassword)
+		e.POST("/auth/logout", auth.HandleLogoutKratos)
+		e.POST("/auth/totp/verify", auth.HandleTOTPVerifyKratos)
+		e.GET("/auth/verification/flow", auth.HandleVerificationFlowKratos)
+		e.POST("/auth/verification", auth.HandleVerificationSubmitKratos)
+		e.POST("/auth/recovery", auth.HandleRecoverySubmitKratos)
+		e.GET("/auth/recovery/settings", auth.HandleSettingsFlowKratos)
+		e.POST("/auth/recovery/settings", auth.HandleSettingsSubmitKratos)
 	}
 
-	logger.Info("Register /auth/email/reset route", "use_kratos", useKratos)
-	if useKratos {
-		e.GET("/auth/email/reset", func(c echo.Context) error {
-			return auth.HandleResetLinkKratos(c)
-		})
-	} else {
-		e.GET("/auth/email/reset", auth.HandleResetLink) // user clicks link in email
-	}
-
-	logger.Info("Register /shared_api/v1/jimo_req")
+	// Shared API
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 
-	// Icon service routes
-	logger.Info("Register /shared_api/v1/icons routes")
+	// Icon service
 	e.GET("/shared_api/v1/icons", RequestHandlers.HandleListIcons)
 	e.GET("/shared_api/v1/icons/categories", RequestHandlers.HandleGetCategories)
 	e.GET("/shared_api/v1/icons/:id", RequestHandlers.HandleGetIcon)
 	e.POST("/shared_api/v1/icons", RequestHandlers.HandleUploadIcon)
 	e.DELETE("/shared_api/v1/icons/:id", RequestHandlers.HandleDeleteIcon)
 	e.GET("/shared_api/v1/icons/file/:category/:filename", RequestHandlers.HandleServeIconFile)
+
+	logger.Info("All routes registered", "use_kratos", useKratos)
 }

@@ -33,7 +33,7 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	}
 
 	auth.SetAuthInfo(ApiTypes.GetDBType(),
-		ApiUtils.GetDefahotHomeURL(),
+		ApiUtils.GetDefaultHomeURL(),
 		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions,
 		ApiTypes.LibConfig.SystemTableNames.TableNameUsers)
 

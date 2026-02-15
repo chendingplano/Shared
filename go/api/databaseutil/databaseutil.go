@@ -7,7 +7,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/loggerutil"
@@ -263,48 +262,6 @@ func ExecuteStatement(db *sql.DB, stmt string) error {
 
 func StrPtr(s string) *string {
 	return &s
-}
-
-// PasswordResetTokenExpiry defines how long password reset tokens are valid (24 hours)
-const PasswordResetTokenExpiry = 24 * time.Hour
-
-func UpdateVTokenByEmail(
-	rc ApiTypes.RequestContext,
-	db_type string,
-	table_name string,
-	user_email string,
-	token string) error {
-	logger := rc.GetLogger()
-	var db *sql.DB
-	var stmt string
-
-	// SECURITY: Token expires 24 hours from now
-	expiresAt := time.Now().Add(PasswordResetTokenExpiry)
-
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET v_token = ?, v_token_expires_at = ? WHERE email = ?", table_name)
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
-		stmt = fmt.Sprintf("UPDATE %s SET v_token = $1, v_token_expires_at = $2 WHERE email = $3", table_name)
-
-	default:
-		err := fmt.Errorf("unsupported database type (SHD_DBS_504): %s", db_type)
-		logger.Error("db_type not supported", "db_type", db_type)
-		return err
-	}
-
-	_, err := db.Exec(stmt, token, expiresAt, user_email)
-	if err != nil {
-		error_msg := fmt.Errorf("failed to update table (SHD_DBS_511), stmt:%s, err: %w", stmt, err)
-		logger.Error("failed updating user", "error", err, "stmt", stmt)
-		return error_msg
-	}
-
-	logger.Info("Update token success", "email", user_email, "expires_at", expiresAt)
-	return nil
 }
 
 func CloseDatabase() {
