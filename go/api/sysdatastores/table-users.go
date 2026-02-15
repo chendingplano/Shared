@@ -21,16 +21,14 @@ var Users_selected_field_names = "id, " +
 	"name, password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
-	"locale, outlook_refresh_token, outlook_access_token, outlook_token_expires_at, " +
-	"outlook_sub_id, outlook_sub_expires_at, " +
+	"locale, " +
 	"v_token_expires_at, created, updated"
 
 var Users_insert_field_names = "name, " +
 	"password, user_id_type, first_name, last_name, " +
 	"email, user_mobile, user_address, verified, admin, " +
 	"is_owner, email_visibility, auth_type, user_status, avatar, " +
-	"locale, outlook_refresh_token, outlook_access_token, outlook_sub_id, " +
-	"outlook_sub_expires_at, outlook_token_expires_at, v_token, v_token_expires_at"
+	"locale, v_token, v_token_expires_at"
 
 func CreateUsersTable(
 	logger ApiTypes.JimoLogger,
@@ -59,11 +57,6 @@ func CreateUsersTable(
 			"user_status    		VARCHAR(32) 	NOT NULL, " +
 			"avatar         		text DEFAULT 	NULL, " +
 			"locale         		VARCHAR(128) 	DEFAULT NULL, " +
-			"outlook_refresh_token 	VARCHAR(128) 	DEFAULT NULL, " +
-			"outlook_access_token 	VARCHAR(128) 	DEFAULT NULL, " +
-			"outlook_token_expires_at TIMESTAMP 	DEFAULT NULL, " +
-			"outlook_sub_id 		VARCHAR(64) 	DEFAULT NULL, " +
-			"outlook_sub_expires_at TIMESTAMP 		DEFAULT NULL, " +
 			"v_token      			VARCHAR(128) 	DEFAULT NULL, " +
 			"v_token_expires_at		TIMESTAMP 		DEFAULT NULL, " +
 			"created        		TIMESTAMP 		DEFAULT CURRENT_TIMESTAMP, " +
@@ -108,9 +101,7 @@ func scanUserRecord(
 	row *sql.Row,
 	user_info *ApiTypes.UserInfo) error {
 	// Use sql.NullTime for nullable timestamp columns to handle NULL values
-	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
-	// Use sql.NullString for nullable token columns
-	var outlookRefreshToken, outlookAccessToken sql.NullString
+	var vTokenExpiresAt, created, updated sql.NullTime
 
 	err := row.Scan(
 		&user_info.UserId,
@@ -130,11 +121,6 @@ func scanUserRecord(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
-		&outlookRefreshToken,
-		&outlookAccessToken,
-		&outlookTokenExpiresAt,
-		&user_info.OutlookSubID,
-		&outlookSubExpiresAt,
 		&vTokenExpiresAt,
 		&created,
 		&updated,
@@ -143,22 +129,7 @@ func scanUserRecord(
 		return err
 	}
 
-	// Copy valid OAuth tokens to UserInfo (empty string if NULL)
-	if outlookRefreshToken.Valid {
-		user_info.OutlookRefreshToken = outlookRefreshToken.String
-	}
-
-	if outlookAccessToken.Valid {
-		user_info.OutlookAccessToken = outlookAccessToken.String
-	}
-
 	// Copy valid timestamps to UserInfo (zero value if NULL)
-	if outlookTokenExpiresAt.Valid {
-		user_info.OutlookTokenExpiresAt = outlookTokenExpiresAt.Time
-	}
-	if outlookSubExpiresAt.Valid {
-		user_info.OutlookSubExpiresAt = outlookSubExpiresAt.Time
-	}
 	if vTokenExpiresAt.Valid {
 		user_info.VTokenExpiresAt = vTokenExpiresAt.Time
 	}
@@ -423,9 +394,7 @@ func scanUserRecordFromRows(
 	rows *sql.Rows,
 	user_info *ApiTypes.UserInfo) error {
 	// Use sql.NullTime for nullable timestamp columns to handle NULL values
-	var outlookTokenExpiresAt, outlookSubExpiresAt, vTokenExpiresAt, created, updated sql.NullTime
-	// Use sql.NullString for nullable token columns
-	var outlookRefreshToken, outlookAccessToken sql.NullString
+	var vTokenExpiresAt, created, updated sql.NullTime
 
 	err := rows.Scan(
 		&user_info.UserId,
@@ -445,11 +414,6 @@ func scanUserRecordFromRows(
 		&user_info.UserStatus,
 		&user_info.Avatar,
 		&user_info.Locale,
-		&outlookRefreshToken,
-		&outlookAccessToken,
-		&outlookTokenExpiresAt,
-		&user_info.OutlookSubID,
-		&outlookSubExpiresAt,
 		&vTokenExpiresAt,
 		&created,
 		&updated,
@@ -458,21 +422,7 @@ func scanUserRecordFromRows(
 		return err
 	}
 
-	// Copy valid OAuth tokens to UserInfo (empty string if NULL)
-	if outlookRefreshToken.Valid {
-		user_info.OutlookRefreshToken = outlookRefreshToken.String
-	}
-	if outlookAccessToken.Valid {
-		user_info.OutlookAccessToken = outlookAccessToken.String
-	}
-
 	// Copy valid timestamps to UserInfo (zero value if NULL)
-	if outlookTokenExpiresAt.Valid {
-		user_info.OutlookTokenExpiresAt = outlookTokenExpiresAt.Time
-	}
-	if outlookSubExpiresAt.Valid {
-		user_info.OutlookSubExpiresAt = outlookSubExpiresAt.Time
-	}
 	if vTokenExpiresAt.Valid {
 		user_info.VTokenExpiresAt = vTokenExpiresAt.Time
 	}
@@ -714,11 +664,6 @@ func UpsertUser(
 		user_info.UserStatus,
 		user_info.Avatar,
 		user_info.Locale,
-		user_info.OutlookRefreshToken, // write-only (not read back for security)
-		user_info.OutlookAccessToken,  // write-only (not read back for security)
-		user_info.OutlookSubID,
-		user_info.OutlookSubExpiresAt,
-		user_info.OutlookTokenExpiresAt,
 		user_info.VToken, // write-only (not read back for security)
 		user_info.VTokenExpiresAt,
 	}
@@ -788,22 +733,6 @@ func UpsertUser(
 		paramIndex++
 	}
 
-	// Helper to check time fields
-	checkTimeField := func(fieldName string, dbVal, inputVal time.Time, read_only bool) {
-		if dbVal.Equal(inputVal) {
-			return
-		}
-		if dbVal.IsZero() && !inputVal.IsZero() {
-			if dbVal.IsZero() || !read_only {
-				fieldsToUpdate = append(fieldsToUpdate, fmt.Sprintf("%s = $%d", fieldName, paramIndex))
-				updateArgs = append(updateArgs, inputVal)
-				paramIndex++
-			} else if !dbVal.Equal(inputVal) {
-				conflicts = append(conflicts, fmt.Sprintf("%s: db=%v, input=%v", fieldName, dbVal, inputVal))
-			}
-		}
-	}
-
 	// Check string fields
 	checkStringField("name", new_user_info.UserName, user_info.UserName, false)
 	checkStringField("password", new_user_info.Password, user_info.Password, false)
@@ -817,19 +746,12 @@ func UpsertUser(
 	checkStringField("user_status", new_user_info.UserStatus, user_info.UserStatus, false)
 	checkStringField("avatar", new_user_info.Avatar, user_info.Avatar, false)
 	checkStringField("locale", new_user_info.Locale, user_info.Locale, false)
-	checkStringField("outlook_refresh_token", new_user_info.OutlookRefreshToken, user_info.OutlookRefreshToken, false)
-	checkStringField("outlook_access_token", new_user_info.OutlookAccessToken, user_info.OutlookAccessToken, false)
-	checkStringField("outlook_sub_id", new_user_info.OutlookSubID, user_info.OutlookSubID, false)
 
 	// Check bool fields
 	checkBoolField("verified", new_user_info.Verified, user_info.Verified)
 	checkBoolField("admin", new_user_info.Admin, user_info.Admin)
 	checkBoolField("is_owner", new_user_info.IsOwner, user_info.IsOwner)
 	checkBoolField("email_visibility", new_user_info.EmailVisibility, user_info.EmailVisibility)
-
-	// Check time fields (excluding Created and Updated)
-	checkTimeField("outlook_token_expires_at", new_user_info.OutlookTokenExpiresAt, user_info.OutlookTokenExpiresAt, false)
-	checkTimeField("outlook_sub_expires_at", new_user_info.OutlookSubExpiresAt, user_info.OutlookSubExpiresAt, false)
 
 	// Report conflicts if any
 	if len(conflicts) > 0 {
