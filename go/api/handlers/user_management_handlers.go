@@ -102,6 +102,7 @@ func HandleToggleAdmin(e echo.Context) error {
 		actionType = appdatastores.ActionRevokeAdmin
 	}
 	if err := appdatastores.LogUserAction(
+		rc,
 		user_info.UserId,
 		user_info.Email,
 		actionType,
@@ -213,6 +214,7 @@ func HandleToggleOwner(e echo.Context) error {
 		actionType = appdatastores.ActionRevokeOwner
 	}
 	if err := appdatastores.LogUserAction(
+		rc,
 		user_info.UserId,
 		user_info.Email,
 		actionType,
@@ -307,6 +309,7 @@ func HandleToggleStatus(e echo.Context) error {
 		actionType = appdatastores.ActionDeactivateUser
 	}
 	if err := appdatastores.LogUserAction(
+		rc,
 		user.UserId,
 		user.Email,
 		actionType,
