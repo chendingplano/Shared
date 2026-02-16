@@ -76,7 +76,7 @@ func (m *AccCtrlMgr) RequirePermission(
 
 	// Admin and Owner have full access
 	if userInfo.Admin || userInfo.IsOwner {
-		logger.Info("permission granted",
+		logger.Debug("permission granted",
 			"user_id", userInfo.UserId,
 			"rsc_type", rsc_type,
 			"rsc_id", rsc_id,

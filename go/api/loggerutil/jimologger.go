@@ -220,6 +220,15 @@ func getLogger(handlerType LogFormat) *slog.Logger {
 	return devLogger
 }
 
+// Debug logs a debug-level message for happy-path diagnostics that are too noisy for Info
+func (l *JimoLoggerImpl) Debug(message string, args ...any) {
+	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
+
+	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
+	logArgs := append([]any{"call_flow", call_flow}, args...)
+	l.logger.Debug(msg, logArgs...)
+}
+
 // Info logs an informational message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Info(message string, args ...any) {
 	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
