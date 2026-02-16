@@ -97,13 +97,33 @@ type KratosErrorResponse struct {
 	LOC     string `json:"loc"`
 }
 
-// ValidateSession checks if the request has a valid Kratos session
+// ValidateSession checks if the request has a valid Kratos session.
+// It tries cookies first (browser flow, e.g. OIDC/Google login), then falls
+// back to the session_token cookie (native/API flow, e.g. email login).
+// This ordering is important because Kratos prioritises X-Session-Token over
+// cookies internally; sending a stale token alongside valid browser cookies
+// would cause a spurious 401.
 func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 	cookies := c.Request().Header.Get("Cookie")
-	sessionToken := c.Request().Header.Get("X-Session-Token")
+	ctx := context.Background()
 
-	// If no X-Session-Token header, check for our custom session_token cookie
-	// (used when session token was stored from native API flow)
+	// --- Attempt 1: browser-flow cookies only (no X-Session-Token) ---
+	if cookies != "" {
+		req := k.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
+		session, resp, err := req.Execute()
+		if err == nil {
+			return session, nil
+		}
+		// 403 means session exists but needs AAL2 — surface that immediately
+		if resp != nil && resp.StatusCode == http.StatusForbidden {
+			return nil, echo.NewHTTPError(http.StatusForbidden,
+				fmt.Sprintf("Session requires two-factor authentication, error:%v (SHD_0207142602)", err))
+		}
+		k.logger.Debug("Cookie-based session check failed, will try session token", "error", err)
+	}
+
+	// --- Attempt 2: session_token (native/API flow) ---
+	sessionToken := c.Request().Header.Get("X-Session-Token")
 	if sessionToken == "" {
 		if cookie, err := c.Cookie("session_token"); err == nil && cookie.Value != "" {
 			sessionToken = cookie.Value
@@ -111,26 +131,34 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 		}
 	}
 
-	ctx := context.Background()
-	req := k.client.FrontendAPI.ToSession(ctx)
-
-	// Pass cookies for browser flow sessions
-	if cookies != "" {
-		req = req.Cookie(cookies)
-	}
-	// Pass session token for native/API flow sessions
 	if sessionToken != "" {
-		req = req.XSessionToken(sessionToken)
-	}
+		req := k.client.FrontendAPI.ToSession(ctx).XSessionToken(sessionToken)
+		session, resp, err := req.Execute()
+		if err == nil {
+			return session, nil
+		}
+		if resp != nil && resp.StatusCode == http.StatusForbidden {
+			return nil, echo.NewHTTPError(http.StatusForbidden,
+				fmt.Sprintf("Session requires two-factor authentication, error:%v (SHD_0207142602)", err))
+		}
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			// The session_token is stale/invalid — clear it so it doesn't keep
+			// poisoning future requests.
+			k.logger.Warn("Stale session_token cookie, clearing it", "error", err)
+			c.SetCookie(&http.Cookie{
+				Name:     "session_token",
+				Value:    "",
+				Path:     "/",
+				MaxAge:   -1,
+				HttpOnly: true,
+			})
+		}
 
-	session, resp, err := req.Execute()
-	if err != nil {
 		if strings.HasPrefix(err.Error(), "401") {
 			k.logger.Warn("user not logged in", "error", err)
 		} else {
 			k.logger.Error("failed validating session", "error", err)
 		}
-
 		if resp != nil {
 			k.logger.Info("resp", "resp", resp)
 		}
@@ -138,17 +166,13 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 			return nil, echo.NewHTTPError(http.StatusUnauthorized,
 				fmt.Sprintf("No valid session found, error:%v (SHD_0207142600)", err))
 		}
-		// Handle 403 Forbidden - this typically means AAL2 is required but session is AAL1
-		// The user has 2FA configured but hasn't completed it
-		if resp != nil && resp.StatusCode == http.StatusForbidden {
-			return nil, echo.NewHTTPError(http.StatusForbidden,
-				fmt.Sprintf("Session requires two-factor authentication, error:%v (SHD_0207142602)", err))
-		}
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			fmt.Sprintf("Failed to validate session, error:%v (SHD_0207142601)", err))
 	}
 
-	return session, nil
+	// Neither cookies nor session token available
+	return nil, echo.NewHTTPError(http.StatusUnauthorized,
+		"No valid session found, no credentials provided (SHD_0207142600)")
 }
 
 // HandleEmailLoginKratos handles email/password login via Ory Kratos.
