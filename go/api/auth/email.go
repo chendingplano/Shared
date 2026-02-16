@@ -637,9 +637,8 @@ func HandleEmailVerifyBase(
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
 
-	// Save session in DB for audit logging
-	err1 = sysdatastores.SaveSession(
-		rc,
+	// Save session in DB for audit logging (goes through EchoFactory Kratos guard)
+	err1 = rc.SaveSession(
 		"email_verify",
 		sessionID,
 		authToken,
