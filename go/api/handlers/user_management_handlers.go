@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
@@ -33,7 +32,7 @@ func HandleListUsers(e echo.Context) error {
 
 	users, err := auth.KratosListAllIdentities(logger)
 	if err != nil {
-		log.Printf("Failed to list users: %v", err)
+		logger.Error("Failed to list users", "error", err.Error())
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to fetch users",
 		})
@@ -91,7 +90,7 @@ func HandleToggleAdmin(e echo.Context) error {
 	if err := auth.KratosUpdateIdentity(logger, userId, auth.KratosIdentityUpdate{
 		MetadataPublic: map[string]interface{}{"admin": body.Admin},
 	}); err != nil {
-		log.Printf("Failed to update admin status: %v", err)
+		logger.Error("Failed to update admin status", "error", err.Error())
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update user",
 		})
@@ -112,7 +111,7 @@ func HandleToggleAdmin(e echo.Context) error {
 		oldValue,
 		strconv.FormatBool(body.Admin),
 	); err != nil {
-		log.Printf("Failed to log audit action: %v", err)
+		logger.Warn("Failed to log audit action", "error", err.Error())
 		// Don't fail the request if audit logging fails
 	}
 
@@ -202,7 +201,7 @@ func HandleToggleOwner(e echo.Context) error {
 	if err := auth.KratosUpdateIdentity(logger, userId, auth.KratosIdentityUpdate{
 		MetadataPublic: map[string]interface{}{"is_owner": body.IsOwner},
 	}); err != nil {
-		log.Printf("Failed to update owner status: %v", err)
+		logger.Error("Failed to update owner status", "error", err.Error())
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update user",
 		})
@@ -223,7 +222,7 @@ func HandleToggleOwner(e echo.Context) error {
 		oldValue,
 		strconv.FormatBool(body.IsOwner),
 	); err != nil {
-		log.Printf("Failed to log audit action: %v", err)
+		logger.Warn("Failed to log audit action", "error", err.Error())
 	}
 
 	return e.JSON(http.StatusOK, map[string]any{
@@ -287,7 +286,7 @@ func HandleToggleStatus(e echo.Context) error {
 	if err := auth.KratosUpdateIdentity(logger, userId, auth.KratosIdentityUpdate{
 		State: &stateStr,
 	}); err != nil {
-		log.Printf("Failed to update user status: %v", err)
+		logger.Error("Failed to update user status", "error", err.Error())
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update user",
 		})
@@ -296,9 +295,9 @@ func HandleToggleStatus(e echo.Context) error {
 	// If deactivating, invalidate all user sessions via Kratos Admin API
 	if !active && oldActive {
 		if err := auth.KratosDeleteIdentitySessions(logger, userId); err != nil {
-			log.Printf("Warning: Failed to delete sessions for user %s: %v", userId, err)
+			logger.Warn("Failed to delete sessions for deactivated user", "user_id", userId, "error", err.Error())
 		} else {
-			log.Printf("User %s deactivated - all sessions invalidated", userId)
+			logger.Info("User deactivated - all sessions invalidated", "user_id", userId)
 		}
 	}
 
@@ -317,7 +316,7 @@ func HandleToggleStatus(e echo.Context) error {
 		strconv.FormatBool(oldActive),
 		strconv.FormatBool(active),
 	); err != nil {
-		log.Printf("Failed to log audit action: %v", err)
+		logger.Warn("Failed to log audit action", "error", err.Error())
 	}
 
 	return e.JSON(http.StatusOK, map[string]any{
