@@ -34,7 +34,9 @@ func (m MultiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (m MultiHandler) Handle(ctx context.Context, r slog.Record) error {
 	for _, h := range m.handlers {
-		_ = h.Handle(ctx, r)
+		if h.Enabled(ctx, r.Level) {
+			_ = h.Handle(ctx, r)
+		}
 	}
 	return nil
 }
