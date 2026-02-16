@@ -2725,7 +2725,7 @@ func KratosGetIdentityByEmail(logger ApiTypes.JimoLogger, email string) (*ApiTyp
 
 	if len(identities) == 0 {
 		logger.Warn("No identity found for email", "email", email)
-		return nil, fmt.Errorf("identity not found for email (SHD_KAH_019): %s", email)
+		return nil, fmt.Errorf("(SHD_0216105000) identity not found for email: %s", email)
 	}
 
 	// Return first match (email should be unique)
@@ -3169,6 +3169,113 @@ func KratosUpdatePassword(logger ApiTypes.JimoLogger, email string, plaintextPas
 	})
 
 	return nil
+}
+
+// KratosCreateIdentityWithPassword creates a new Kratos identity via the Admin API
+// with password credentials, state "active", and email pre-verified.
+// This bypasses the registration flow entirely — no verification email is sent.
+// Returns the created identity as *ApiTypes.UserInfo.
+func KratosCreateIdentityWithPassword(
+	logger ApiTypes.JimoLogger,
+	email, firstName, lastName, plaintextPassword string,
+) (*ApiTypes.UserInfo, error) {
+	adminURL := getKratosAdminURL()
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	// Build the identity creation payload
+	traits := map[string]interface{}{
+		"email": email,
+	}
+	if firstName != "" || lastName != "" {
+		traits["name"] = map[string]interface{}{
+			"first": firstName,
+			"last":  lastName,
+		}
+	}
+
+	createBody := map[string]interface{}{
+		"schema_id": "default",
+		"traits":    traits,
+		"state":     "active",
+		"credentials": map[string]interface{}{
+			"password": map[string]interface{}{
+				"config": map[string]interface{}{
+					"password": plaintextPassword,
+				},
+			},
+		},
+		"verifiable_addresses": []map[string]interface{}{
+			{
+				"value":    email,
+				"via":      "email",
+				"verified": true,
+				"status":   "completed",
+			},
+		},
+	}
+
+	bodyJSON, err := json.Marshal(createBody)
+	if err != nil {
+		logger.Error("Failed to marshal identity creation body", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to marshal body (SHD_KAH_070): %w", err)
+	}
+
+	reqURL := fmt.Sprintf("%s/admin/identities", adminURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		logger.Error("Failed to create identity request", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to create request (SHD_KAH_071): %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to create identity in Kratos", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to create identity (SHD_KAH_072): %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	// 201 Created is the expected success status
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		logger.Error("Kratos Admin API error creating identity",
+			"status", resp.StatusCode, "body", string(respBody), "email", email)
+
+		// 409 Conflict means identity with this email already exists
+		if resp.StatusCode == http.StatusConflict {
+			return nil, fmt.Errorf("an account with this email already exists (SHD_KAH_073)")
+		}
+
+		return nil, fmt.Errorf("kratos error creating identity (SHD_KAH_074): status %d, body: %s",
+			resp.StatusCode, string(respBody))
+	}
+
+	var identity map[string]interface{}
+	if err := json.Unmarshal(respBody, &identity); err != nil {
+		logger.Error("Failed to parse created identity response", "error", err, "email", email)
+		return nil, fmt.Errorf("failed to parse identity response (SHD_KAH_075): %w", err)
+	}
+
+	userInfo := KratosIdentityToUserInfo(identity)
+	logger.Info("Created Kratos identity via Admin API (no verification email)",
+		"identity_id", userInfo.UserId, "email", email)
+
+	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+		ActivityName: ApiTypes.ActivityName_Auth,
+		ActivityType: ApiTypes.ActivityType_SignupSuccess,
+		AppName:      ApiTypes.AppName_Auth,
+		ModuleName:   ApiTypes.ModuleName_EmailAuth,
+		ActivityMsg: func() *string {
+			s := fmt.Sprintf("Kratos identity created via Admin API (invite), email:%s, id:%s", email, userInfo.UserId)
+			return &s
+		}(),
+		CallerLoc: "SHD_KAH_076",
+	})
+
+	return userInfo, nil
 }
 
 // KratosUpdateIdentityWrapper is a wrapper for KratosUpdateIdentity that matches the function pointer signature
