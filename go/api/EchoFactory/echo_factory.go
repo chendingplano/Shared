@@ -502,12 +502,11 @@ func (e *echoContext) SaveSession(
 
 	// With Kratos, sessions are managed by Kratos, not our database.
 	// Kratos maintains its own session store and provides session management APIs.
-	// We don't need to save sessions to our database for Kratos-based authentication.
 	if os.Getenv("AUTH_USE_KRATOS") == "true" {
-		e.logger.Error("SaveSession called with Kratos enabled - sessions managed by Kratos",
+		e.logger.Warn("SaveSession called with Kratos enabled - sessions managed by Kratos, skipping",
 			"login_method", login_method,
 			"user_email", user_email)
-		// Fall back to sysdatastores.SaveSession(...)
+		return nil
 	}
 
 	return sysdatastores.SaveSession(e, login_method, session_id, auth_token,
