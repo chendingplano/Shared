@@ -1297,7 +1297,7 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 		AuthType:   "kratos",
 	}
 
-	logger.Info("Kratos session valid",
+	logger.Debug("Kratos session valid",
 		"email", info.Email,
 		"identity_id", identity.Id,
 		"is_admin", info.IsAdmin,
@@ -1368,7 +1368,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		AuthType:   "kratos",
 	}
 
-	logger.Info("Kratos session valid (RC)",
+	logger.Debug("Kratos session valid (RC)",
 		"email", info.Email,
 		"identity_id", identity.Id,
 		"is_admin", info.IsAdmin,
