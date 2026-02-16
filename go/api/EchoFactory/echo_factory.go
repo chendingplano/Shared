@@ -446,6 +446,13 @@ func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool
 			return nil, false
 		}
 
+		errorMsg := err.Error()
+		if strings.HasPrefix(errorMsg, "(SHD_0216105000)") {
+			// No user found with that email
+			e.logger.Warn("No user found", "email", email)
+			return nil, false
+		}
+
 		// Real database error
 		e.logger.Error("failed get user by email", "error", err, "email", email)
 		return nil, false
