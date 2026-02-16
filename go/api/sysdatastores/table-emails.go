@@ -3,7 +3,6 @@ package sysdatastores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
@@ -81,14 +80,14 @@ func CreateEmailStoreTable(
 
 	default:
 		err := fmt.Errorf("database type not supported:%s (SHD_EST_117)", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
+		logger.Error("database type not supported", "db_type", db_type)
 		return err
 	}
 
 	err := databaseutil.ExecuteStatement(db, stmt)
 	if err != nil {
 		error_msg := fmt.Errorf("failed creating table (SHD_EST_045), err: %w, stmt:%s", err, stmt)
-		log.Printf("***** Alarm: %s", error_msg.Error())
+		logger.Error("failed creating table", "table_name", table_name, "error", err)
 		return error_msg
 	}
 
@@ -108,6 +107,7 @@ func GetEmailStoreTableDesc() string {
 
 func CheckEmailExists(rc ApiTypes.RequestContext, email string) bool {
 	// This function checks whether 'user_name' is used in the users table.
+	logger := rc.GetLogger()
 	db_type := ApiTypes.DatabaseInfo.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	var query string
@@ -122,24 +122,23 @@ func CheckEmailExists(rc ApiTypes.RequestContext, email string) bool {
 		db = ApiTypes.PG_DB_miner
 
 	default:
-		err := fmt.Errorf("unsupported database type (SHD_EST_153): %s", db_type)
-		log.Printf("***** Alarm: %s", err.Error())
+		logger.Error("db_type not supported", "db_type", db_type)
 		return false
 	}
 
 	var count int
 	err := db.QueryRow(query, email).Scan(&count)
 	if err != nil {
-		error_msg := fmt.Errorf("failed to validate session (SHD_EST_288): %w", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		logger.Error("failed to check email exists", "error", err, "email", email)
 		return false
 	}
-	log.Printf("Check user name (SHD_EST_292), stmt: %s, count:%d", query, count)
+	logger.Info("Check email exists", "email", email, "count", count)
 	return count > 0
 }
 
 func GetEmailInfoByEmail(rc ApiTypes.RequestContext, email string) (EmailInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
+	logger := rc.GetLogger()
 	var query string
 	var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
@@ -156,7 +155,7 @@ func GetEmailInfoByEmail(rc ApiTypes.RequestContext, email string) (EmailInfo, e
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_EST_326): %s", db_type)
-		log.Printf("***** Alarm: %s", err.Error())
+		logger.Error("db_type not supported", "db_type", db_type)
 		return email_info, err
 	}
 
@@ -174,15 +173,16 @@ func GetEmailInfoByEmail(rc ApiTypes.RequestContext, email string) (EmailInfo, e
 
 	if err != nil {
 		err := fmt.Errorf("failed to retrieve email (SHD_EST_345): %w", err)
-		log.Printf("***** Alarm:%s", err)
+		logger.Error("failed to retrieve email", "error", err, "email", email)
 		return email_info, err
 	}
-	log.Printf("Email info retrieved (SHD_EST_349), user: %s, status:%s", email_info.FullEmail, email_info.Status)
+	logger.Info("Email info retrieved", "email", email_info.FullEmail, "status", email_info.Status)
 	return email_info, nil
 }
 
 func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 	// This function checks whether 'user_name' is used in the users table.
+	logger := rc.GetLogger()
 	var query string
 	var db *sql.DB
 	db_type := ApiTypes.DatabaseInfo.DBType
@@ -198,7 +198,7 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 
 	default:
 		err_msg := fmt.Sprintf("error: unsupported database type (SHD_EST_326): %s", db_type)
-		log.Printf("***** Alarm: %s", err_msg)
+		logger.Error("db_type not supported", "db_type", db_type)
 		return err_msg
 	}
 
@@ -206,23 +206,20 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 	err := db.QueryRow(query, email).Scan(&email_status)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("Email not found (SHD_EST_443): %s", email)
+			logger.Warn("Email not found", "email", email)
 			return "email not found" // or handle as "not found"
 		}
 
 		error_msg := fmt.Sprintf("error: failed to retrieve user status (SHD_EST_334): %v", err)
-		log.Printf("***** Alarm:%s", error_msg)
+		logger.Error("failed to retrieve email status", "error", err, "email", email)
 		return error_msg
 	}
-	log.Printf("Email status (SHD_EST_338), db_type:%s, email:%s, status:%s", db_type, email, email_status)
+	logger.Info("Email status", "db_type", db_type, "email", email, "status", email_status)
 	return email_status
 }
 
 func AddEmail(rc ApiTypes.RequestContext, email_info EmailInfo) (bool, error) {
-	// Currently, the inserted fields are:
-	//  user_id, user_name, password, user_id_type, first_name,
-	//  last_name, user_email, user_mobile, user_address, user_type,
-	//  user_status, picture, locale, v_token
+	logger := rc.GetLogger()
 	var db *sql.DB
 	var stmt string
 	db_type := ApiTypes.DatabaseInfo.DBType
@@ -240,7 +237,7 @@ func AddEmail(rc ApiTypes.RequestContext, email_info EmailInfo) (bool, error) {
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_EST_313): %s", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
+		logger.Error("db_type not supported", "db_type", db_type)
 		return false, err
 	}
 
@@ -258,12 +255,12 @@ func AddEmail(rc ApiTypes.RequestContext, email_info EmailInfo) (bool, error) {
 
 	if err != nil {
 		if ApiUtils.IsDuplicateKeyError(err) {
-			log.Printf("Email already exists (SHD_EST_649), email:%s", email_info.FullEmail)
+			logger.Info("Email already exists", "email", email_info.FullEmail)
 			return true, nil
 		}
 
 		error_msg := fmt.Sprintf("failed to add email (SHD_EST_213): %v, stmt:%s", err, stmt)
-		log.Printf("***** Alarm %s", error_msg)
+		logger.Error("failed to add email", "error", err, "email", email_info.FullEmail)
 		return false, fmt.Errorf("***** Alarm:%s", error_msg)
 	}
 
