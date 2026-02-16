@@ -297,8 +297,8 @@ func HandleGitHubCallbackBase(
 		return http.StatusInternalServerError, error_msg
 	}
 
-	err1 := sysdatastores.SaveSession(
-		rc,
+	// Save session (goes through EchoFactory Kratos guard)
+	err1 := rc.SaveSession(
 		"github_login",
 		sessionID,
 		authToken,

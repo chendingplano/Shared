@@ -27,11 +27,17 @@ func RegisterRoutes(e *echo.Echo) {
 		googleLogin = auth.HandleGoogleLoginKratos
 	}
 	e.GET("/auth/google/login", googleLogin)
-	e.GET("/auth/google/callback", auth.HandleGoogleCallback)
+	if !useKratos {
+		// Legacy callback — when Kratos is active, Google redirects to Kratos's
+		// own callback URL, so this endpoint is never hit.
+		e.GET("/auth/google/callback", auth.HandleGoogleCallback)
+	}
 
-	// GitHub OAuth
-	e.GET("/auth/github/login", auth.HandleGitHubLogin)
-	e.GET("/auth/github/callback", auth.HandleGitHubCallback)
+	// GitHub OAuth — legacy only, not yet migrated to Kratos
+	if !useKratos {
+		e.GET("/auth/github/login", auth.HandleGitHubLogin)
+		e.GET("/auth/github/callback", auth.HandleGitHubCallback)
+	}
 
 	// Email auth
 	emailLogin := echo.HandlerFunc(auth.HandleEmailLogin)
