@@ -2,6 +2,7 @@ package authmiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -40,30 +41,32 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		path := c.Request().URL.Path
 		if isStaticAsset(path) {
-			// Let the request proceed without auth
-			logger.Info("static path", "path", path)
 			return next(c)
 		}
 
 		logger.Info("route path", "path", path)
 		user_info, err := IsAuthenticated(rc)
-		if err != nil {
+		if err != nil || user_info == nil {
+			clientIP := c.RealIP()
 			if IsHTMLRequest(c) {
-				// It is an HTML request. Redirect the request to "/"
-				logger.Warn("auth failed, redirect", "error", err, "path", path)
+				logger.Warn("auth failed, redirect",
+					"error", err,
+					"path", path,
+					"ip", clientIP)
 				return c.Redirect(http.StatusFound, "/")
 			}
 
-			// It is an API call. It should block the call since the requested
-			// is not a static asset, which means it requires login to access the asset,
-			// and the user is not logged in. Reject it.
-			logger.Error("Not an HTML Request, not authenticated, unauthorized", "error", err, "path", path)
+			logger.Warn("auth failed, unauthorized API call",
+				"error", err,
+				"path", path,
+				"ip", clientIP,
+				"method", c.Request().Method)
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"error": "Authentication required",
 			})
 		}
 
-		// ✅ Attach UserContextKey to context
+		// Attach UserContextKey to context
 		user_name := user_info.UserName
 		ctx = context.WithValue(c.Request().Context(), ApiTypes.UserContextKey, user_name)
 		c.SetRequest(c.Request().WithContext(ctx))
@@ -92,9 +95,11 @@ func isStaticAsset(path string) bool {
 	return false
 }
 
-
 // IsAuthenticated checks if the request is from an authenticated user.
-// Validates the session via Kratos. If no valid session is found, returns nil.
+// Validates the session via Kratos.
+// Returns:
+//   - (user_info, nil) on success
+//   - (nil, error) when auth fails or no valid session exists
 func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 	logger := rc.GetLogger()
 
@@ -107,17 +112,15 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 	if KratosAuthenticator != nil {
 		user_info, err := KratosAuthenticator(rc)
 		if err != nil {
-			logger.Info("Kratos auth failed", "error", err)
-			return nil, nil
+			logger.Warn("Kratos auth failed", "error", err)
+			return nil, fmt.Errorf("kratos auth error: %w", err)
 		}
 		if user_info != nil {
-			logger.Info("Kratos session valid", "email", user_info.Email)
 			return user_info, nil
 		}
 	}
 
-	logger.Warn("isAuthenticated failed")
-	return nil, nil
+	return nil, fmt.Errorf("no valid session found")
 }
 
 // isHTMLRequest checks if the client expects an HTML response (browser)

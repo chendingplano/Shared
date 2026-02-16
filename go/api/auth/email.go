@@ -347,11 +347,11 @@ func sendVerificationEmail(
         <p><a href="%s">%s</a></p>`, log_id, url, url)
 	textBody := fmt.Sprintf("Please click the link below to verify your email (logid:%d):\n%s", log_id, url)
 
-	msg := fmt.Sprintf("Sending verification email to %s with URL: %s, logid:%d", to, url, log_id)
+	// SECURITY: Do not log verification URL or email body - they contain raw tokens
+	msg := fmt.Sprintf("Sending verification email to %s, logid:%d", to, log_id)
 	logger.Info(
 		"Send verification email",
 		"to", to,
-		"url", url,
 		"log_id", log_id)
 
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -362,13 +362,6 @@ func sendVerificationEmail(
 		ModuleName:   ApiTypes.ModuleName_EmailAuth,
 		ActivityMsg:  &msg,
 		CallerLoc:    "SHD_EML_351"})
-
-	logger.Info(
-		"Send verification email",
-		"to", to,
-		"url", url,
-		"testBody", textBody,
-		"htmlBody", htmlBody)
 
 	rc.PushCallFlow("SHD_EML_275")
 	err := ApiUtils.SendMail(rc, to, subject, textBody, htmlBody, ApiUtils.EmailTypeVerification)
@@ -669,9 +662,9 @@ func HandleEmailVerifyBase(
 
 	logger.Info("Email verification success",
 		"email", user_info.Email,
-		"cookie set/session_id", sessionID)
+		"cookie set/session_id", ApiUtils.MaskToken(sessionID))
 
-	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true", sessionID)
+	msg1 := fmt.Sprintf("Set cookie, session_id:%s, HttpOnly:true", ApiUtils.MaskToken(sessionID))
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
 		ActivityType: ApiTypes.ActivityType_SetCookie,
@@ -682,7 +675,7 @@ func HandleEmailVerifyBase(
 
 	redirect_url := GetRedirectURL(rc, user_info.Email, user_info.Admin, false)
 	msg := fmt.Sprintf("Email verify success: email:%s, session_id:%s, redirect:%s",
-		user_info.Email, sessionID, redirect_url)
+		user_info.Email, ApiUtils.MaskToken(sessionID), redirect_url)
 	sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
 		ActivityName: ApiTypes.ActivityName_Auth,
 		ActivityType: ApiTypes.ActivityType_VerifyEmailSuccess,
@@ -694,7 +687,7 @@ func HandleEmailVerifyBase(
 	user_info_str, _ := json.Marshal(user_info)
 	logger.Info("verify email success",
 		"redirect_url", redirect_url,
-		"cookie", sessionID,
+		"cookie", ApiUtils.MaskToken(sessionID),
 		"is_admin", user_info.Admin,
 		"email", user_info.Email)
 
@@ -899,7 +892,6 @@ func HandleEmailSignupBase(
 	// SECURITY: Do not log full verification URLs or tokens - they allow account takeover
 	logger.Info("sending verification email",
 		"to", req.Email,
-		"verificationURL", verificationURL,
 		"token", ApiUtils.MaskToken(token))
 
 	rc.PushCallFlow("SHD_EML_642")
