@@ -4,12 +4,12 @@ package sysdatastores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/databaseutil"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type SessionLogDef struct {
@@ -36,13 +36,14 @@ const (
 // Define the Cache.
 // Cache manages buffered records and periodic DB insertion
 type SessionLogCache struct {
-	records    []SessionLogDef // Holds cached records
-	mu         sync.Mutex      // Ensures thread-safe access to records
-	db         *sql.DB         // Database connection
+	records    []SessionLogDef    // Holds cached records
+	mu         sync.Mutex         // Ensures thread-safe access to records
+	db         *sql.DB            // Database connection
 	db_type    string
 	table_name string
-	done       chan struct{}  // Signals shutdown
-	wg         sync.WaitGroup // Tracks background goroutine
+	done       chan struct{}       // Signals shutdown
+	wg         sync.WaitGroup     // Tracks background goroutine
+	logger     ApiTypes.JimoLogger // Structured logger for background operations
 }
 
 // Global singleton instance and initialization guard
@@ -83,14 +84,14 @@ func CreateSessionLogTable(
 
 	default:
 		err := fmt.Errorf("database type not supported:%s (SHD_SLG_117)", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
+		logger.Error("database type not supported", "db_type", db_type)
 		return err
 	}
 
 	err := databaseutil.ExecuteStatement(db, stmt)
 	if err != nil {
 		err1 := fmt.Errorf("failed creating table '%s' (SHD_SLG_124), err: %w, stmt:%s", table_name, err, stmt)
-		log.Printf("***** Alarm: %s", err1.Error())
+		logger.Error("failed creating table", "table_name", table_name, "error", err)
 		return err1
 	}
 
@@ -149,7 +150,9 @@ func AddSessionLog(record SessionLogDef) error {
 	c := session_log_singleton
 	if c == nil {
 		error_msg := "cache not initialized; call InitCache first (SHD_SLG_077)"
-		log.Printf("***** Alarm:%s", error_msg)
+		// Use a temporary logger since the singleton isn't initialized yet
+		tmpLogger := loggerutil.CreateDefaultLogger("SHD_SLG_153")
+		tmpLogger.Error(error_msg)
 		return fmt.Errorf("%s", error_msg)
 	}
 	c.addToCache(record)
@@ -171,6 +174,7 @@ func newSessionLogCache(db_type string,
 		db_type:    db_type,
 		table_name: table_name,
 		done:       make(chan struct{}),
+		logger:     loggerutil.CreateDefaultLogger("SHD_SLG_173"),
 	}
 }
 
@@ -201,7 +205,7 @@ func (c *SessionLogCache) flushLoop() {
 
 			if len(records) > 0 {
 				if err := c.insertRecords(records); err != nil {
-					log.Printf("Flush failed (ticker): %v. Records may be lost.", err)
+					c.logger.Error("Flush failed (ticker), records may be lost", "error", err, "record_count", len(records))
 				}
 			}
 		case <-c.done:
@@ -213,7 +217,7 @@ func (c *SessionLogCache) flushLoop() {
 
 			if len(records) > 0 {
 				if err := c.insertRecords(records); err != nil {
-					log.Printf("Final flush failed: %v. Records may be lost.", err)
+					c.logger.Error("Final flush failed, records may be lost", "error", err, "record_count", len(records))
 				}
 			}
 			return // Exit loop
@@ -238,18 +242,16 @@ func (c *SessionLogCache) insertRecords(records []SessionLogDef) error {
 	// Start transaction
 	tx, err := c.db.Begin()
 	if err != nil {
-		error_msg := fmt.Sprintf("failed to begin transaction: %v (SHD_SLG_163)", err)
-		log.Printf("***** Alarm:%s", error_msg)
-		return fmt.Errorf("%s", error_msg)
+		c.logger.Error("failed to begin transaction", "error", err)
+		return fmt.Errorf("failed to begin transaction: %v (SHD_SLG_163)", err)
 	}
 
 	defer func() {
 		// Rollback on error (if transaction not committed)
 		if tx != nil && err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				error_msg := fmt.Sprintf("original error: %v; rollback failed: %v (SHD_SLG_169)", err, rollbackErr)
-				log.Printf("***** Alarm:%s", error_msg)
-				err = fmt.Errorf("%s", error_msg)
+				c.logger.Error("rollback failed", "original_error", err, "rollback_error", rollbackErr)
+				err = fmt.Errorf("original error: %v; rollback failed: %v (SHD_SLG_169)", err, rollbackErr)
 			}
 		}
 	}()
@@ -263,15 +265,14 @@ func (c *SessionLogCache) insertRecords(records []SessionLogDef) error {
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, c.table_name, session_log_insert_fieldnames)
 
 	default:
-		log.Printf("***** Alarm unrecognized database type (SHD_SLG_220):%s", c.db_type)
+		c.logger.Error("unrecognized database type", "db_type", c.db_type)
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, c.table_name, session_log_insert_fieldnames)
 	}
 
 	stmt1, err := tx.Prepare(stmt)
 	if err != nil {
-		error_msg := fmt.Sprintf("failed to prepare statement: %v, stmt:%s (SHD_SLG_189)", err, stmt)
-		log.Printf("***** Alarm:%s", error_msg)
-		return fmt.Errorf("%s", error_msg)
+		c.logger.Error("failed to prepare statement", "error", err, "stmt", stmt)
+		return fmt.Errorf("failed to prepare statement: %v, stmt:%s (SHD_SLG_189)", err, stmt)
 	}
 
 	defer stmt1.Close()
@@ -292,17 +293,15 @@ func (c *SessionLogCache) insertRecords(records []SessionLogDef) error {
 			record.CreatedAt)
 
 		if err != nil {
-			error_msg := fmt.Sprintf("record %d (session_id=%s) insert failed: %v (SHD_SLG_230)", i, record.SessionID, err)
-			log.Printf("***** Alarm:%s", error_msg)
-			return fmt.Errorf("%s", error_msg)
+			c.logger.Error("record insert failed", "record_index", i, "session_id", record.SessionID, "error", err)
+			return fmt.Errorf("record %d (session_id=%s) insert failed: %v (SHD_SLG_230)", i, record.SessionID, err)
 		}
 	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
-		error_msg := fmt.Sprintf("failed to commit transaction: %v (SHD_SLG_236)", err)
-		log.Printf("***** Alarm:%s", error_msg)
-		return fmt.Errorf("%s", error_msg)
+		c.logger.Error("failed to commit transaction", "error", err)
+		return fmt.Errorf("failed to commit transaction: %v (SHD_SLG_236)", err)
 	}
 	return nil
 }

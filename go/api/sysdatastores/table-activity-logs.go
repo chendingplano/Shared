@@ -5,7 +5,6 @@ package sysdatastores
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -67,14 +66,14 @@ func CreateActivityLogTable(
 
 	default:
 		err := fmt.Errorf("database type not supported:%s (SHD_ALG_117)", db_type)
-		log.Printf("***** Alarm:%s", err.Error())
+		logger.Error("database type not supported", "db_type", db_type)
 		return err
 	}
 
 	err := databaseutil.ExecuteStatement(db, stmt)
 	if err != nil {
 		error_msg := fmt.Errorf("failed creating table (SHD_ALG_045), err: %w, stmt:%s", err, stmt)
-		log.Printf("***** Alarm: %s", error_msg.Error())
+		logger.Error("failed creating table", "table_name", table_name, "error", err)
 		return error_msg
 	}
 
@@ -117,9 +116,7 @@ func NextActivityLogID() int64 {
 func AddActivityLog(record ApiTypes.ActivityLogDef) error {
 	c := activity_log_singleton
 	if c == nil {
-		error_msg := "cache not initialized; call InitCache first (SHD_ALG_077)"
-		log.Printf("***** Alarm:%s", error_msg)
-		return fmt.Errorf("%s", error_msg)
+		return fmt.Errorf("cache not initialized; call InitCache first (SHD_ALG_077)")
 	}
 	c.addToCache(record)
 	return nil

@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/EchoFactory"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
@@ -31,8 +31,8 @@ func getGoogleOauthConfig() *oauth2.Config {
 	//		- Add your URLs.
 	redirectURL := os.Getenv("GOOGLE_OAUTH_REDIRECT_URL")
 	if redirectURL == "" {
-		error_msg := "missing GOOGLE_OAUTH_REDIRECT_URL env var (SHD_GGL_003)"
-		log.Printf("***** Alarm: %s", error_msg)
+		tmpLogger := loggerutil.CreateDefaultLogger("SHD_GGL_003")
+		tmpLogger.Error("missing GOOGLE_OAUTH_REDIRECT_URL env var")
 	}
 	return &oauth2.Config{
 		ClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
@@ -93,12 +93,16 @@ func decodeOAuthState(encoded string) (oauthState, error) {
 }
 
 func HandleGoogleLogin(c echo.Context) error {
+	rc := EchoFactory.NewFromEcho(c, "SHD_GGL_095")
+	defer rc.Close()
+	logger := rc.GetLogger()
+
 	config := getGoogleOauthConfig()
 
 	// Capture and validate returnUrl from query params
 	returnURL := c.QueryParam("returnUrl")
 	if returnURL != "" && !ApiUtils.IsSafeReturnURL(returnURL) {
-		log.Printf("HandleGoogleLogin: rejected unsafe returnUrl: %s (SHD_GGL_081)", returnURL)
+		logger.Warn("rejected unsafe returnUrl", "returnUrl", returnURL)
 		returnURL = "" // Reject unsafe URLs
 	}
 
@@ -107,12 +111,12 @@ func HandleGoogleLogin(c echo.Context) error {
 
 	// Handle cache full case (DoS protection)
 	if stateStr == "" {
-		log.Printf("***** Alarm: OAuth nonce cache full - possible DoS attack (SHD_GGL_095)")
+		logger.Error("OAuth nonce cache full - possible DoS attack")
 		return c.String(http.StatusServiceUnavailable, "Service temporarily unavailable. Please try again.")
 	}
 
 	authURL := config.AuthCodeURL(stateStr, oauth2.AccessTypeOffline)
-	log.Printf("HandleGoogleLogin called (MID_GGL_043), returnUrl:%s, redirect to:%s", returnURL, authURL)
+	logger.Info("HandleGoogleLogin called", "returnUrl", returnURL, "redirect_to", authURL)
 	return c.Redirect(http.StatusTemporaryRedirect, authURL)
 }
 
