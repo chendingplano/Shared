@@ -2492,7 +2492,7 @@ func HandleSettingsSubmitKratos(c echo.Context) error {
 		})
 	}
 
-	// Build the update payload: preserve traits and schema, set new password
+	// Build the update payload: preserve traits, metadata, and schema, set new password
 	updatePayload := map[string]interface{}{
 		"schema_id": identity["schema_id"],
 		"traits":    identity["traits"],
@@ -2504,6 +2504,12 @@ func HandleSettingsSubmitKratos(c echo.Context) error {
 				},
 			},
 		},
+	}
+	if mp, ok := identity["metadata_public"]; ok && mp != nil {
+		updatePayload["metadata_public"] = mp
+	}
+	if ma, ok := identity["metadata_admin"]; ok && ma != nil {
+		updatePayload["metadata_admin"] = ma
 	}
 
 	updateJSON, _ := json.Marshal(updatePayload)
