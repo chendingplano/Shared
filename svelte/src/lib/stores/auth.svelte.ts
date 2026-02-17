@@ -167,6 +167,32 @@ function createAuthStore(): AuthStore {
         readyResolve = resolve;
     });
 
+    // Cross-tab logout notification: when one tab logs out, all other tabs
+    // clear auth state and redirect to login. This ensures stale tabs don't
+    // hold open SSE connections or make requests with an invalid session.
+    let authChannel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+        authChannel = new BroadcastChannel('mirai_auth');
+        authChannel.onmessage = (event: MessageEvent) => {
+            if (event.data?.type === 'logout') {
+                clearPersistedImpersonation();
+                update(() => ({
+                    isLoggedIn: false,
+                    status: 'login',
+                    user: null,
+                    error_msg: '',
+                    isAdmin: false,
+                    isOwner: false,
+                    baseURL: '',
+                    isImpersonating: false,
+                    impersonatedClientId: null,
+                    impersonatedClientName: null,
+                }));
+                window.location.href = '/login';
+            }
+        };
+    }
+
     // Initialize the writable store with the state object
     const { subscribe, set, update } = writable<AuthStoreState>({
         isLoggedIn:   false,
@@ -238,10 +264,16 @@ function createAuthStore(): AuthStore {
             return;
         }
 
+        // Abort if auth check takes longer than 5 seconds (prevents infinite loading
+        // when the browser's connection pool is exhausted or the server is unreachable)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         try {
             const response = await fetch('/auth/me', {
                 method: 'GET',
                 credentials: 'include', // essential for Kratos session cookies
+                signal: controller.signal,
             });
 
             if (response.ok) {
@@ -319,6 +351,7 @@ function createAuthStore(): AuthStore {
                 impersonatedClientName: null,
             }));
         } finally {
+            clearTimeout(timeoutId);
             // Resolve the ready promise regardless of success/failure
             readyResolve();
         }
@@ -432,6 +465,9 @@ function createAuthStore(): AuthStore {
                 impersonatedClientName: null,
               }));
 
+              // Notify other tabs to clear auth state and disconnect SSE
+              authChannel?.postMessage({ type: 'logout' });
+
               window.location.href = redirect_url;
             }
         } catch (error) {
@@ -450,6 +486,10 @@ function createAuthStore(): AuthStore {
                 impersonatedClientId: null,
                 impersonatedClientName: null,
               }));
+
+              // Notify other tabs even on error — logout must propagate
+              authChannel?.postMessage({ type: 'logout' });
+
               window.location.href = '/login';
             }
         }
