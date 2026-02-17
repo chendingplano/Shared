@@ -632,6 +632,10 @@ func HandleAuthMeKratos(c echo.Context) error {
 }
 
 // HandleLogoutKratos handles logout via Kratos.
+// It always clears local cookies and makes a best-effort attempt to revoke the
+// server-side session. If the browser logout flow fails (e.g. 401 because the
+// session was already partially invalidated), it falls back to the Kratos Admin
+// API to force-delete all sessions for the identity.
 func HandleLogoutKratos(c echo.Context) error {
 	rc := EchoFactory.NewFromEcho(c, "SHD_0211103013")
 	defer rc.Close()
@@ -641,10 +645,21 @@ func HandleLogoutKratos(c echo.Context) error {
 		InitKratosClient()
 	}
 
+	// Always clear local cookies, regardless of what happens below.
+	defer clearSessionCookies(c)
+
+	// Capture the identity ID before we attempt logout. This lets us fall
+	// back to the Admin API if the browser logout flow fails.
+	var identityID string
+	session, valErr := kratosClient.ValidateSession(c)
+	if valErr == nil && session != nil && session.Identity != nil {
+		identityID = session.Identity.Id
+	}
+
 	ctx := context.Background()
 	cookies := c.Request().Header.Get("Cookie")
 
-	// Create a browser logout flow (works for both browser and API clients)
+	// --- Attempt 1: browser logout flow (preferred) ---
 	logoutFlow, resp, err := kratosClient.client.FrontendAPI.CreateBrowserLogoutFlow(ctx).
 		Cookie(cookies).
 		Execute()
@@ -654,35 +669,43 @@ func HandleLogoutKratos(c echo.Context) error {
 		if resp != nil {
 			logger.Warn("Kratos response", "status", resp.StatusCode)
 		}
-		// Even if Kratos fails, clear local cookies
-		clearSessionCookies(c)
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"status":       "ok",
-			"message":      "Logged out (local)",
-			"redirect_url": "/login",
-			"LOC":          "SHD_0207143300",
-		})
+		// Fall through to Admin API fallback
+	} else {
+		// Submit the logout flow to actually log out using the logout token
+		_, err = kratosClient.client.FrontendAPI.UpdateLogoutFlow(ctx).
+			Token(logoutFlow.LogoutToken).
+			Execute()
+		if err != nil {
+			logger.Warn("Failed to perform logout flow", "error", err)
+			// Fall through to Admin API fallback
+		} else {
+			logger.Info("Logout success via browser flow")
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"status":       "ok",
+				"message":      "Logged out successfully",
+				"redirect_url": "/login",
+				"LOC":          "SHD_0207143301",
+			})
+		}
 	}
 
-	// Submit the logout flow to actually log out using the logout token
-	_, err = kratosClient.client.FrontendAPI.UpdateLogoutFlow(ctx).
-		Token(logoutFlow.LogoutToken).
-		Execute()
-
-	if err != nil {
-		logger.Warn("Failed to perform logout", "error", err)
+	// --- Attempt 2: Admin API fallback — force-revoke all sessions ---
+	if identityID != "" {
+		logger.Info("Browser logout failed, revoking sessions via Admin API", "identity_id", identityID)
+		if adminErr := KratosDeleteIdentitySessions(logger, identityID); adminErr != nil {
+			logger.Error("Admin API session revocation also failed", "error", adminErr, "identity_id", identityID)
+		} else {
+			logger.Info("Logout success via Admin API fallback", "identity_id", identityID)
+		}
+	} else {
+		logger.Warn("Cannot revoke server sessions: no identity ID available (SHD_0217_NOID)")
 	}
-
-	// Clear local session cookies
-	clearSessionCookies(c)
-
-	logger.Info("Logout success")
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":       "ok",
-		"message":      "Logged out successfully",
+		"message":      "Logged out (cookies cleared)",
 		"redirect_url": "/login",
-		"LOC":          "SHD_0207143301",
+		"LOC":          "SHD_0207143300",
 	})
 }
 
