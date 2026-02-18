@@ -1180,9 +1180,12 @@ func HandleEmailSignupKratosBase(
 
 		// Handle specific error codes
 		statusCode := http.StatusBadRequest
-		if resp != nil && resp.StatusCode == http.StatusConflict {
-			errorMessage = "An account with this email already exists"
-			statusCode = http.StatusConflict
+		if resp != nil && resp.StatusCode == http.StatusConflict || strings.Contains(errorMessage, "exists already") {
+			return http.StatusConflict, KratosSignupResponse{
+				Status:  "account_exists",
+				Message: "An account with this email already exists. Try logging in with Google.",
+				LOC:     "SHD_0211103020",
+			}
 		}
 
 		return statusCode, KratosSignupResponse{
