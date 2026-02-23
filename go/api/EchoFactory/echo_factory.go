@@ -932,7 +932,7 @@ func (e *echoContext) IsAuthenticated() *ApiTypes.UserInfo {
 			ActivityMsg:  &error_msg,
 			CallerLoc:    "SHD_RHD_065"})
 
-		e.logger.Error("auth failed", "error", err, "log_id", log_id)
+		e.logger.Info("auth failed", "error", err, "log_id", log_id)
 		return nil
 	}
 
