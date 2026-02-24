@@ -44,20 +44,6 @@ var (
 	jsonOnce sync.Once
 )
 
-/*
-func CreateLogger(
-	ctx context.Context,
-	loggerType LogFormat,
-	loc string) ApiTypes.JimoLogger {
-
-	return &JimoLoggerImpl{
-		ctx:    ctx,
-		cancel: nil,
-		logger: getLogger(loggerType),
-		reqID:  generateRequestID("e")}
-}
-*/
-
 type JimoLoggerImpl struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -222,38 +208,34 @@ func getLogger(handlerType LogFormat) *slog.Logger {
 
 // Debug logs a debug-level message for happy-path diagnostics that are too noisy for Info
 func (l *JimoLoggerImpl) Debug(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
+	msg := fmt.Sprintf("[req=%s] %s %s", l.reqID, message, GetCallStack(l.call_depth+1, false))
+	l.logger.Debug(msg, args...)
+}
 
-	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
-	logArgs := append([]any{"call_flow", call_flow}, args...)
-	l.logger.Debug(msg, logArgs...)
+// Info logs an informational message with context, location, and additional key-value pairs
+func (l *JimoLoggerImpl) Line(message string, args ...any) {
+	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
+	l.logger.Info(msg, args...)
 }
 
 // Info logs an informational message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Info(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
-
-	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
-	logArgs := append([]any{"call_flow", call_flow}, args...)
-	l.logger.Info(msg, logArgs...)
+	msg := fmt.Sprintf("[req=%s] %s %s", l.reqID, message, GetCallStack(l.call_depth+1, false))
+	l.logger.Info(msg, args...)
 }
 
 // Warn logs a warning message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Warn(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
-
-	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
-	logArgs := append([]any{"call_flow", call_flow}, args...)
-	l.logger.Warn(msg, logArgs...)
+	call_flow := GetCallStack(10, true)
+	msg := fmt.Sprintf("[req=%s] %s%s", l.reqID, message, call_flow)
+	l.logger.Warn(msg, args...)
 }
 
 // Error logs an error message with context, location, and additional key-value pairs
 func (l *JimoLoggerImpl) Error(message string, args ...any) {
-	msg := fmt.Sprintf("[req=%s] %s", l.reqID, message)
-
-	call_flow := fmt.Sprintf("[%s]", GetCallStack(l.call_depth))
-	logArgs := append([]any{"call_flow", call_flow}, args...)
-	l.logger.Error(msg, logArgs...)
+	call_flow := GetCallStack(10, true)
+	msg := fmt.Sprintf("[req=%s] %s%s", l.reqID, message, call_flow)
+	l.logger.Error(msg, args...)
 }
 
 func (l *JimoLoggerImpl) Trace(msg string) {
@@ -282,31 +264,50 @@ func (l *JimoLoggerImpl) Close() {
 	}
 }
 
-func GetCallStack(depth int) string {
-	_, file1, line1, ok1 := runtime.Caller(1)
-	if !ok1 {
+func GetCallStack(depth int, vertical bool) string {
+	if depth <= 0 {
 		return "empty stack"
 	}
-	filename1 := filepath.Base(file1)
 
-	_, file2, line2, ok2 := runtime.Caller(2)
-	if !ok2 {
-		return fmt.Sprintf("%s:%d", filename1, line1)
+	// Start from caller level 1 (skip GetCallStack itself)
+	var frames []string
+	for i := 2; i <= depth; i++ {
+		_, file, line, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+		filename := filepath.Base(file)
+		frames = append(frames, fmt.Sprintf("%s:%d", filename, line))
 	}
 
-	filename2 := filepath.Base(file2)
-	if depth == 1 {
-		// It returns only one level
-		return fmt.Sprintf("%s:%d", filename2, line2)
+	if len(frames) == 0 {
+		return "empty stack"
 	}
 
-	_, file3, line3, ok3 := runtime.Caller(3)
-	if !ok3 {
-		return fmt.Sprintf("%s:%d", filename2, line2)
+	// Reverse to show caller first (outermost -> innermost)
+	for i, j := 0, len(frames)-1; i < j; i, j = i+1, j-1 {
+		frames[i], frames[j] = frames[j], frames[i]
 	}
 
-	filename3 := filepath.Base(file3)
-	return fmt.Sprintf("%s:%d->%s:%d", filename3, line3, filename2, line2)
+	if vertical {
+		return "\ncall_flow=[\n    " + joinStrings(frames, "\n    ") + "\n]"
+	}
+	return "[" + joinStrings(frames, "->") + "]"
+}
+
+// joinStrings joins a slice of strings with the given separator
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	if len(strs) == 1 {
+		return strs[0]
+	}
+	result := strs[0]
+	for _, s := range strs[1:] {
+		result += sep + s
+	}
+	return result
 }
 
 func GetCurrentLoc() (string, int) {

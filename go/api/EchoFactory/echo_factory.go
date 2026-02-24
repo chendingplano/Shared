@@ -552,10 +552,10 @@ func (e *echoContext) UpdateTokenByEmail(email string, token string) error {
 
 	switch dbType {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token = ?, v_token_expires_at = ? WHERE email = ?", tableName)
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token = $1, v_token_expires_at = $2 WHERE email = $3", tableName)
 	default:
 		return fmt.Errorf("unsupported database type (SHD_EFC_539): %s", dbType)

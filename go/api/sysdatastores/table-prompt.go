@@ -141,11 +141,11 @@ func GetPromptInfoByName(rc ApiTypes.RequestContext, prompt_name string) (Prompt
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE prompt_name = ? LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE prompt_name = $1 LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_PST_326): %s", db_type)
@@ -184,11 +184,11 @@ func GetPromptStatus(rc ApiTypes.RequestContext, prompt_name string) string {
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE prompt_name = ? LIMIT 1", table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE prompt_name = $1 LIMIT 1", table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err_msg := fmt.Sprintf("error: unsupported database type (SHD_PST_326): %s", db_type)
@@ -315,12 +315,12 @@ func AddPrompt(prompt_info PromptRecordInfo) (int64, string) {
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore
     switch db_type {
     case ApiTypes.MysqlName:
-         db = ApiTypes.MySql_DB_miner
+         db = ApiTypes.MySql_DB_Project
          stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     table_name, prompt_store_insert_field_names)
 
     case ApiTypes.PgName:
-         db = ApiTypes.PG_DB_miner
+         db = ApiTypes.PG_DB_Project
          stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
                     table_name, prompt_store_insert_field_names)
 

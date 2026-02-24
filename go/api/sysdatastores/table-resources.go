@@ -112,12 +112,12 @@ func GetResourceByName(rc ApiTypes.RequestContext, resource_name string, resourc
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = ? AND resource_action = ? LIMIT 1",
 			resource_store_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE resource_name = $1 AND resource_action = $2 LIMIT 1",
 			resource_store_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_RSC_326): %s", db_type)
@@ -271,12 +271,12 @@ func AddResource(
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameResources
     switch db_type {
     case ApiTypes.MysqlName:
-         db = ApiTypes.MySql_DB_miner
+         db = ApiTypes.MySql_DB_Project
          stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     table_name, resource_store_insert_field_names)
 
     case ApiTypes.PgName:
-         db = ApiTypes.PG_DB_miner
+         db = ApiTypes.PG_DB_Project
          stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
                     table_name, resource_store_insert_field_names)
 

@@ -41,16 +41,19 @@ type LibConfigDef struct {
 }
 
 type SystemTableNames struct {
-	TableNameTest          string `mapstructure:"table_name_test"`
-	TableNameLoginSessions string `mapstructure:"table_name_login_sessions"`
-	TableNameSessionLog    string `mapstructure:"table_name_session_log"`
-	TableNameUsers         string `mapstructure:"table_name_users"`
-	TableNameActivityLog   string `mapstructure:"table_name_activity_log"`
-	TableNameIDMgr         string `mapstructure:"table_name_id_mgr"`
-	TableNameEmailStore    string `mapstructure:"table_name_email_store"`
-	TableNamePromptStore   string `mapstructure:"table_name_prompt_store"`
-	TableNameResources     string `mapstructure:"table_name_resources"`
-	TableNameTableManager  string `mapstructure:"table_name_table_manager"`
+	TableNameTest            string `mapstructure:"table_name_test"`
+	TableNameLoginSessions   string `mapstructure:"table_name_login_sessions"`
+	TableNameSessionLog      string `mapstructure:"table_name_session_log"`
+	TableNameUsers           string `mapstructure:"table_name_users"`
+	TableNameActivityLog     string `mapstructure:"table_name_activity_log"`
+	TableNameIDMgr           string `mapstructure:"table_name_id_mgr"`
+	TableNameEmailStore      string `mapstructure:"table_name_email_store"`
+	TableNamePromptStore     string `mapstructure:"table_name_prompt_store"`
+	TableNameResources       string `mapstructure:"table_name_resources"`
+	TableNameTableManager    string `mapstructure:"table_name_table_manager"`
+	TableNameAutoTestRuns    string `mapstructure:"table_name_auto_test_runs"`
+	TableNameAutoTestResults string `mapstructure:"table_name_auto_test_results"`
+	TableNameAutoTestLogs    string `mapstructure:"table_name_auto_test_logs"`
 }
 
 type SystemIDs struct {
@@ -79,16 +82,25 @@ type DBConfig struct {
 }
 
 type DatabaseInfoDef struct {
-	DBType        string
-	PGDBName      string
-	MySQLDBName   string
-	PGDBHandle    *sql.DB
-	MySQLDBHandle *sql.DB
+	DBType                  string
+	PGDBName                string
+	PGDBHandle              *sql.DB
+	PGMigrateDBHandle       *sql.DB
+	PGAutoTesterDBHandle    *sql.DB
+	MySQLDBName             string
+	MySQLDBHandle           *sql.DB
+	MySQLMigrateDBHandle    *sql.DB
+	MySQLAutoTesterDBHandle *sql.DB
 }
 
 var DatabaseInfo DatabaseInfoDef
-var PG_DB_miner *sql.DB
-var MySql_DB_miner *sql.DB
+var PG_DB_Project *sql.DB
+var PG_DB_Shared *sql.DB
+var PG_DB_AutoTester *sql.DB
+var MySql_DB_Project *sql.DB
+var MySql_DB_Shared *sql.DB
+var MySql_DB_AutoTester *sql.DB
+
 var LibConfig LibConfigDef
 
 func GetDBType() string {
@@ -422,6 +434,7 @@ type UserInfoPocket struct {
 
 type JimoLogger interface {
 	Debug(message string, args ...any)
+	Line(message string, args ...any)
 	Info(message string, args ...any)
 	Warn(message string, args ...any)
 	Error(message string, args ...any)
@@ -490,4 +503,33 @@ type RequestContext interface {
 		user_email string,
 		expiry time.Time,
 		need_update_user bool) error
+}
+
+// Config holds the configuration for the Migrator.
+type MigrationConfig struct {
+	// MigrationsFS is the filesystem that contains the .sql migration files.
+	// Defaults to os.DirFS("migrations") when nil.
+	// Can also be fs.Sub(embedFS, "migrations") for an embedded filesystem.
+	MigrationsFS string `json:"migrations_fs" mapstructure:"migrations_fs"`
+
+	// MigrationsDir is the path to the migrations directory on disk.
+	// Defaults to the MIGRATION_DIR environment variable, or "migrations" if unset.
+	// Required when using CreateMigration or CreateAndApply; ignored otherwise.
+	// Must point to the same directory that MigrationsFS reads from.
+	// Example: "migrations" or "/app/migrations"
+	MigrationsDir string `json:"migrations_dir" mapstructure:"migrations_dir"`
+
+	// TableName is the goose version-tracking table name.
+	// Defaults to "goose_db_version" when empty.
+	TableName string `json:"tablename" mapstructure:"tablename"`
+
+	// Verbose enables verbose logging from the goose library itself.
+	// Defaults to true.
+	Verbose string `json:"verbose" mapstructure:"verbose"`
+
+	// AllowOutOfOrder permits applying migrations whose version numbers are
+	// lower than the currently recorded database version. Useful when
+	// feature branches add migrations independently.
+	// Defaults to true.
+	AllowOutOfOrder string `json:"allow_outof_order" mapstructure:"allow_outof_order"`
 }

@@ -4,16 +4,19 @@ id_inc_value                = 1000
 allow_dynamic_tables        = true
 
 [system_table_names]
-table_name_test             = "test"
-table_name_login_sessions   = "login_sessions"
-table_name_session_log      = "session_log"
-table_name_users            = "users"
-table_name_activity_log     = "activity_log"
-table_name_id_mgr           = "id_mgr"
-table_name_email_store      = "email_store"
-table_name_prompt_store     = "prompt_store"
-table_name_resources        = "resources"
-table_name_table_manager    = "table_manager"
+table_name_test                 = "test"
+table_name_login_sessions       = "login_sessions"
+table_name_session_log          = "session_log"
+table_name_activity_log         = "activity_log"
+table_name_id_mgr               = "id_mgr"
+table_name_email_store          = "email_store"
+table_name_prompt_store         = "prompt_store"
+table_name_resources            = "resources"
+table_name_table_manager        = "table_manager"
+table_name_goose                = "db_migrations"
+table_name_auto_test_runs       = "auto_test_runs"
+table_name_auto_test_results    = "auto_test_results"
+table_name_auto_test_logs       = "auto_test_logs"
 
 [system_ids]
 activity_log_id             = "IDs for activity log"

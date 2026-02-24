@@ -44,7 +44,22 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return next(c)
 		}
 
-		logger.Info("route path", "path", path)
+		// 🔍 Debug: Log full request details to identify who is calling /api/v1/events
+		userAgent := c.Request().Header.Get("User-Agent")
+		origin := c.Request().Header.Get("Origin")
+		referer := c.Request().Header.Get("Referer")
+		authorization := c.Request().Header.Get("Authorization")
+		clientIP := c.RealIP()
+		method := c.Request().Method
+		
+		logger.Info("incoming request",
+			"path", path,
+			"method", method,
+			"user_agent", userAgent,
+			"origin", origin,
+			"referer", referer,
+			"has_auth_header", authorization != "",
+			"client_ip", clientIP)
 		user_info, err := IsAuthenticated(rc)
 		if err != nil || user_info == nil {
 			clientIP := c.RealIP()

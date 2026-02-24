@@ -63,8 +63,14 @@ Central type definitions and global state for the shared library.
 
 **Global Variables:**
 ```go
-var PG_DB_miner *sql.DB      // PostgreSQL connection pool
-var MySql_DB_miner *sql.DB   // MySQL connection pool
+var PG_DB_Project *sql.DB      // PostgreSQL connection pool
+var PG_DB_Shared *sql.DB      // PostgreSQL connection pool
+var PG_DB_AutoTester *sql.DB      // PostgreSQL connection pool
+
+var MySql_DB_Project *sql.DB   // MySQL connection pool
+var MySql_DB_Shared *sql.DB   // MySQL connection pool
+var MySql_DB_AutoTester *sql.DB   // MySQL connection pool
+
 var DatabaseInfo DatabaseInfoDef
 var LibConfig LibConfigDef
 ```
@@ -74,7 +80,7 @@ var LibConfig LibConfigDef
 import "github.com/chendingplano/shared/go/api/ApiTypes"
 
 // Access database pool
-db := ApiTypes.PG_DB_miner
+db := ApiTypes.PG_DB_Project
 
 // Get configured table names
 usersTable := ApiTypes.GetUsersTableName()
@@ -157,7 +163,7 @@ import "github.com/chendingplano/shared/go/api/databaseutil"
 
 // Execute table creation
 stmt := "CREATE TABLE IF NOT EXISTS..."
-err := databaseutil.ExecuteStatement(ApiTypes.PG_DB_miner, stmt)
+err := databaseutil.ExecuteStatement(ApiTypes.PG_DB_Project, stmt)
 ```
 
 #### `api/RequestHandlers`
@@ -258,9 +264,9 @@ dbType := ApiTypes.GetDBType()
 var db *sql.DB
 switch ApiTypes.DatabaseInfo.DBType {
 case ApiTypes.PgName:
-    db = ApiTypes.PG_DB_miner
+    db = ApiTypes.PG_DB_Project
 case ApiTypes.MysqlName:
-    db = ApiTypes.MySql_DB_miner
+    db = ApiTypes.MySql_DB_Project
 }
 ```
 
@@ -712,7 +718,7 @@ mise dev
 import "github.com/chendingplano/shared/go/api/ApiTypes"
 
 func handler(rc ApiTypes.RequestContext) error {
-    db := ApiTypes.PG_DB_miner
+    db := ApiTypes.PG_DB_Project
 
     stmt := "SELECT * FROM users WHERE email = $1"
     row := db.QueryRow(stmt, email)
@@ -859,7 +865,7 @@ When making breaking changes to the shared library:
 
 ### For Go Library
 
-- **Keep connection pools global** - `PG_DB_miner`, `MySql_DB_miner`
+- **Keep connection pools global** - `PG_DB_Project`, `MySql_DB_Project`
 - **Use RequestContext abstraction** - Framework-agnostic
 - **Log with structured logging** - Use interface ApiTypes.JimoLogger, implemented by `loggerutil.JimoLogger`
 - **Handle both databases** - PostgreSQL and MySQL (when applicable)
@@ -930,12 +936,12 @@ func main() {
 
 **Error:** `panic: runtime error: invalid memory address`
 
-**Cause:** Trying to use `ApiTypes.PG_DB_miner` before initialization
+**Cause:** Trying to use `ApiTypes.PG_DB_Project` before initialization
 
 **Solution:** Ensure database is initialized before use:
 ```go
 // In main.go or init function
-ApiTypes.PG_DB_miner = initPostgresConnection()
+ApiTypes.PG_DB_Project = initPostgresConnection()
 ```
 
 ## 12. See Also

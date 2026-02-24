@@ -205,7 +205,7 @@ func InsertIcon(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		insert_stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ("+
 			"$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "+
 			"RETURNING %s",
@@ -282,7 +282,7 @@ func GetIconByID(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = $1", Icons_selected_field_names, IconsTableName)
 
 	default:
@@ -324,7 +324,7 @@ func GetIconByFileName(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE category = $1 AND file_name = $2",
 			Icons_selected_field_names, IconsTableName)
 
@@ -365,7 +365,7 @@ func ListIcons(
 		return nil, 0, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_ICN_340): %s", db_type)
@@ -466,7 +466,7 @@ func UpdateIcon(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_ICN_437): %s", db_type)
@@ -558,7 +558,7 @@ func DeleteIcon(
 		return err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE id = $1", IconsTableName)
 
 	default:
@@ -603,7 +603,7 @@ func GetDistinctCategories(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT DISTINCT category FROM %s ORDER BY category", IconsTableName)
 
 	default:

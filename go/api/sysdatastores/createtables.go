@@ -14,10 +14,10 @@ func CreateSysTables(logger ApiTypes.JimoLogger) error {
 	database_type := ApiTypes.DatabaseInfo.DBType
 	switch database_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		return fmt.Errorf("***** Unrecognized database type (MID_DBS_124): %s", database_type)

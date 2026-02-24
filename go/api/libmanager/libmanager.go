@@ -41,10 +41,10 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	db_type := ApiTypes.DatabaseInfo.DBType
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		logger.Error("db_type not supported", "db_type", db_type)

@@ -797,10 +797,10 @@ func HandleDBUpdate(
 	var db *sql.DB
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
@@ -1019,10 +1019,10 @@ func HandleDBDelete(
 	var db *sql.DB
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_024", call_flow)

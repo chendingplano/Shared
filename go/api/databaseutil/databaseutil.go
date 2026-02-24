@@ -31,8 +31,8 @@ func InitDB(ctx context.Context,
 	mysql_config ApiTypes.DBConfig,
 	pg_config ApiTypes.DBConfig) error {
 	logger := loggerutil.CreateDefaultLogger("SHD_DBU_035")
-	call_flow := ctx.Value(ApiTypes.CallFlowKey).(string)
-	logger.Info("InitDB called (SHD_DBS_0 45)")
+	call_flow, _ := ctx.Value(ApiTypes.CallFlowKey).(string)
+	logger.Info("InitDB called (SHD_DBS_0 45)", "caller", call_flow)
 
 	if pg_config.DBType != "pg" {
 		error_msg := fmt.Errorf("invalid PG config name (%s->SHD_DBS_056):%s", call_flow, pg_config.DBType)
@@ -42,7 +42,7 @@ func InitDB(ctx context.Context,
 
 	if pg_config.CreateFlag {
 		logger.Info("To create PGDBMiner (SHD_DBS_024)")
-		err := CreatePGDBMiner(logger, pg_config)
+		err := CreatePGDB(logger, pg_config)
 		if err != nil {
 			logger.Error("Failed creating PG connection (SHD_DBS_026)", "error", err)
 			return err
@@ -59,7 +59,7 @@ func InitDB(ctx context.Context,
 	}
 
 	if mysql_config.CreateFlag {
-		err := AosCreateMySqlDBMiner(logger, mysql_config)
+		err := AosCreateMySqlDB(logger, mysql_config)
 		if err != nil {
 			logger.Error("Failed creating MySQL connection (SHD_DBS_032)", "call_flow", call_flow, "error", err)
 			return err
@@ -77,13 +77,21 @@ func IsValidTableName(name string) bool {
 	return regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(name)
 }
 
-func CreatePGDBMiner(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
+func CreatePGDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
 	var err error
 	host := config.Host
 	port := config.Port
 	username := os.Getenv("PG_USER_NAME")
 	password := os.Getenv("PG_PASSWORD")
 	dbname := os.Getenv("PG_DB_NAME")
+	shared_dbname := os.Getenv("PG_DB_NAME_SHARED")
+	autotester_dbname := os.Getenv("PG_DB_NAME_AUTOTESTER")
+
+	if dbname == shared_dbname {
+		err := fmt.Errorf("project db name and shared db name cannot be the same (SHD_DBS_150)")
+		logger.Error("Invalid database names", "error", err)
+		return err
+	}
 
 	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
 		host, port, username, password, dbname)
@@ -91,50 +99,116 @@ func CreatePGDBMiner(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error
 	// SECURITY: Don't log credentials
 	logger.Info("Connect to PG (SHD_DBS_089)", "host", host, "port", port, "username", username, "dbname", dbname)
 
-	ApiTypes.PG_DB_miner, err = sql.Open("postgres", connStr)
+	ApiTypes.PG_DB_Project, err = sql.Open("postgres", connStr)
 	if err != nil {
 		logger.Error("Failed to connect to database (SHD_DBS_050)", "error", err)
 	}
 
 	// Test the connection
-	if err = ApiTypes.PG_DB_miner.Ping(); err != nil {
+	if err = ApiTypes.PG_DB_Project.Ping(); err != nil {
 		// SECURITY: Don't log connection string or credentials
 		logger.Error("Failed connecting PostgreSQL (SHD_DBS_055)", "error", err, "host", host, "dbname", dbname)
 	} else {
 		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname, "user", username)
 	}
 
-	ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_miner
+	ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_Project
+
+	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+		host, port, username, password, shared_dbname)
+
+	// SECURITY: Don't log credentials
+	logger.Info("Connect to Migrate PG", "host", host, "port", port, "username", username,
+		"dbname", shared_dbname)
+
+	ApiTypes.PG_DB_Shared, err = sql.Open("postgres", connStr)
+	if err != nil {
+		logger.Error("Failed to connect to migrate database", "error", err)
+	}
+
+	// Test the connection
+	if err = ApiTypes.PG_DB_Shared.Ping(); err != nil {
+		// SECURITY: Don't log connection string or credentials
+		logger.Error("Failed connecting PostgreSQL", "error", err,
+			"host", host, "dbname", shared_dbname)
+	} else {
+		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", shared_dbname, "user", username)
+	}
+
+	ApiTypes.DatabaseInfo.PGMigrateDBHandle = ApiTypes.PG_DB_Shared
+
+	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+		host, port, username, password, autotester_dbname)
+
+	// SECURITY: Don't log credentials
+	logger.Info("Connect to AutoTester PG", "host", host, "port", port, "username", username,
+		"dbname", autotester_dbname)
+
+	ApiTypes.PG_DB_AutoTester, err = sql.Open("postgres", connStr)
+	if err != nil {
+		logger.Error("Failed to connect to AutoTester database", "error", err)
+	}
+
+	// Test the connection
+	if err = ApiTypes.PG_DB_AutoTester.Ping(); err != nil {
+		// SECURITY: Don't log connection string or credentials
+		logger.Error("Failed connecting PostgreSQL", "error", err,
+			"host", host, "dbname", autotester_dbname)
+	} else {
+		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", autotester_dbname, "user", username)
+	}
 
 	return nil
 }
 
-func AosCreateMySqlDBMiner(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
+func AosCreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
 	var err error
 	host := config.Host
 	port := config.Port
-	username := config.UserName
-	password := config.Password
-	db_name := config.DbName
+	username := os.Getenv("MYSQL_USER_NAME")
+	password := os.Getenv("MYSQL_PASSWORD")
+	db_name := os.Getenv("MYSQL_DB_NAME")
+	shared_dbname := os.Getenv("MYSQL_DB_NAME_SHARED")
+
 	options := "?tls=false&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
 	connStr := fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, db_name, options)
 
 	logger.Info("To connect to MySQL with connStr (SHD_DBS_081)", "connStr", connStr)
-	ApiTypes.MySql_DB_miner, err = sql.Open("mysql", connStr)
+	ApiTypes.MySql_DB_Project, err = sql.Open("mysql", connStr)
 	if err != nil {
-		logger.Error("Failed connecting MySQL (SHD_DBS_084)", "error", err)
+		logger.Error("Failed connecting MySQL", "error", err)
 		return err
 	}
 
 	// Test the connection
-	if err = ApiTypes.MySql_DB_miner.Ping(); err != nil {
+	if err = ApiTypes.MySql_DB_Project.Ping(); err != nil {
 		// SECURITY: Don't log connection string (contains credentials)
 		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", db_name)
 		return err
 	}
 
 	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", db_name)
-	ApiTypes.DatabaseInfo.MySQLDBHandle = ApiTypes.MySql_DB_miner
+	ApiTypes.DatabaseInfo.MySQLDBHandle = ApiTypes.MySql_DB_Project
+
+	options = "?tls=false&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
+	connStr = fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, shared_dbname, options)
+
+	logger.Info("To connect to MySQL with connStr", "connStr", connStr)
+	ApiTypes.MySql_DB_Shared, err = sql.Open("mysql", connStr)
+	if err != nil {
+		logger.Error("Failed connecting MySQL", "error", err)
+		return err
+	}
+
+	// Test the connection
+	if err = ApiTypes.MySql_DB_Shared.Ping(); err != nil {
+		// SECURITY: Don't log connection string (contains credentials)
+		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", shared_dbname)
+		return err
+	}
+
+	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", shared_dbname)
+	ApiTypes.DatabaseInfo.MySQLMigrateDBHandle = ApiTypes.MySql_DB_Shared
 
 	return nil
 }
@@ -227,10 +301,10 @@ func HandleSelect(c echo.Context,
 func AosExecuteStatement(db_type string, stmt string) error {
 	switch db_type {
 	case ApiTypes.MysqlName:
-		return ExecuteStatement(ApiTypes.MySql_DB_miner, stmt)
+		return ExecuteStatement(ApiTypes.MySql_DB_Project, stmt)
 
 	case ApiTypes.PgName:
-		return ExecuteStatement(ApiTypes.PG_DB_miner, stmt)
+		return ExecuteStatement(ApiTypes.PG_DB_Project, stmt)
 
 	default:
 		return fmt.Errorf("unsupported database type (SHD_DBS_153): %s", db_type)
@@ -265,12 +339,16 @@ func StrPtr(s string) *string {
 }
 
 func CloseDatabase() {
-	if ApiTypes.PG_DB_miner != nil {
-		ApiTypes.PG_DB_miner.Close()
+	if ApiTypes.PG_DB_Project != nil {
+		ApiTypes.PG_DB_Project.Close()
 	}
 
-	if ApiTypes.MySql_DB_miner != nil {
-		ApiTypes.MySql_DB_miner.Close()
+	if ApiTypes.PG_DB_Shared != nil {
+		ApiTypes.PG_DB_Shared.Close()
+	}
+
+	if ApiTypes.MySql_DB_Project != nil {
+		ApiTypes.MySql_DB_Project.Close()
 	}
 }
 
@@ -294,13 +372,13 @@ func CreateGenericTable(rc ApiTypes.RequestContext, table_name string) error {
 	var db *sql.DB
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" +
 			"doc_id BIGINT AUTO_INCREMENT PRIMARY KEY, " + common_fields +
 			") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + common_fields + ");"
 
 	default:

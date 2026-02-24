@@ -725,3 +725,52 @@ func MaskString(s string, prefixLen, suffixLen int, maskChar rune) string {
 
 	return prefix + mask + suffix
 }
+
+func ReadMigrationConfig(filename string, logger ApiTypes.JimoLogger) (*ApiTypes.MigrationConfig, error) {
+	logger.Info("Read config", "filename", filename)
+	viper.SetConfigFile(filename)
+	viper.SetConfigType("toml")
+
+	// Read config file
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			return nil, fmt.Errorf("config file not found:%s, error:%v (SHD_20260221081100)", filename, err)
+		}
+
+		return nil, fmt.Errorf("failed reading config file:%s, error:%v (SHD_20260221081101)", filename, err)
+	}
+
+	// Override with environment variables (e.g., DATABASE_URL)
+	viper.AutomaticEnv()
+
+	// Unmarshal into struct
+	var config *ApiTypes.MigrationConfig
+	if err := viper.Unmarshal(config); err != nil {
+		return nil, fmt.Errorf("unable to decode migration config:%s, error:%w (SHD_20260221081102)", filename, err)
+	}
+
+	logger.Info("Loading config success", "filename", filename)
+	ApplyDefaults(config)
+	return config, nil
+}
+
+// applyDefaults applies default values to the Config.
+func ApplyDefaults(migrate_cfg *ApiTypes.MigrationConfig) {
+	if migrate_cfg.MigrationsFS == "" {
+		migrate_cfg.MigrationsFS = "migrations"
+	}
+
+	if migrate_cfg.MigrationsDir == "" {
+		migrate_cfg.MigrationsDir = "migrations"
+	}
+
+	// Verbose defaults to true
+	if migrate_cfg.Verbose != "false" {
+		migrate_cfg.Verbose = "true"
+	}
+
+	// AllowOutOfOrder defaults to true
+	if migrate_cfg.AllowOutOfOrder != "false" {
+	}
+	migrate_cfg.AllowOutOfOrder = "true"
+}

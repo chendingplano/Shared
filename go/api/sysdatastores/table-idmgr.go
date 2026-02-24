@@ -71,12 +71,12 @@ func AddOneID(rc ApiTypes.RequestContext, record IDMgrDef) error {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s)
               	VALUES (?, ?, ?, ?)`, table_name, id_mgr_insert_fieldnames)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s)
 				VALUES ($1, $2, $3, $4)`, table_name, id_mgr_insert_fieldnames)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		error_msg := fmt.Sprintf("unsupported database type (SHD_IMG_034): %s", db_type)
@@ -115,13 +115,13 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (?, ?, ?, ?)
               ON DUPLICATE KEY UPDATE id_name = id_name`, table_name, field_names)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4)
             ON CONFLICT (id_name)
             DO NOTHING`, table_name, field_names)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		// SHOULD NEVER HAPPEN!!!
@@ -151,11 +151,11 @@ func NextIDBlock(id_name string, inc_size int) (int64, error) {
 	switch db_type {
 	case ApiTypes.MysqlName:
 		// Support MySQL 8.0.21+
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		query = fmt.Sprintf("UPDATE %s SET crt_value = crt_value + ? WHERE id_name = ? RETURNING crt_value", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("UPDATE %s SET crt_value = crt_value + $1 WHERE id_name = $2 RETURNING crt_value", table_name)
 
 	default:

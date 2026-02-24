@@ -156,11 +156,11 @@ func GetUserInfoByEmail(
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE email = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE email = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
@@ -199,11 +199,11 @@ func GetUserInfoByUserID(
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
@@ -300,11 +300,11 @@ func GetUserInfoByToken(
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
@@ -343,9 +343,6 @@ func GetUserInfoByToken(
 	return user_info, nil
 }
 
-
-
-
 func UpsertUser(
 	rc ApiTypes.RequestContext,
 	user_info *ApiTypes.UserInfo) error {
@@ -361,7 +358,7 @@ func UpsertUser(
 		return err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		insert_stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ("+
 			"$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, "+
 			"$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, "+
@@ -525,11 +522,11 @@ func MarkUserVerified(
 	logger := rc.GetLogger()
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET user_status = 'active', verified = true WHERE name = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET user_status = 'active', verified = true WHERE name = $1", table_name)
 
 	default:
@@ -559,11 +556,11 @@ func UpdatePasswordByEmail(
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET password = ?, user_status = 'active' WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET password = $1, user_status = 'active' WHERE email = $2", table_name)
 
 	default:
@@ -593,11 +590,11 @@ func UpdateAuthTokenByEmail(
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_miner
+		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token= ? WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_miner
+		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token= $1 WHERE email = $2", table_name)
 
 	default:
