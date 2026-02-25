@@ -1,0 +1,42 @@
+# testers.example.toml
+#
+# Copy this file to your project root as "testers.toml" and customise it.
+# Packages defined here are loaded after the shared-library baseline
+# (shared/go/api/testers/testers.toml), so a package with the same name as a
+# shared package will replace it.  New names are simply added to the registry.
+#
+# Usage in your registerAll function:
+#
+#   sharedtesters.RegisterTesters()
+#   // ... register app-specific testers ...
+#   sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)
+#
+# Alternatively, keep the hard-coded defaults as a fallback:
+#
+#   sharedtesters.RegisterTesters()
+#   sharedtesters.RegisterPackages()               // hard-coded defaults
+#   sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)  // overrides / additions
+
+# ── Example: override the built-in "smoke" package ───────────────────────────
+# [[packages]]
+# name        = "smoke"
+# description = "Project smoke: adds app_health_tester to the shared baseline"
+# testers     = ["tester_database", "tester_logger", "app_health_tester"]
+
+# ── Example: add a project-specific nightly suite ────────────────────────────
+# [[packages]]
+# name        = "nightly"
+# description = "Full nightly regression: all shared testers plus app testers"
+# testers     = [
+#   "tester_database",
+#   "tester_databaseutil",
+#   "tester_logger",
+#   "app_user_tester",
+#   "app_billing_tester",
+# ]
+
+# ── Example: minimal app-only package ────────────────────────────────────────
+# [[packages]]
+# name        = "app"
+# description = "App-specific testers only, no shared-library testers"
+# testers     = ["app_user_tester", "app_billing_tester"]

@@ -5,13 +5,13 @@ import (
 	"context"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/autotesters"
+	"github.com/chendingplano/shared/go/api/autotester"
 	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // LoggerTester tests the loggerutil package functionality.
 type LoggerTester struct {
-	autotesters.BaseTester
+	autotester.BaseTester
 	testLogger ApiTypes.JimoLogger
 	logBuffer  *bytes.Buffer
 }
@@ -19,7 +19,7 @@ type LoggerTester struct {
 // NewLoggerTester creates a new logger tester.
 func NewLoggerTester() *LoggerTester {
 	return &LoggerTester{
-		BaseTester: autotesters.NewBaseTester(
+		BaseTester: autotester.NewBaseTester(
 			"tester_logger",
 			"Tests loggerutil package functionality",
 			"validation",
@@ -38,15 +38,15 @@ func (t *LoggerTester) Prepare(ctx context.Context) error {
 }
 
 // GetTestCases returns static test cases for logger testing.
-func (t *LoggerTester) GetTestCases() []autotesters.TestCase {
-	return []autotesters.TestCase{
+func (t *LoggerTester) GetTestCases() []autotester.TestCase {
+	return []autotester.TestCase{
 		{
 			ID:          "TC_260222132440",
 			Name:        "Test Info logging",
 			Description: "Verify that Info level logging works correctly",
 			Input:       map[string]interface{}{"level": "INFO", "message": "Test info message"},
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityHigh,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityHigh,
 			Tags:        []string{"logging", "info"},
 			RunTest:     t.testInfo,
 		},
@@ -55,8 +55,8 @@ func (t *LoggerTester) GetTestCases() []autotesters.TestCase {
 			Name:        "Test Debug logging",
 			Description: "Verify that Debug level logging works correctly",
 			Input:       map[string]interface{}{"level": "DEBUG", "message": "Test debug message"},
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityMedium,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityMedium,
 			Tags:        []string{"logging", "debug"},
 			RunTest:     t.testDebug,
 		},
@@ -65,8 +65,8 @@ func (t *LoggerTester) GetTestCases() []autotesters.TestCase {
 			Name:        "Test logging with context",
 			Description: "Verify that logging with key-value context works correctly",
 			Input:       map[string]interface{}{"message": "Test with context", "context": map[string]interface{}{"key": "value", "num": 42}},
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityMedium,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityMedium,
 			Tags:        []string{"logging", "context"},
 			RunTest:     t.testContext,
 		},
@@ -75,17 +75,17 @@ func (t *LoggerTester) GetTestCases() []autotesters.TestCase {
 
 func (t *LoggerTester) testInfo(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	input, ok := tc.Input.(map[string]interface{})
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "invalid input type: expected map[string]interface{}")
 		return
 	}
 	message, ok := input["message"].(string)
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "missing or invalid 'message' field in input")
 		return
 	}
@@ -98,17 +98,17 @@ func (t *LoggerTester) testInfo(
 
 func (t *LoggerTester) testDebug(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	input, ok := tc.Input.(map[string]interface{})
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "invalid input type: expected map[string]interface{}")
 		return
 	}
 	message, ok := input["message"].(string)
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "missing or invalid 'message' field in input")
 		return
 	}
@@ -121,23 +121,23 @@ func (t *LoggerTester) testDebug(
 
 func (t *LoggerTester) testContext(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	input, ok := tc.Input.(map[string]interface{})
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "invalid input type: expected map[string]interface{}")
 		return
 	}
 	message, ok := input["message"].(string)
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "missing or invalid 'message' field in input")
 		return
 	}
 	ctxMap, ok := input["context"].(map[string]interface{})
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "missing or invalid 'context' field in input")
 		return
 	}

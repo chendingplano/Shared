@@ -1,0 +1,23 @@
+# testers.toml — shared-library tester package definitions
+#
+# This file mirrors the packages registered by RegisterPackages() and serves as
+# the canonical TOML source for the shared library's built-in suites.
+# Projects that call LoadTOMLPackages() will load this file first as a baseline.
+#
+# To override a package, define a package with the same name in your project's
+# root-level testers.toml — it will replace the entry from this file.
+
+[[packages]]
+name        = "smoke"
+description = "Fast sanity check: verifies database connectivity and logger are operational"
+testers     = ["tester_database", "tester_logger"]
+
+[[packages]]
+name        = "regression"
+description = "Core regression suite: database utilities and logger correctness"
+testers     = ["tester_databaseutil", "tester_logger"]
+
+[[packages]]
+name        = "complete"
+description = "Full shared-library suite: all three shared testers"
+testers     = ["tester_database", "tester_databaseutil", "tester_logger"]

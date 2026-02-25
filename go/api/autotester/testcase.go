@@ -1,4 +1,4 @@
-package autotesters
+package autotester
 
 import (
 	"context"

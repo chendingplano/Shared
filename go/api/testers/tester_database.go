@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/autotesters"
+	"github.com/chendingplano/shared/go/api/autotester"
 )
 
 // DatabaseTester tests database connection and basic operations.
 type DatabaseTester struct {
-	autotesters.BaseTester
+	autotester.BaseTester
 	dbConfig *ApiTypes.DBConfig
 	testDB   *sql.DB
 }
@@ -20,7 +20,7 @@ type DatabaseTester struct {
 // NewDatabaseTester creates a new database tester.
 func NewDatabaseTester(dbConfig *ApiTypes.DBConfig) *DatabaseTester {
 	return &DatabaseTester{
-		BaseTester: autotesters.NewBaseTester(
+		BaseTester: autotester.NewBaseTester(
 			"tester_database",
 			"Tests database connectivity and basic CRUD operations",
 			"validation",
@@ -47,15 +47,15 @@ func (t *DatabaseTester) Prepare(ctx context.Context) error {
 }
 
 // GetTestCases returns the static test cases for database testing.
-func (t *DatabaseTester) GetTestCases() []autotesters.TestCase {
-	return []autotesters.TestCase{
+func (t *DatabaseTester) GetTestCases() []autotester.TestCase {
+	return []autotester.TestCase{
 		{
 			ID:          "TC_260222132452",
 			Name:        "Test database connection ping",
 			Description: "Test the database responds to ping",
 			Input:       nil,
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityCritical,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityCritical,
 			Tags:        []string{"connection", "smoke"},
 			RunTest:     t.testPing,
 		},
@@ -64,8 +64,8 @@ func (t *DatabaseTester) GetTestCases() []autotesters.TestCase {
 			Name:        "Test database transaction",
 			Description: "Verify that transactions can be created and rolled back",
 			Input:       nil,
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityHigh,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityHigh,
 			Tags:        []string{"transaction"},
 			RunTest:     t.testTransaction,
 		},
@@ -74,8 +74,8 @@ func (t *DatabaseTester) GetTestCases() []autotesters.TestCase {
 			Name:        "Test simple query execution",
 			Description: "Verify that a simple SELECT query can be executed",
 			Input:       "SELECT 1",
-			Expected:    autotesters.ExpectedResult{Success: true},
-			Priority:    autotesters.PriorityHigh,
+			Expected:    autotester.ExpectedResult{Success: true},
+			Priority:    autotester.PriorityHigh,
 			Tags:        []string{"query"},
 			RunTest:     t.testSimpleQuery,
 		},
@@ -83,23 +83,23 @@ func (t *DatabaseTester) GetTestCases() []autotesters.TestCase {
 }
 
 // GenerateTestCases creates dynamic test cases for stress testing.
-func (t *DatabaseTester) GenerateTestCases(ctx context.Context) ([]autotesters.TestCase, error) {
+func (t *DatabaseTester) GenerateTestCases(ctx context.Context) ([]autotester.TestCase, error) {
 	// Generate random stress test cases if we have a random source
 	if t.GetRandFunc() == nil {
 		return nil, nil
 	}
 
-	cases := make([]autotesters.TestCase, 0, 50)
+	cases := make([]autotester.TestCase, 0, 50)
 
 	// Random simple queries for stress testing
 	for i := 0; i < 50; i++ {
-		cases = append(cases, autotesters.TestCase{
+		cases = append(cases, autotester.TestCase{
 			ID:          fmt.Sprintf("TC_260222141500_%03d", i),
 			Name:        fmt.Sprintf("Stress test iteration %d", i),
 			Description: "Random simple query stress test",
 			Input:       "SELECT 1",
-			Expected:    autotesters.ExpectedResult{Success: true, MaxDuration: 100 * time.Millisecond},
-			Priority:    autotesters.PriorityLow,
+			Expected:    autotester.ExpectedResult{Success: true, MaxDuration: 100 * time.Millisecond},
+			Priority:    autotester.PriorityLow,
 			Tags:        []string{"stress", "random"},
 			RunTest:     t.testSimpleQuery,
 		})
@@ -110,16 +110,16 @@ func (t *DatabaseTester) GenerateTestCases(ctx context.Context) ([]autotesters.T
 
 func (t *DatabaseTester) testPing(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	if t.testDB == nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "database connection is nil (MID_260222132452)")
 		return
 	}
 
 	if err := t.testDB.PingContext(ctx); err != nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("ping failed (MID_260222132453): %v", err))
 		return
 	}
@@ -130,17 +130,17 @@ func (t *DatabaseTester) testPing(
 
 func (t *DatabaseTester) testTransaction(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	if t.testDB == nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "database connection is nil (MID_260222132454)")
 		return
 	}
 
 	tx, err := t.testDB.BeginTx(ctx, nil)
 	if err != nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("failed to begin transaction (MID_260222132455): %v", err))
 		return
 	}
@@ -149,14 +149,14 @@ func (t *DatabaseTester) testTransaction(
 	var val int
 	if err := tx.QueryRowContext(ctx, "SELECT 1").Scan(&val); err != nil {
 		_ = tx.Rollback()
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("query in transaction failed (MID_260222132456): %v", err))
 		return
 	}
 
 	// Rollback (we don't want to commit test data)
 	if err := tx.Rollback(); err != nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("rollback failed (MID_260222132457): %v", err))
 		return
 	}
@@ -167,24 +167,24 @@ func (t *DatabaseTester) testTransaction(
 
 func (t *DatabaseTester) testSimpleQuery(
 	ctx context.Context,
-	tc autotesters.TestCase,
-	result *autotesters.TestResult) {
+	tc autotester.TestCase,
+	result *autotester.TestResult) {
 	if t.testDB == nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "database connection is nil (MID_260222132458)")
 		return
 	}
 
 	query, ok := tc.Input.(string)
 	if !ok {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, "invalid input type: expected string (MID_260222132459)")
 		return
 	}
 
 	rows, err := t.testDB.QueryContext(ctx, query)
 	if err != nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("query execution failed (MID_260222132460): %v", err))
 		return
 	}
@@ -197,7 +197,7 @@ func (t *DatabaseTester) testSimpleQuery(
 	}
 
 	if err := rows.Err(); err != nil {
-		result.Status = autotesters.StatusFail
+		result.Status = autotester.StatusFail
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("row iteration failed (MID_260222132461): %v", err))
 		return
 	}

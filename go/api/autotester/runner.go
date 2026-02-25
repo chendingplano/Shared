@@ -1,4 +1,4 @@
-package autotesters
+package autotester
 
 import (
 	"context"
@@ -84,6 +84,20 @@ func (r *TestRunner) Run(ctx context.Context) error {
 	r.runID = newRunID()
 	r.seed = r.resolveSeed()
 	r.startTime = time.Now()
+
+	// Resolve PackageName → TesterNames when a package is requested and no
+	// explicit tester names override it.
+	if r.config.PackageName != "" && len(r.config.TesterNames) == 0 {
+		pkg, ok := GlobalPackageRegistry.Get(r.config.PackageName)
+		if !ok {
+			return fmt.Errorf("package %q not found in GlobalPackageRegistry (MID_240226100001)", r.config.PackageName)
+		}
+		r.config.TesterNames = pkg.TesterNames
+		r.logger.Info("Resolved tester package",
+			"package", r.config.PackageName,
+			"testers", strings.Join(r.config.TesterNames, ", "),
+		)
+	}
 
 	r.logger.Info("AutoTester run started",
 		"run_id", r.runID,

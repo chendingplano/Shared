@@ -1,0 +1,948 @@
+# Tester Migration Implementation Guide
+
+**Package:** `tester_migration`  
+**Location:** `shared/go/api/testers/tester-migration/`  
+**Related Overview:** [tester-migration-overview.md](./tester-migration-overview.md)
+
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+   - [1.1 Key Capabilities](#11-key-capabilities)
+   - [1.2 Architecture](#12-architecture)
+2. [File Structure](#2-file-structure)
+3. [Function Reference](#3-function-reference)
+   - [3.1 tester_migration.go](#31-tester_migrationgo)
+     - [3.1.1 NewMigrationTester](#311-newmigrationtestercfg--migrationtesterconfig--migrationtester)
+     - [3.1.2 Prepare](#312-preparectx-contextcontext-error)
+     - [3.1.3 Cleanup](#313-cleanupctx-contextcontext-error)
+     - [3.1.4 RunTestCase](#314-runtestcasectx-contextcontext-tc-autotestertestcase-autotestertestresult)
+     - [3.1.5 buildMigrator](#315-buildmigratorallowoutoforder-bool--sharedgoosemigrator)
+     - [3.1.6 buildMigrationsPool](#316-buildmigrationspoolctx-contextcontext-error)
+     - [3.1.7 What is a Migration Pool?](#317-what-is-a-migration-pool)
+     - [3.1.8 buildMigrationFileContent](#318-buildmigrationfilecontentupsql-downsql-string--string)
+     - [3.1.9 Migration File Content Format](#319-migration-file-content-format)
+     - [3.1.10 Purpose of Migration Files](#3110-purpose-of-migration-files)
+     - [3.1.11 dropTestTables](#3111-droptesttablesctx-contextcontext-error)
+     - [3.1.12 clearMigrationsDir](#3112-clearmigrationsdirctx-contextcontext-error)
+     - [3.1.13 dispatch](#3113-dispatchctx-contextcontext-input-migrationinput-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.1.14 observeSideEffects](#3114-observesideeffectsctx-contextcontext-result--autotestertestresult)
+   - [3.2 tester_migration_types.go](#32-tester_migration_typesgo)
+     - [3.2.1 Configuration Types](#321-configuration-types)
+       - [3.2.1.1 MigrationTesterConfig](#3211-migrationtesterconfig)
+     - [3.2.2 Data Types](#322-data-types)
+       - [3.2.2.1 MigrationOperation](#3221-migrationoperation)
+       - [3.2.2.2 MigrationFile](#3222-migrationfile)
+       - [3.2.2.3 MigrationRecord](#3223-migrationrecord)
+       - [3.2.2.4 MigrationSUTState](#3224-migrationsutstate)
+       - [3.2.2.5 migrationInput](#3225-migrationinput)
+       - [3.2.2.6 MigrationStatus](#3226-migrationstatus)
+   - [3.3 tester_migration_state.go](#33-tester_migration_statego)
+     - [3.3.1 syncState](#331-syncstatectx-contextcontext-error)
+     - [3.3.2 resetToState](#332-resettostatectx-contextcontext-prestate-migrationsutstate-error)
+     - [3.3.3 resetDUT](#333-resetdutctx-contextcontext-error)
+     - [3.3.4 writeMigrationFile](#334-writemigrationfilefile-migrationfile-error)
+     - [3.3.5 extractVersionFromFilename](#335-extractversionfromfilenamefilename-string-int64)
+   - [3.4 tester_migration_handlers.go](#34-tester_migration_handlersgo)
+     - [3.4.1 handleUp](#341-handleupctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.2 handleUpByOne](#342-handleupbyonectx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.3 handleUpTo](#343-handleuptoctx-contextcontext-migrator--sharedgoosemigrator-targetversion-int64-result--autotestertestresult)
+     - [3.4.4 handleDown](#344-handledownctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.5 handleDownTo](#345-handledowntoctx-contextcontext-migrator--sharedgoosemigrator-targetversion-int64-result--autotestertestresult)
+     - [3.4.6 handleStatus](#346-handlestatusctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.7 handleGetVersion](#347-handlegetversionctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.8 handleHasPending](#348-handlehaspendingctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult)
+     - [3.4.9 handleCreateAndApply](#349-handlecreateandapplyctx-contextcontext-migrator--sharedgoosemigrator-description-string-upsql-string-downsql-string-result--autotestertestresult)
+     - [3.4.10 handleListSources](#3410-handlelistsourcesmigrator--sharedgoosemigrator-result--autotestertestresult)
+   - [3.5 tester_migration_cases.go](#35-tester_migration_casesgo)
+     - [3.5.1 GetTestCases](#351-gettestcases--autotestertestcase)
+     - [3.5.2 GenerateTestCases](#352-generatetestcasesctx-contextcontext--autotestertestcase-error)
+     - [3.5.3 selectOperation](#353-selectoperationrandval-int-weights--int-migrationoperation)
+     - [3.5.4 generatePreState](#354-generateprestatectx-contextcontext-rand-interface-migrationsutstate)
+     - [3.5.5 getInitialPoolFiles](#355-getinitialpoolfiles--migrationfile)
+     - [3.5.6 getFullyAppliedState](#356-getfullyappliedstate-migrationsutstate)
+4. [Usage in the Framework](#4-usage-in-the-framework)
+   - [4.1 Integration Points](#41-integration-points)
+   - [4.2 Framework Flow](#42-framework-flow)
+5. [Examples](#5-examples)
+   - [5.1 Basic Usage](#51-basic-usage)
+   - [5.2 Custom Test Case Example](#52-custom-test-case-example)
+   - [5.3 Migration File Format Example](#53-migration-file-format-example)
+   - [5.4 Error Handling Example](#54-error-handling-example)
+   - [5.5 State Inspection Example](#55-state-inspection-example)
+6. [Related Documentation](#6-related-documentation)
+7. [Change Log](#7-change-log)
+   - [7.1 2026-02-24](#71-2026-02-24)
+
+---
+
+## 1 Overview {#1-overview}
+
+<a id="11-key-capabilities"></a>
+### 1.1 Key Capabilities
+
+- **Full migration lifecycle testing**: Apply (`Up`), rollback (`Down`), and targeted version operations
+- **Stateful testing**: Tracks and validates migration state across operations
+- **Synthetic migration generation**: Creates test migration files dynamically
+- **Comprehensive test coverage**: 19+ static test cases plus dynamic case generation
+- **Safety mechanisms**: Enforces `testonly_` naming conventions to prevent production accidents
+
+### 1.2 Architecture {#12-architecture}
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     MigrationTester                         │
+├─────────────────────────────────────────────────────────────┤
+│  - BaseTester (inherited)                                   │
+│  - cfg: MigrationTesterConfig                               │
+│  - dutDB: *sql.DB (Device Under Test)                       │
+│  - testMigrationsDir: string                                │
+│  - state: MigrationSUTState                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2 File Structure {#2-file-structure}
+
+| File | Purpose |
+|------|---------|
+| `tester_migration.go` | Core tester implementation, Prepare/Cleanup lifecycle, migration file generation |
+| `tester_migration_types.go` | Type definitions, constants, configuration structs |
+| `tester_migration_state.go` | State synchronization and reset logic |
+| `tester_migration_handlers.go` | Operation handlers (Up, Down, Status, etc.) |
+| `tester_migration_cases.go` | Static and dynamic test case generation |
+
+---
+
+## 3 Function Reference {#3-function-reference}
+
+### 3.1 tester_migration.go {#31-tester_migrationgo}
+
+#### 3.1.1 `NewMigrationTester(cfg *MigrationTesterConfig) *MigrationTester` {#311-newmigrationtestercfg--migrationtesterconfig--migrationtester}
+
+Creates a new MigrationTester instance with the provided configuration.
+
+**Parameters:**
+- `cfg`: Configuration for the migration tester
+
+**Returns:**
+- `*MigrationTester`: Initialized tester instance
+
+---
+
+#### 3.1.2 `Prepare(ctx context.Context) error` {#312-preparectx-contextcontext-error}
+
+Sets up the test environment for migration testing.
+
+**Steps:**
+1. Verifies DUT (Device Under Test) database connectivity
+2. Validates DUT name starts with `testonly_`
+3. Validates migrations directory starts with `testonly_`
+4. Creates migrations directory
+5. Drops goose tracking table from DUT
+6. Drops all `testonly_` tables from DUT
+7. Clears the migrations directory
+8. Builds a pool of synthetic migration files
+9. Initializes internal state
+
+**Returns:**
+- `error`: Any error encountered during setup
+
+---
+
+#### 3.1.3 `Cleanup(ctx context.Context) error` {#313-cleanupctx-contextcontext-error}
+
+Tears down the test environment.
+
+**Steps:**
+1. Drops all `testonly_` tables from DUT
+2. Drops the tracking table
+3. Deletes all `.sql` files from the migrations directory
+
+**Returns:**
+- `error`: Any error encountered during cleanup
+
+---
+
+#### 3.1.4 `RunTestCase(ctx context.Context, tc autotester.TestCase) autotester.TestResult` {#314-runtestcasectx-contextcontext-tc-autotestertestcase-autotestertestresult}
+
+Executes a single test case.
+
+**Steps:**
+1. Resets DUT to the pre-state expected by the case
+2. Builds a migrator with case-specific configuration
+3. Dispatches to the appropriate operation handler
+4. Observes side effects (table creation, file writes)
+5. Syncs internal state from DUT ground truth
+
+**Parameters:**
+- `ctx`: Context for the operation
+- `tc`: Test case to execute
+
+**Returns:**
+- `autotester.TestResult`: Result of the test execution
+
+---
+
+#### 3.1.5 `buildMigrator(allowOutOfOrder bool) *sharedgoose.Migrator` {#315-buildmigratorallowoutoforder-bool--sharedgoosemigrator}
+
+Creates a new migrator with the given configuration.
+
+**Parameters:**
+- `allowOutOfOrder`: Whether to allow out-of-order migrations
+
+**Returns:**
+- `*sharedgoose.Migrator`: Configured migrator instance
+
+---
+
+#### 3.1.6 `buildMigrationsPool(ctx context.Context) error` {#316-buildmigrationspoolctx-contextcontext-error}
+
+Creates synthetic migration files for testing.
+
+Generates `MaxMigrationsInPool` migration files, each creating a unique `testonly_table_XX` table.
+
+**Returns:**
+- `error`: Any error encountered during file generation
+
+---
+
+#### 3.1.7 What is a Migration Pool? {#317-what-is-a-migration-pool}
+
+A **migration pool** is a pre-generated collection of synthetic migration files created during the `Prepare()` phase. Its purpose is to:
+
+1. **Provide Test Coverage**: Ensures a consistent set of migrations is available for all test cases to operate on, eliminating the need to generate migrations during individual tests.
+
+2. **Enable Stateful Testing**: Allows test cases to start from various pre-states (e.g., "3 migrations applied, 17 pending") by having a known pool of migrations to work with.
+
+3. **Improve Performance**: Generating migrations upfront is more efficient than creating them on-demand for each test case.
+
+4. **Ensure Isolation**: Each test run gets a fresh pool of migrations with unique `testonly_` table names, preventing interference between test runs.
+
+The pool size is configurable via `MaxMigrationsInPool` (default: 20). Each migration in the pool creates a distinct table (`testonly_table_01`, `testonly_table_02`, etc.) with corresponding Up/Down SQL operations.
+
+---
+
+#### 3.1.8 `buildMigrationFileContent(upSQL, downSQL string) string` {#318-buildmigrationfilecontentupsql-downsql-string--string}
+
+Produces the annotated SQL content for a migration file in Goose format.
+
+**Parameters:**
+- `upSQL`: SQL for the Up migration
+- `downSQL`: SQL for the Down migration
+
+**Returns:**
+- `string`: Formatted migration file content
+
+---
+
+#### 3.1.9 Migration File Content Format {#319-migration-file-content-format}
+
+Migration files follow the **Goose migration format** with specific annotations that enable version tracking and rollback capabilities.
+
+**File Structure:**
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+<UP_MIGRATION_SQL>
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+<DOWN_MIGRATION_SQL>
+-- +goose StatementEnd
+```
+
+**Example Output:**
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+CREATE TABLE testonly_table_01 (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS testonly_table_01
+-- +goose StatementEnd
+```
+
+**Key Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `-- +goose Up` | Marks the beginning of the forward migration section |
+| `-- +goose Down` | Marks the beginning of the rollback migration section |
+| `-- +goose StatementBegin/End` | Delimits multi-statement SQL blocks for proper parsing |
+| Up SQL | Schema changes to apply (CREATE, ALTER, etc.) |
+| Down SQL | Reversal operations to undo the Up migration |
+
+---
+
+#### 3.1.10 Purpose of Migration Files {#3110-purpose-of-migration-files}
+
+Migration files serve as **version-controlled schema change scripts** that enable:
+
+1. **Incremental Schema Evolution**: Each file represents a discrete, versioned change to the database schema, allowing controlled evolution over time.
+
+2. **Reproducible Deployments**: Migrations apply in a deterministic order (by version number), ensuring consistent schema state across environments (dev, test, production).
+
+3. **Rollback Capability**: The Down section provides a reversal path, enabling safe rollback if a deployment fails or needs to be reverted.
+
+4. **State Tracking**: Goose tracks which migrations have been applied in the `db_migrations` table, preventing duplicate applications and enabling status inspection.
+
+5. **Testing Isolation**: In this test framework, synthetic migration files allow testing migration behavior without depending on application-specific schema changes.
+
+**Filename Convention:** `{version}_{description}.sql`
+- Version: Timestamp-based (e.g., `2026010112000001`) or sequential number
+- Description: Snake-case description of the change (e.g., `create_users_table`)
+
+---
+
+#### 3.1.11 `dropTestTables(ctx context.Context) error` {#3111-droptesttablesctx-contextcontext-error}
+
+Drops all tables with names starting with `testonly_`.
+
+**Returns:**
+- `error`: Any error encountered during table dropping
+
+---
+
+#### 3.1.12 `clearMigrationsDir(ctx context.Context) error` {#3112-clearmigrationsdirctx-contextcontext-error}
+
+Deletes all `.sql` files from the migrations directory.
+
+**Returns:**
+- `error`: Any error encountered during cleanup
+
+---
+
+#### 3.1.13 `dispatch(ctx context.Context, input migrationInput, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#3113-dispatchctx-contextcontext-input-migrationinput-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Routes the operation to the appropriate handler.
+
+**Parameters:**
+- `ctx`: Context for the operation
+- `input`: Migration input specifying the operation
+- `migrator`: Migrator instance
+- `result`: Test result to populate
+
+---
+
+#### 3.1.14 `observeSideEffects(ctx context.Context, result *autotester.TestResult)` {#3114-observesideeffectsctx-contextcontext-result--autotestertestresult}
+
+Inspects the DUT to determine what side effects occurred during test execution.
+
+**Observed Side Effects:**
+- `tracking_table_created`: Goose version tracking table was created
+- `schema_table_applied`: A testonly_ table was created by migration
+
+---
+
+### 3.2 tester_migration_types.go {#32-tester_migration_typesgo}
+
+#### 3.2.1 Configuration Types {#321-configuration-types}
+
+##### 3.2.1.1 `MigrationTesterConfig` {#3211-migrationtesterconfig}
+
+Holds the configuration for the MigrationTester.
+
+**Fields:**
+- `DUTDB *sql.DB`: Device Under Test database (MUST be test database)
+- `DUTDBType string`: Database type ("postgres" or "mysql")
+- `DUTDBName string`: Database name for logging (MUST start with "testonly_")
+- `MigrationsDir string`: Directory for synthetic migration files (MUST start with "testonly_")
+- `TableName string`: Goose version-tracking table name (default: "db_migrations")
+- `NumDynamicCases int`: Number of dynamic test cases to generate (default: 80)
+- `MaxMigrationsInPool int`: Size of pre-generated migrations pool (default: 20)
+
+**Methods:**
+- `ApplyDefaults()`: Applies default values to configuration
+- `Validate() error`: Validates configuration is safe
+
+---
+
+#### 3.2.2 Data Types {#322-data-types}
+
+##### 3.2.2.1 `MigrationOperation` {#3221-migrationoperation}
+
+Represents the type of migration operation to test.
+
+**Constants:**
+- `OpUp`: Apply all pending migrations
+- `OpUpByOne`: Apply exactly one pending migration
+- `OpUpTo`: Apply migrations up to a target version
+- `OpDown`: Rollback one migration
+- `OpDownTo`: Rollback to a target version
+- `OpStatus`: Get applied/pending migration status
+- `OpGetVersion`: Get current migration version
+- `OpHasPending`: Check if pending migrations exist
+- `OpCreateAndApply`: Create a migration file and apply it
+- `OpListSources`: List all migration sources
+
+---
+
+##### 3.2.2.2 `MigrationFile` {#3222-migrationfile}
+
+Represents a migration file in the migrations directory.
+
+**Fields:**
+- `Version int64`: Migration version number
+- `Filename string`: File name
+- `UpSQL string`: Up migration SQL
+- `DownSQL string`: Down migration SQL
+- `IsApplied bool`: Whether the migration has been applied
+
+---
+
+##### 3.2.2.3 `MigrationRecord` {#3223-migrationrecord}
+
+Represents an applied migration.
+
+**Fields:**
+- `Version int64`: Migration version number
+- `Filename string`: File name
+- `UpSQL string`: Up migration SQL
+- `DownSQL string`: Down migration SQL
+- `Applied bool`: Whether the migration has been applied
+
+---
+
+##### 3.2.2.4 `MigrationSUTState` {#3224-migrationsutstate}
+
+Represents the current state of the migration system under test.
+
+**Fields:**
+- `Applied []MigrationRecord`: List of applied migrations
+- `FilesInDir []MigrationFile`: List of all .sql files in migrations directory
+- `Tables map[string]bool`: Map of testonly_ tables in DUT
+- `CurrentVersion int64`: Highest applied version; 0 if nothing applied
+
+---
+
+##### 3.2.2.5 `migrationInput` {#3225-migrationinput}
+
+Typed value stored in TestCase.Input.
+
+**Fields:**
+- `Operation MigrationOperation`: The migration operation to invoke
+- `TargetVersion int64`: Target version for UpTo/DownTo operations
+- `UpSQL string`: Up SQL for CreateAndApply operation
+- `DownSQL string`: Down SQL for CreateAndApply operation
+- `Description string`: Description for CreateAndApply operation
+- `AllowOutOfOrder bool`: Whether to allow out-of-order migrations
+- `PreState MigrationSUTState`: Required DUT state before execution
+
+---
+
+##### 3.2.2.6 `MigrationStatus` {#3226-migrationstatus}
+
+Wraps `gooselib.MigrationStatus` for easier handling.
+
+**Fields:**
+- `Version int64`: Migration version
+- `IsApplied bool`: Whether the migration is applied
+- `FileName string`: Migration file name
+- `FilePath string`: Full file path
+- `Type string`: Migration type
+
+---
+
+### 3.3 tester_migration_state.go {#33-tester_migration_statego}
+
+#### 3.3.1 `syncState(ctx context.Context) error` {#331-syncstatectx-contextcontext-error}
+
+Queries the DUT to update the internal state tracking.
+
+**Steps:**
+1. Queries current version from tracking table
+2. Queries all applied migrations from tracking table
+3. Scans migrations directory for all .sql files
+4. Queries all `testonly_` tables in DUT
+
+**Returns:**
+- `error`: Any error encountered during state synchronization
+
+---
+
+#### 3.3.2 `resetToState(ctx context.Context, preState MigrationSUTState) error` {#332-resettostatectx-contextcontext-prestate-migrationsutstate-error}
+
+Brings the DUT to the exact state described by preState.
+
+**Steps:**
+1. Drops tracking table and all testonly_ tables
+2. Clears and repopulates migrations directory with files from preState
+3. Rebuilds migrator
+4. Applies exactly the migrations in preState.Applied using UpByOne
+5. Verifies state matches via syncState
+
+**Returns:**
+- `error`: Any error encountered during state reset
+
+---
+
+#### 3.3.3 `resetDUT(ctx context.Context) error` {#333-resetdutctx-contextcontext-error}
+
+Drops the tracking table and all testonly_ tables.
+
+**Returns:**
+- `error`: Any error encountered during reset
+
+---
+
+#### 3.3.4 `writeMigrationFile(file MigrationFile) error` {#334-writemigrationfilefile-migrationfile-error}
+
+Writes a migration file to the migrations directory.
+
+**Parameters:**
+- `file`: Migration file to write
+
+**Returns:**
+- `error`: Any error encountered during file writing
+
+---
+
+#### 3.3.5 `extractVersionFromFilename(filename string) int64` {#335-extractversionfromfilenamefilename-string-int64}
+
+Parses the version number from a migration filename.
+
+**Expected Format:** `YYYYMMDDHHMMSS_description.sql` or `version_description.sql`
+
+**Parameters:**
+- `filename`: Migration filename
+
+**Returns:**
+- `int64`: Extracted version number
+
+---
+
+### 3.4 tester_migration_handlers.go {#34-tester_migration_handlersgo}
+
+All handler functions follow a similar pattern: they execute a migration operation, handle errors, and populate the test result.
+
+#### 3.4.1 `handleUp(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#341-handleupctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the Up operation (apply all pending migrations).
+
+---
+
+#### 3.4.2 `handleUpByOne(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#342-handleupbyonectx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the UpByOne operation (apply exactly one pending migration).
+
+---
+
+#### 3.4.3 `handleUpTo(ctx context.Context, migrator *sharedgoose.Migrator, targetVersion int64, result *autotester.TestResult)` {#343-handleuptoctx-contextcontext-migrator--sharedgoosemigrator-targetversion-int64-result--autotestertestresult}
+
+Executes the UpTo operation (apply up to a target version).
+
+**Parameters:**
+- `targetVersion`: Target version to apply up to
+
+---
+
+#### 3.4.4 `handleDown(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#344-handledownctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the Down operation (rollback one migration).
+
+---
+
+#### 3.4.5 `handleDownTo(ctx context.Context, migrator *sharedgoose.Migrator, targetVersion int64, result *autotester.TestResult)` {#345-handledowntoctx-contextcontext-migrator--sharedgoosemigrator-targetversion-int64-result--autotestertestresult}
+
+Executes the DownTo operation (rollback to a target version).
+
+**Parameters:**
+- `targetVersion`: Target version to rollback to
+
+---
+
+#### 3.4.6 `handleStatus(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#346-handlestatusctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the Status operation (get applied/pending status).
+
+---
+
+#### 3.4.7 `handleGetVersion(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#347-handlegetversionctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the GetVersion operation (get current version).
+
+---
+
+#### 3.4.8 `handleHasPending(ctx context.Context, migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#348-handlehaspendingctx-contextcontext-migrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the HasPending operation (check for pending migrations).
+
+---
+
+#### 3.4.9 `handleCreateAndApply(ctx context.Context, migrator *sharedgoose.Migrator, description string, upSQL string, downSQL string, result *autotester.TestResult)` {#349-handlecreateandapplyctx-contextcontext-migrator--sharedgoosemigrator-description-string-upsql-string-downsql-string-result--autotestertestresult}
+
+Executes the CreateAndApply operation (create file and apply).
+
+**Parameters:**
+- `description`: Migration description
+- `upSQL`: Up migration SQL
+- `downSQL`: Down migration SQL (can be empty)
+
+---
+
+#### 3.4.10 `handleListSources(migrator *sharedgoose.Migrator, result *autotester.TestResult)` {#3410-handlelistsourcesmigrator--sharedgoosemigrator-result--autotestertestresult}
+
+Executes the ListSources operation (list all migration sources).
+
+---
+
+### 3.5 tester_migration_cases.go {#35-tester_migration_casesgo}
+
+#### 3.5.1 `GetTestCases() []autotester.TestCase` {#351-gettestcases--autotestertestcase}
+
+Returns the static test cases for migration testing.
+
+**Categories:**
+1. **Basic Apply Operations** (6 cases): Up, UpByOne, UpTo
+2. **Rollback Operations** (4 cases): Down, DownTo
+3. **Status Inspection** (4 cases): GetVersion, HasPending, Status
+4. **Migration Creation** (3 cases): CreateAndApply
+5. **Edge Cases** (2 cases): Tracking table auto-creation, ListSources
+
+**Returns:**
+- `[]autotester.TestCase`: Array of 19 static test cases
+
+---
+
+#### 3.5.2 `GenerateTestCases(ctx context.Context) ([]autotester.TestCase, error)` {#352-generatetestcasesctx-contextcontext--autotestertestcase-error}
+
+Creates dynamic test cases for comprehensive migration testing.
+
+**Features:**
+- Configurable count via `NumDynamicCases` (default: 80)
+- Weighted operation selection
+- Random pre-states for varied starting conditions
+- Comprehensive coverage of edge cases
+
+**Returns:**
+- `[]autotester.TestCase`: Array of dynamically generated test cases
+- `error`: Any error encountered during generation
+
+---
+
+#### 3.5.3 `selectOperation(randVal int, weights []int) MigrationOperation` {#353-selectoperationrandval-int-weights--int-migrationoperation}
+
+Selects an operation based on weighted distribution.
+
+**Default Weights:**
+- Up: 30
+- UpByOne: 15
+- UpTo: 10
+- Down: 20
+- DownTo: 10
+- Status: 5
+- GetVersion: 5
+- HasPending: 5
+- CreateAndApply: 0
+
+---
+
+#### 3.5.4 `generatePreState(ctx context.Context, rand interface{}) MigrationSUTState` {#354-generateprestatectx-contextcontext-rand-interface-migrationsutstate}
+
+Generates a random pre-state for dynamic test cases.
+
+---
+
+#### 3.5.5 `getInitialPoolFiles() []MigrationFile` {#355-getinitialpoolfiles--migrationfile}
+
+Returns the migration files from the initial pool.
+
+**Returns:**
+- `[]MigrationFile`: Array of migration files
+
+---
+
+#### 3.5.6 `getFullyAppliedState() MigrationSUTState` {#356-getfullyappliedstate-migrationsutstate}
+
+Returns a state where all migrations are applied.
+
+**Returns:**
+- `MigrationSUTState`: Fully applied state
+
+---
+
+## 4 Usage in the Framework {#4-usage-in-the-framework}
+
+The tester migration module integrates with the broader autotester framework as documented in [tester-migration-overview.md](./tester-migration-overview.md).
+
+### 4.1 Integration Points {#41-integration-points}
+
+1. **BaseTester Inheritance**: `MigrationTester` extends `autotesters.BaseTester`, inheriting common test execution infrastructure.
+
+2. **Test Case Format**: Uses the standard `autotester.TestCase` format with:
+   - `ID`, `Name`, `Description`: Test metadata
+   - `Input`: `migrationInput` struct with operation details
+   - `Expected`: `autotester.ExpectedResult` with success criteria
+   - `Priority`: Test priority level
+
+3. **Lifecycle Integration**:
+   ```
+   NewMigrationTester() → Prepare() → RunTestCase() × N → Cleanup()
+   ```
+
+4. **State Management**: The `MigrationSUTState` structure enables:
+   - Pre-state specification for each test case
+   - Post-state verification via `syncState()`
+   - State reset via `resetToState()`
+
+### 4.2 Framework Flow {#42-framework-flow}
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Create Configuration                                     │
+│     MigrationTesterConfig { DUTDB, MigrationsDir, ... }     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. Create Tester                                            │
+│     tester := NewMigrationTester(cfg)                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. Prepare Test Environment                                 │
+│     tester.Prepare(ctx)                                     │
+│     - Validates safety constraints                          │
+│     - Creates synthetic migration pool                      │
+│     - Initializes state                                     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  4. Get Test Cases                                           │
+│     cases := tester.GetTestCases()                          │
+│     dynamicCases, _ := tester.GenerateTestCases(ctx)        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  5. Run Test Cases                                           │
+│     for tc in cases:                                        │
+│         result := tester.RunTestCase(ctx, tc)               │
+│         - resetToState(tc.Input.PreState)                   │
+│         - dispatch(operation)                               │
+│         - observeSideEffects()                              │
+│         - syncState()                                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  6. Cleanup                                                  │
+│     tester.Cleanup(ctx)                                     │
+│     - Drops testonly_ tables                                │
+│     - Removes migration files                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 5 Examples {#5-examples}
+
+### 5.1 Basic Usage {#51-basic-usage}
+
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "log"
+
+    _ "github.com/lib/pq"
+    "github.com/chendingplano/shared/go/api/testers/tester-migration"
+)
+
+func main() {
+    // Connect to test database
+    testDB, err := sql.Open("postgres", "postgres://localhost/testonly_migrations_test?sslmode=disable")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer testDB.Close()
+
+    // Create configuration
+    cfg := &tester_migration.MigrationTesterConfig{
+        DUTDB:               testDB,
+        DUTDBType:           "postgres",
+        DUTDBName:           "testonly_migrations_test",
+        MigrationsDir:       "testonly_migrations",
+        TableName:           "db_migrations",
+        NumDynamicCases:     80,
+        MaxMigrationsInPool: 20,
+    }
+
+    // Create tester
+    tester := tester_migration.NewMigrationTester(cfg)
+
+    // Prepare test environment
+    ctx := context.Background()
+    if err := tester.Prepare(ctx); err != nil {
+        log.Fatal(err)
+    }
+    defer tester.Cleanup(ctx)
+
+    // Get static test cases
+    cases := tester.GetTestCases()
+
+    // Run test cases
+    for _, tc := range cases {
+        result := tester.RunTestCase(ctx, tc)
+        log.Printf("Test %s: %s", tc.ID, result.Status)
+        if result.ErrorMsgs != nil {
+            for _, msg := range result.ErrorMsgs {
+                log.Printf("  Error: %s", msg)
+            }
+        }
+    }
+
+    // Generate and run dynamic test cases
+    dynamicCases, err := tester.GenerateTestCases(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    for _, tc := range dynamicCases {
+        result := tester.RunTestCase(ctx, tc)
+        log.Printf("Test %s: %s", tc.ID, result.Status)
+    }
+}
+```
+
+---
+
+### 5.2 Custom Test Case Example {#52-custom-test-case-example}
+
+```go
+customCase := autotester.TestCase{
+    ID:          "TC_CUSTOM_001",
+    Name:        "Custom migration test",
+    Description: "Tests specific migration scenario",
+    Purpose:     "regression",
+    Type:        "integration",
+    Tags:        []string{"migration", "custom"},
+    Input: migrationInput{
+        Operation:       OpUpTo,
+        TargetVersion:   10,
+        AllowOutOfOrder: true,
+        PreState: MigrationSUTState{
+            Applied:        []MigrationRecord{},
+            FilesInDir:     tester.getInitialPoolFiles(),
+            Tables:         make(map[string]bool),
+            CurrentVersion: 0,
+        },
+    },
+    Expected: autotester.ExpectedResult{
+        Success:       true,
+        ExpectedValue: int64(10),
+        MaxDuration:   500 * time.Millisecond,
+    },
+    Priority: autotester.PriorityHigh,
+}
+
+result := tester.RunTestCase(ctx, customCase)
+```
+
+---
+
+### 5.3 Migration File Format Example {#53-migration-file-format-example}
+
+Generated migration files follow the Goose format:
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+CREATE TABLE testonly_table_01 (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS testonly_table_01
+-- +goose StatementEnd
+```
+
+**Filename Format:** `{version}_{description}.sql`
+
+Example: `2026010112000001_create_table_01.sql`
+
+---
+
+### 5.4 Error Handling Example {#54-error-handling-example}
+
+```go
+if err := tester.Prepare(ctx); err != nil {
+    // Error codes are in format MID_YYMMDD######
+    if strings.Contains(err.Error(), "MID_260224100001") {
+        log.Fatal("DUT not reachable")
+    }
+    if strings.Contains(err.Error(), "MID_260224100002") {
+        log.Fatal("Invalid DUT name - must start with 'testonly_'")
+    }
+    if strings.Contains(err.Error(), "MID_260224100003") {
+        log.Fatal("Invalid migrations directory - must start with 'testonly_'")
+    }
+    log.Fatal(err)
+}
+```
+
+---
+
+### 5.5 State Inspection Example {#55-state-inspection-example}
+
+```go
+// After running a test case, inspect the state
+if err := tester.syncState(ctx); err != nil {
+    log.Fatal(err)
+}
+
+state := tester.state
+
+log.Printf("Current version: %d", state.CurrentVersion)
+log.Printf("Applied migrations: %d", len(state.Applied))
+log.Printf("Files in directory: %d", len(state.FilesInDir))
+log.Printf("Tables: %v", state.Tables)
+
+// Check if specific table exists
+if state.Tables["testonly_table_01"] {
+    log.Println("testonly_table_01 was created")
+}
+```
+
+---
+
+## 6 Related Documentation {#6-related-documentation}
+
+- [tester-migration-overview.md](./tester-migration-overview.md) - High-level overview
+- Goose migration framework: `github.com/pressly/goose/v3`
+- Autotester framework: `shared/go/api/autotester`
+
+---
+
+## 7 Change Log {#7-change-log}
+
+### 7.1 2026-02-24 {#71-2026-02-24}
+
+- Initial implementation based on `tester-migration-qwen-v4.md`
+- Removed six unused helper functions to reduce code clutter:
+  - `getAppliedMigrations()` - Redundant with `syncState()`
+  - `getCurrentVersion()` - Redundant with `syncState()`
+  - `hasPendingMigrations()` - Handlers call `migrator.HasPending()` directly
+  - `getMigrationStatus()` - Handlers call `migrator.Status()` directly
+  - `listTables()` - `syncState()` queries tables inline
+  - `listMigrationFiles()` - `syncState()` scans files inline

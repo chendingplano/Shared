@@ -1,17 +1,41 @@
 // Package tester_migration provides automated testing for the goose database migration system.
+//
+// # Change Log
+//
+// ## 2026-02-24: Removed unused helper functions
+//
+// ### Analysis
+//
+// The following functions were defined but never called anywhere in the codebase:
+//
+// - `getAppliedMigrations(...)` - Redundant; `syncState()` already queries applied migrations
+//   and stores them in `t.state.Applied`
+// - `getCurrentVersion(...)` - Redundant; `syncState()` already queries current version
+//   and stores it in `t.state.CurrentVersion`
+// - `hasPendingMigrations(...)` - Redundant; handlers call `migrator.HasPending()` directly
+// - `getMigrationStatus(...)` - Redundant; handlers call `migrator.Status()` directly
+// - `listTables(...)` - Redundant; `syncState()` already queries tables inline
+// - `listMigrationFiles(...)` - Redundant; `syncState()` already scans migration files inline,
+//   and helper methods like `getInitialPoolFiles()` provide similar functionality
+//
+// These functions were likely created during an earlier design iteration that favored
+// more granular helper functions. The final implementation consolidated this logic
+// into `syncState()` and the handler functions in `tester_migration_handlers.go`,
+// rendering these standalone functions obsolete.
+//
+// ### Fix
+//
+// Removed all six unused functions to reduce code clutter and maintenance burden.
+// No functional changes; all existing tests and operations continue to work as before.
 
 package tester_migration
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/chendingplano/shared/go/api/databaseutil"
-	sharedgoose "github.com/chendingplano/shared/go/api/goose"
 )
 
 // syncState queries the DUT to update the internal state tracking.
@@ -197,125 +221,3 @@ func extractVersionFromFilename(filename string) int64 {
 	return version
 }
 
-// getAppliedMigrations queries the DUT for all applied migrations.
-func (t *MigrationTester) getAppliedMigrations(ctx context.Context) ([]MigrationRecord, error) {
-	var records []MigrationRecord
-
-	query := fmt.Sprintf(`
-		SELECT version_id, migration_type 
-		FROM %s 
-		ORDER BY version_id ASC
-	`, t.cfg.TableName)
-
-	rows, err := t.cfg.DUTDB.QueryContext(ctx, query)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return records, nil
-		}
-		return nil, fmt.Errorf("query applied migrations (MID_260224100038): %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var version int64
-		var migrationType string
-		if err := rows.Scan(&version, &migrationType); err != nil {
-			continue
-		}
-		records = append(records, MigrationRecord{
-			Version:  version,
-			Filename: fmt.Sprintf("%d_%s.sql", version, migrationType),
-			Applied:  true,
-		})
-	}
-
-	return records, rows.Err()
-}
-
-// getCurrentVersion queries the DUT for the current migration version.
-func (t *MigrationTester) getCurrentVersion(ctx context.Context) (int64, error) {
-	query := fmt.Sprintf(`
-		SELECT COALESCE(MAX(version_id), 0) FROM %s
-	`, t.cfg.TableName)
-
-	var version int64
-	err := t.cfg.DUTDB.QueryRowContext(ctx, query).Scan(&version)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("query current version (MID_260224100039): %w", err)
-	}
-	return version, nil
-}
-
-// hasPendingMigrations checks if there are pending migrations in the directory.
-func (t *MigrationTester) hasPendingMigrations(ctx context.Context, migrator *sharedgoose.Migrator) (bool, error) {
-	return migrator.HasPending(ctx)
-}
-
-// getMigrationStatus returns the status of all migrations.
-func (t *MigrationTester) getMigrationStatus(ctx context.Context, migrator *sharedgoose.Migrator) ([]MigrationStatus, error) {
-	statuses, err := migrator.Status(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get migration status (MID_260224100040): %w", err)
-	}
-
-	result := make([]MigrationStatus, 0, len(statuses))
-	for _, gs := range statuses {
-		result = append(result, ToMigrationStatus(gs))
-	}
-	return result, nil
-}
-
-// listTables returns all testonly_ tables in the DUT.
-func (t *MigrationTester) listTables(ctx context.Context) (map[string]bool, error) {
-	tables := make(map[string]bool)
-
-	query := `
-		SELECT table_name FROM information_schema.tables 
-		WHERE table_schema = 'public' AND table_name LIKE 'testonly_%'
-	`
-
-	rows, err := t.cfg.DUTDB.QueryContext(ctx, query)
-	if err != nil {
-		return tables, fmt.Errorf("list tables (MID_260224100041): %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err == nil {
-			if databaseutil.IsValidTableName(tableName) {
-				tables[tableName] = true
-			}
-		}
-	}
-
-	return tables, rows.Err()
-}
-
-// listMigrationFiles returns all .sql files in the migrations directory.
-func (t *MigrationTester) listMigrationFiles() ([]MigrationFile, error) {
-	var files []MigrationFile
-
-	entries, err := os.ReadDir(t.testMigrationsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return files, nil
-		}
-		return nil, fmt.Errorf("read migrations dir (MID_260224100042): %w", err)
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-			version := extractVersionFromFilename(entry.Name())
-			files = append(files, MigrationFile{
-				Version:  version,
-				Filename: entry.Name(),
-			})
-		}
-	}
-
-	return files, nil
-}

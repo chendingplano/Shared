@@ -1,4 +1,4 @@
-package autotesters
+package autotester
 
 import (
 	"time"
@@ -16,7 +16,14 @@ type RunConfig struct {
 	Tags []string
 
 	// TesterNames filters to run only these specific Testers by Name().
+	// Takes precedence over PackageName when both are set.
 	TesterNames []string
+
+	// PackageName selects testers from a pre-defined TesterPackage.
+	// When set and TesterNames is empty, only the testers listed in the
+	// named package are run (resolved via GlobalPackageRegistry at run start).
+	// Common values: "smoke", "complete", "regression".
+	PackageName string
 
 	// TestIDs filters to run only these specific TestCase IDs.
 	TestIDs []string

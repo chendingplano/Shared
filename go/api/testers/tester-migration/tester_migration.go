@@ -1,5 +1,9 @@
 // Package tester_migration provides automated testing for the goose database migration system.
 // It tests migration apply/rollback cycles, version tracking, and edge cases.
+//
+// Documents:
+// - shared/Documents/code/testbots/tester-migration/tester-migration-overview.md
+// - shared/Documents/code/testbots/tester-migration/tester-migration.md
 
 package tester_migration
 
@@ -13,7 +17,7 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/autotesters"
+	autotesters "github.com/chendingplano/shared/go/api/autotester"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	sharedgoose "github.com/chendingplano/shared/go/api/goose"
 )
@@ -167,7 +171,7 @@ func (t *MigrationTester) dropTestTables(ctx context.Context) error {
 }
 
 // clearMigrationsDir deletes all .sql files from the migrations directory.
-func (t *MigrationTester) clearMigrationsDir(ctx context.Context) error {
+func (t *MigrationTester) clearMigrationsDir(_ context.Context) error {
 	entries, err := os.ReadDir(t.testMigrationsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -189,7 +193,7 @@ func (t *MigrationTester) clearMigrationsDir(ctx context.Context) error {
 }
 
 // buildMigrationsPool creates synthetic migration files for testing.
-func (t *MigrationTester) buildMigrationsPool(ctx context.Context) error {
+func (t *MigrationTester) buildMigrationsPool(_ context.Context) error {
 	for i := 1; i <= t.cfg.MaxMigrationsInPool; i++ {
 		version := time.Now().UTC().Format("20060102150405")
 		if i < 10 {
@@ -261,13 +265,13 @@ func (t *MigrationTester) buildMigrator(allowOutOfOrder bool) *sharedgoose.Migra
 // nopLogger is a no-op logger for migration operations.
 type nopLogger struct{}
 
-func (l *nopLogger) Debug(message string, args ...any)                 {}
-func (l *nopLogger) Line(message string, args ...any)                  {}
-func (l *nopLogger) Info(message string, args ...any)                  {}
-func (l *nopLogger) Warn(message string, args ...any)                  {}
-func (l *nopLogger) Error(message string, args ...any)                 {}
-func (l *nopLogger) Trace(message string)                              {}
-func (l *nopLogger) Close()                                            {}
+func (l *nopLogger) Debug(message string, args ...any) {}
+func (l *nopLogger) Line(message string, args ...any)  {}
+func (l *nopLogger) Info(message string, args ...any)  {}
+func (l *nopLogger) Warn(message string, args ...any)  {}
+func (l *nopLogger) Error(message string, args ...any) {}
+func (l *nopLogger) Trace(message string)              {}
+func (l *nopLogger) Close()                            {}
 
 // RunTestCase executes a single test case.
 func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCase) autotesters.TestResult {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chendingplano/shared/go/api/autotesters"
+	autotesters "github.com/chendingplano/shared/go/api/autotester"
 )
 
 // GetTestCases returns the static test cases for migration testing.
@@ -305,9 +305,9 @@ func (t *MigrationTester) GetTestCases() []autotesters.TestCase {
 				PreState:        MigrationSUTState{Applied: []MigrationRecord{}, FilesInDir: t.getInitialPoolFiles(), CurrentVersion: 0},
 			},
 			Expected: autotesters.ExpectedResult{
-				Success:       true,
-				SideEffects:   []string{string(SideEffectMigrationFileWritten), string(SideEffectSchemaTableApplied)},
-				MaxDuration:   300 * time.Millisecond,
+				Success:     true,
+				SideEffects: []string{string(SideEffectMigrationFileWritten), string(SideEffectSchemaTableApplied)},
+				MaxDuration: 300 * time.Millisecond,
 			},
 			Priority: autotesters.PriorityHigh,
 		},
@@ -327,9 +327,9 @@ func (t *MigrationTester) GetTestCases() []autotesters.TestCase {
 				PreState:        MigrationSUTState{Applied: []MigrationRecord{}, FilesInDir: t.getInitialPoolFiles(), CurrentVersion: 0},
 			},
 			Expected: autotesters.ExpectedResult{
-				Success:       true,
-				SideEffects:   []string{string(SideEffectMigrationFileWritten), string(SideEffectSchemaTableApplied)},
-				MaxDuration:   300 * time.Millisecond,
+				Success:     true,
+				SideEffects: []string{string(SideEffectMigrationFileWritten), string(SideEffectSchemaTableApplied)},
+				MaxDuration: 300 * time.Millisecond,
 			},
 			Priority: autotesters.PriorityHigh,
 		},
@@ -486,7 +486,7 @@ func (t *MigrationTester) selectOperation(randVal int, weights []int) MigrationO
 }
 
 // generatePreState generates a random pre-state for dynamic test cases.
-func (t *MigrationTester) generatePreState(ctx context.Context, randFunc interface{}) MigrationSUTState {
+func (t *MigrationTester) generatePreState(_ context.Context, _ interface{}) MigrationSUTState {
 	// Get initial pool files
 	files := t.getInitialPoolFiles()
 
