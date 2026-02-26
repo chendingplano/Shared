@@ -1,23 +1,48 @@
 # testers.toml — shared-library tester package definitions
 #
-# This file mirrors the packages registered by RegisterPackages() and serves as
-# the canonical TOML source for the shared library's built-in suites.
-# Projects that call LoadTOMLPackages() will load this file first as a baseline.
+# This file defines the canonical tester packages for the shared library.
+# Projects that call LoadTOMLPackages() will load this file as a baseline.
+# Project-level testers.toml files can override or extend these packages.
 #
-# To override a package, define a package with the same name in your project's
-# root-level testers.toml — it will replace the entry from this file.
+# Each package defines:
+#   - name: unique package identifier (e.g., "smoke", "regression", "complete")
+#   - description: human-readable explanation of what the package tests
+#   - enable: whether the package is enabled (true) or disabled (false)
+#   - testers: array of tester configurations
+#
+# Each tester configuration defines:
+#   - name: the tester name (must match a registered tester)
+#   - enable: whether this tester runs in this package
+#   - num_tcs: max test cases to run (0 = no limit)
+#   - seconds: max execution time in seconds (0 = no limit)
+#
+# A tester stops when either num_tcs or seconds limit is reached.
 
 [[packages]]
-name        = "smoke"
+name = "smoke"
 description = "Fast sanity check: verifies database connectivity and logger are operational"
-testers     = ["tester_database", "tester_logger"]
+enable = true
+testers = [
+    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+    { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 }
+]
 
 [[packages]]
-name        = "regression"
+name = "regression"
 description = "Core regression suite: database utilities and logger correctness"
-testers     = ["tester_databaseutil", "tester_logger"]
+enable = false
+testers = [
+    { name = "tester_database", enable = false, num_tcs = 20, seconds = 60 },
+    { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
+    { name = "tester_logger", enable = false, num_tcs = 30, seconds = 120 }
+]
 
 [[packages]]
-name        = "complete"
+name = "complete"
 description = "Full shared-library suite: all three shared testers"
-testers     = ["tester_database", "tester_databaseutil", "tester_logger"]
+enable = true
+testers = [
+    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+    { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
+    { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 }
+]

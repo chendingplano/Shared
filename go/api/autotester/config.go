@@ -8,6 +8,19 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// TesterConfig is the configuration for a single tester within a package.
+// It controls whether the tester runs and its execution limits.
+//
+// Example:
+//
+//	{ name = "tester_database", enable = true, num_tcs = 20, seconds = 60 }
+type TesterConfig struct {
+	Name    string `toml:"name"`
+	Enable  bool   `toml:"enable"`  // If false, tester is excluded from the package
+	NumTcs  int    `toml:"num_tcs"`
+	Seconds int    `toml:"seconds"`
+}
+
 // PackageConfig is the in-TOML representation of a single tester package.
 //
 // Example testers.toml entry:
@@ -15,11 +28,18 @@ import (
 //	[[packages]]
 //	name        = "smoke"
 //	description = "Fast pre-deploy sanity check"
-//	testers     = ["tester_database", "tester_logger"]
+//	testers = [
+//	    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+//	    { name = "tester_logger", enable = false, num_tcs = 30, seconds = 120 },
+//	]
+//
+// Note: The Enable field is parsed but ignored. Packages are always loaded
+// regardless of their enable status. Only tester-level enable flags are enforced.
 type PackageConfig struct {
-	Name        string   `toml:"name"`
-	Description string   `toml:"description"`
-	Testers     []string `toml:"testers"`
+	Name        string         `toml:"name"`
+	Description string         `toml:"description"`
+	Enable      bool           `toml:"enable"` // Ignored: packages are always loaded
+	Testers     []TesterConfig `toml:"testers"`
 }
 
 // TOMLConfig is the top-level structure of a testers.toml file.
@@ -52,6 +72,9 @@ func LoadTOMLConfig(path string) (*TOMLConfig, error) {
 //
 // A missing file is silently skipped (returns nil). A malformed file returns an
 // error describing the problem.
+//
+// Only testers with enable=true are included in the package. The package-level
+// enable field is ignored (packages are always loaded regardless of enable status).
 func RegisterPackagesFromTOML(path string) error {
 	cfg, err := LoadTOMLConfig(path)
 	if err != nil {
@@ -61,10 +84,21 @@ func RegisterPackagesFromTOML(path string) error {
 		if p.Name == "" {
 			return fmt.Errorf("autotester: package at index %d in %s is missing a name", i, path)
 		}
+		// Extract tester names from the testers array, filtering by enable=true
+		testerNames := make([]string, 0, len(p.Testers))
+		for _, tc := range p.Testers {
+			if tc.Name == "" {
+				return fmt.Errorf("autotester: tester at index %d in package %q is missing a name", i, p.Name)
+			}
+			// Only include enabled testers
+			if tc.Enable {
+				testerNames = append(testerNames, tc.Name)
+			}
+		}
 		GlobalPackageRegistry.Upsert(&TesterPackage{
 			Name:        p.Name,
 			Description: p.Description,
-			TesterNames: p.Testers,
+			TesterNames: testerNames,
 		})
 	}
 	return nil

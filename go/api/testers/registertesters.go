@@ -4,8 +4,24 @@ import (
 	"path/filepath"
 
 	"github.com/chendingplano/shared/go/api/autotester"
+	"github.com/chendingplano/shared/go/api/testers/tester-migration"
 )
 
+// RegisterTesters registers all shared-library testers in the GlobalRegistry.
+// This function must be called before LoadTOMLPackages() so that all tester
+// names referenced in testers.toml files are already present in the registry.
+//
+// Registered testers:
+//   - tester_database: tests database connectivity and basic CRUD operations
+//   - tester_databaseutil: tests database utility functions
+//   - tester_logger: tests logger functionality
+//   - tester_migration: tests database migration scripts
+//
+// Typical usage in an application's registerAll function:
+//
+//	sharedtesters.RegisterTesters()
+//	// ... register app-specific testers ...
+//	sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)
 func RegisterTesters() {
 	autotester.GlobalRegistry.Register("tester_database", func() autotester.Tester {
 		return NewDatabaseTester(nil) // DB config will be set in Prepare
@@ -16,39 +32,8 @@ func RegisterTesters() {
 	autotester.GlobalRegistry.Register("tester_logger", func() autotester.Tester {
 		return NewLoggerTester()
 	})
-}
-
-// RegisterPackages registers the predefined tester packages for the shared library.
-// Call this after RegisterTesters() so that all referenced tester names are already
-// present in GlobalRegistry before any package is resolved.
-//
-// Predefined packages:
-//
-//	"smoke"      — fast sanity check: database connectivity and logger only
-//	"regression" — core library regression: databaseutil and logger
-//	"complete"   — full shared-library suite: all three shared testers
-//
-// Applications may register their own packages on top of these using
-// autotester.RegisterPackage(). The package names must be unique across
-// GlobalPackageRegistry.
-//
-// To load packages from testers.toml files instead of (or in addition to) calling
-// this function, use LoadTOMLPackages.
-func RegisterPackages() {
-	autotester.GlobalPackageRegistry.Register(&autotester.TesterPackage{
-		Name:        "smoke",
-		Description: "Fast sanity check: verifies database connectivity and logger are operational",
-		TesterNames: []string{"tester_database", "tester_logger"},
-	})
-	autotester.GlobalPackageRegistry.Register(&autotester.TesterPackage{
-		Name:        "regression",
-		Description: "Core regression suite: database utilities and logger correctness",
-		TesterNames: []string{"tester_databaseutil", "tester_logger"},
-	})
-	autotester.GlobalPackageRegistry.Register(&autotester.TesterPackage{
-		Name:        "complete",
-		Description: "Full shared-library suite: all three shared testers",
-		TesterNames: []string{"tester_database", "tester_databaseutil", "tester_logger"},
+	autotester.GlobalRegistry.Register("tester_migration", func() autotester.Tester {
+		return tester_migration.NewMigrationTester(nil)
 	})
 }
 
@@ -60,12 +45,19 @@ func RegisterPackages() {
 //
 // Both files are optional; a missing file is silently skipped.
 // A package name that appears in a later file replaces the same name from an
-// earlier file or from a prior RegisterPackages() / RegisterPackage() call.
+// earlier file or from a prior RegisterPackage() call.
 //
-// Typical usage — call this after RegisterTesters() (and optionally after
-// RegisterPackages() if you still want the hard-coded defaults as fallback):
+// Each package in the TOML file defines:
+//   - name: unique package identifier
+//   - description: human-readable explanation
+//   - enable: whether the package is enabled
+//   - testers: array of tester configurations (name, enable, num_tcs, seconds)
+//
+// Typical usage — call this after RegisterTesters() and registering all
+// app-specific testers:
 //
 //	sharedtesters.RegisterTesters()
+//	// ... register app-specific testers via autotester.GlobalRegistry.Register() ...
 //	sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)
 func LoadTOMLPackages(sharedDir, projectRoot string) error {
 	return autotester.LoadAndRegisterTOMLConfigs(

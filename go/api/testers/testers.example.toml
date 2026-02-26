@@ -1,9 +1,9 @@
 # testers.example.toml
 #
-# Copy this file to your project root as "testers.toml" and customise it.
+# Copy this file to your project root as "testers.toml" and customize it.
 # Packages defined here are loaded after the shared-library baseline
 # (shared/go/api/testers/testers.toml), so a package with the same name as a
-# shared package will replace it.  New names are simply added to the registry.
+# shared package will replace it. New names are simply added to the registry.
 #
 # Usage in your registerAll function:
 #
@@ -11,32 +11,48 @@
 #   // ... register app-specific testers ...
 #   sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)
 #
-# Alternatively, keep the hard-coded defaults as a fallback:
+# Each package defines:
+#   - name: unique package identifier (e.g., "smoke", "regression", "nightly")
+#   - description: human-readable explanation of what the package tests
+#   - enable: whether the package is enabled (true) or disabled (false)
+#   - testers: array of tester configurations
 #
-#   sharedtesters.RegisterTesters()
-#   sharedtesters.RegisterPackages()               // hard-coded defaults
-#   sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)  // overrides / additions
+# Each tester configuration defines:
+#   - name: the tester name (must match a registered tester)
+#   - enable: whether this tester runs in this package
+#   - num_tcs: max test cases to run (0 = no limit)
+#   - seconds: max execution time in seconds (0 = no limit)
 
 # ── Example: override the built-in "smoke" package ───────────────────────────
 # [[packages]]
-# name        = "smoke"
+# name = "smoke"
 # description = "Project smoke: adds app_health_tester to the shared baseline"
-# testers     = ["tester_database", "tester_logger", "app_health_tester"]
+# enable = true
+# testers = [
+#     { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+#     { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 },
+#     { name = "app_health_tester", enable = true, num_tcs = 10, seconds = 30 }
+# ]
 
 # ── Example: add a project-specific nightly suite ────────────────────────────
 # [[packages]]
-# name        = "nightly"
+# name = "nightly"
 # description = "Full nightly regression: all shared testers plus app testers"
-# testers     = [
-#   "tester_database",
-#   "tester_databaseutil",
-#   "tester_logger",
-#   "app_user_tester",
-#   "app_billing_tester",
+# enable = true
+# testers = [
+#     { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+#     { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
+#     { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 },
+#     { name = "app_user_tester", enable = true, num_tcs = 50, seconds = 300 },
+#     { name = "app_billing_tester", enable = true, num_tcs = 40, seconds = 240 }
 # ]
 
 # ── Example: minimal app-only package ────────────────────────────────────────
 # [[packages]]
-# name        = "app"
+# name = "app"
 # description = "App-specific testers only, no shared-library testers"
-# testers     = ["app_user_tester", "app_billing_tester"]
+# enable = true
+# testers = [
+#     { name = "app_user_tester", enable = true, num_tcs = 50, seconds = 300 },
+#     { name = "app_billing_tester", enable = true, num_tcs = 40, seconds = 240 }
+# ]

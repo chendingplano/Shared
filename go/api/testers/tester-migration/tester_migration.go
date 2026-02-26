@@ -17,14 +17,14 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	autotesters "github.com/chendingplano/shared/go/api/autotester"
+	autotester "github.com/chendingplano/shared/go/api/autotester"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	sharedgoose "github.com/chendingplano/shared/go/api/goose"
 )
 
 // MigrationTester tests the Goose migration system.
 type MigrationTester struct {
-	autotesters.BaseTester
+	autotester.BaseTester
 
 	// Configuration
 	cfg *MigrationTesterConfig
@@ -44,7 +44,7 @@ func NewMigrationTester(cfg *MigrationTesterConfig) *MigrationTester {
 	cfg.ApplyDefaults()
 
 	return &MigrationTester{
-		BaseTester: autotesters.NewBaseTester(
+		BaseTester: autotester.NewBaseTester(
 			"tester_migration",
 			"Tests the goose database migration system (Up, Down, CreateAndApply, version tracking)",
 			"regression",
@@ -274,8 +274,8 @@ func (l *nopLogger) Trace(message string)              {}
 func (l *nopLogger) Close()                            {}
 
 // RunTestCase executes a single test case.
-func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCase) autotesters.TestResult {
-	result := autotesters.TestResult{
+func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotester.TestCase) autotester.TestResult {
+	result := autotester.TestResult{
 		TestCaseID: tc.ID,
 		StartTime:  time.Now(),
 	}
@@ -283,7 +283,7 @@ func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCa
 	// Guard against panics
 	defer func() {
 		if r := recover(); r != nil {
-			result.Status = autotesters.StatusError
+			result.Status = autotester.StatusError
 			result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("panic: %v", r))
 			result.EndTime = time.Now()
 			result.Duration = result.EndTime.Sub(result.StartTime)
@@ -292,7 +292,7 @@ func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCa
 
 	input, ok := tc.Input.(migrationInput)
 	if !ok {
-		result.Status = autotesters.StatusError
+		result.Status = autotester.StatusError
 		result.ErrorMsgs = append(result.ErrorMsgs, "invalid input type: expected migrationInput (MID_260224100019)")
 		result.EndTime = time.Now()
 		result.Duration = result.EndTime.Sub(result.StartTime)
@@ -301,7 +301,7 @@ func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCa
 
 	// 1. Reset DUT to the pre-state expected by this case
 	if err := t.resetToState(ctx, input.PreState); err != nil {
-		result.Status = autotesters.StatusError
+		result.Status = autotester.StatusError
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("resetToState failed (MID_260224100020): %v", err))
 		result.EndTime = time.Now()
 		result.Duration = result.EndTime.Sub(result.StartTime)
@@ -311,7 +311,7 @@ func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCa
 	// 2. Rebuild migrator with case-specific AllowOutOfOrder setting
 	migrator := t.buildMigrator(input.AllowOutOfOrder)
 	if migrator == nil {
-		result.Status = autotesters.StatusError
+		result.Status = autotester.StatusError
 		result.ErrorMsgs = append(result.ErrorMsgs, "failed to build migrator (MID_260224100021)")
 		result.EndTime = time.Now()
 		result.Duration = result.EndTime.Sub(result.StartTime)
@@ -335,7 +335,7 @@ func (t *MigrationTester) RunTestCase(ctx context.Context, tc autotesters.TestCa
 }
 
 // dispatch routes the operation to the appropriate handler.
-func (t *MigrationTester) dispatch(ctx context.Context, input migrationInput, migrator *sharedgoose.Migrator, result *autotesters.TestResult) {
+func (t *MigrationTester) dispatch(ctx context.Context, input migrationInput, migrator *sharedgoose.Migrator, result *autotester.TestResult) {
 	switch input.Operation {
 	case OpUp:
 		t.handleUp(ctx, migrator, result)
@@ -358,13 +358,13 @@ func (t *MigrationTester) dispatch(ctx context.Context, input migrationInput, mi
 	case OpListSources:
 		t.handleListSources(migrator, result)
 	default:
-		result.Status = autotesters.StatusError
+		result.Status = autotester.StatusError
 		result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("unknown operation: %s (MID_260224100023)", input.Operation))
 	}
 }
 
 // observeSideEffects inspects the DUT to determine what side effects occurred.
-func (t *MigrationTester) observeSideEffects(ctx context.Context, result *autotesters.TestResult) {
+func (t *MigrationTester) observeSideEffects(ctx context.Context, result *autotester.TestResult) {
 	// Check if tracking table exists
 	query := `
 		SELECT EXISTS (
