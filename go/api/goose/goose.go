@@ -234,7 +234,7 @@ func NewWithDB(db *sql.DB,
 	cfg := applyDefaults(migrate_cfg)
 
 	if cfg.TableName == "" {
-		return nil, fmt.Errorf("Missing TableName in migration config (SHD_20260221092501)")
+		return nil, fmt.Errorf("missing tablename in migration config (SHD_20260221092501)")
 	}
 
 	dialect, err := dialectFor(dbType)
@@ -244,6 +244,34 @@ func NewWithDB(db *sql.DB,
 	}
 
 	opts := buildProviderOptions(cfg)
+	logger.Info("Initializing goose migrator",
+		"db_type", dbType,
+		"table_name", cfg.TableName,
+		"verbose", cfg.Verbose,
+		"allow_out_of_order", cfg.AllowOutOfOrder,
+	)
+
+	// Check if there are any migration files in the filesystem before creating
+	// the provider. This prevents ErrNoMigrations when the migrations directory
+	// is empty (valid for new projects or before any migrations are created).
+	hasMigrations, err := hasMigrationFiles(cfg.MigrationsFS)
+	if err != nil {
+		logger.Warn("Failed to check for migration files, proceeding anyway",
+			"error", err)
+	} else if !hasMigrations {
+		logger.Info("No migration files found - skipping migration initialization",
+			"db_type", dbType,
+			"table_name", cfg.TableName,
+			"migrations_dir", cfg.MigrationsDir)
+		// Return a migrator with nil provider - Up/Down operations will be no-ops
+		return &Migrator{
+			logger:  logger,
+			db:      db,
+			dialect: dialect,
+			cfg:     cfg,
+		}, nil
+	}
+
 	provider, err := gooselib.NewProvider(dialect, db, cfg.MigrationsFS, opts...)
 	if err != nil {
 		logger.Error("Failed to create goose provider (SHD_GSE_090)",
@@ -266,6 +294,18 @@ func NewWithDB(db *sql.DB,
 // rebuildProvider recreates the internal goose.Provider so that newly written
 // migration files on disk are visible. Called automatically by CreateAndApply.
 func (m *Migrator) rebuildProvider() error {
+	// Check if there are migration files after the new file was created
+	hasMigrations, err := hasMigrationFiles(m.cfg.MigrationsFS)
+	if err != nil {
+		m.logger.Warn("Failed to check for migration files during rebuild", "error", err)
+	}
+
+	// If no migrations exist, keep provider as nil
+	if !hasMigrations {
+		m.provider = nil
+		return nil
+	}
+
 	opts := buildProviderOptions(m.cfg)
 	provider, err := gooselib.NewProvider(m.dialect, m.db, m.cfg.MigrationsFS, opts...)
 	if err != nil {
@@ -287,6 +327,30 @@ func buildProviderOptions(goose_cfg GooseConfig) []gooselib.ProviderOption {
 		opts = append(opts, gooselib.WithAllowOutofOrder(true))
 	}
 	return opts
+}
+
+// hasMigrationFiles checks if the given filesystem contains any .sql or .go
+// migration files. Returns true if at least one migration file is found.
+func hasMigrationFiles(fsys fs.FS) (bool, error) {
+	if fsys == nil {
+		return false, nil
+	}
+
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return false, err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".sql") || strings.HasSuffix(name, ".go") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // nonAlphanumRE matches anything that should become an underscore in a slug.
@@ -388,8 +452,14 @@ func (m *Migrator) CreateAndApply(ctx context.Context, description, upSQL, downS
 }
 
 // Up applies all pending migrations in ascending version order.
-// Returns nil when there are no pending migrations.
+// Returns nil when there are no pending migrations or no provider is initialized.
 func (m *Migrator) Up(ctx context.Context) error {
+	// No provider means no migrations directory or empty - nothing to apply
+	if m.provider == nil {
+		m.logger.Info("No migrations to apply - provider not initialized")
+		return nil
+	}
+
 	m.logger.Info("Applying all pending migrations (MID_060221143012)")
 
 	results, err := m.provider.Up(ctx)
@@ -409,8 +479,15 @@ func (m *Migrator) Up(ctx context.Context) error {
 }
 
 // UpByOne applies the single next pending migration.
+// Returns nil when there is no provider initialized or no pending migrations.
 // Returns gooselib.ErrNoNextVersion if there are no pending migrations.
 func (m *Migrator) UpByOne(ctx context.Context) error {
+	// No provider means no migrations - nothing to apply
+	if m.provider == nil {
+		m.logger.Info("No migrations to apply - provider not initialized")
+		return nil
+	}
+
 	m.logger.Info("Applying next pending migration (SHD_GSE_237)")
 
 	result, err := m.provider.UpByOne(ctx)
@@ -426,7 +503,14 @@ func (m *Migrator) UpByOne(ctx context.Context) error {
 }
 
 // UpTo applies all pending migrations up to and including the specified version.
+// Returns nil when there is no provider or no pending migrations.
 func (m *Migrator) UpTo(ctx context.Context, version int64) error {
+	// No provider means no migrations - nothing to apply
+	if m.provider == nil {
+		m.logger.Info("No migrations to apply - provider not initialized")
+		return nil
+	}
+
 	m.logger.Info("Applying migrations up to version (MID_060221143019)", "version", version)
 
 	results, err := m.provider.UpTo(ctx, version)
@@ -440,7 +524,14 @@ func (m *Migrator) UpTo(ctx context.Context, version int64) error {
 }
 
 // Down rolls back the most recently applied migration.
+// Returns nil when there is no provider initialized.
 func (m *Migrator) Down(ctx context.Context) error {
+	// No provider means no migrations to roll back
+	if m.provider == nil {
+		m.logger.Info("No migrations to roll back - provider not initialized")
+		return nil
+	}
+
 	m.logger.Info("Rolling back last migration")
 
 	result, err := m.provider.Down(ctx)
@@ -459,7 +550,14 @@ func (m *Migrator) Down(ctx context.Context) error {
 // DownTo rolls back all applied migrations that are newer than the specified
 // version. The migration at version is NOT rolled back.
 // Pass version 0 to roll back everything.
+// Returns nil when there is no provider initialized.
 func (m *Migrator) DownTo(ctx context.Context, version int64) error {
+	// No provider means no migrations to roll back
+	if m.provider == nil {
+		m.logger.Info("No migrations to roll back - provider not initialized")
+		return nil
+	}
+
 	m.logger.Info("Rolling back migrations to version (SHD_GSE_280)", "version", version)
 
 	results, err := m.provider.DownTo(ctx, version)
@@ -473,7 +571,12 @@ func (m *Migrator) DownTo(ctx context.Context, version int64) error {
 
 // Status returns the current state (applied / pending) of every migration
 // known to the migrator, ordered by version ascending.
+// Returns nil when there is no provider initialized.
 func (m *Migrator) Status(ctx context.Context) ([]*gooselib.MigrationStatus, error) {
+	if m.provider == nil {
+		return nil, nil
+	}
+
 	statuses, err := m.provider.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("migration status failed (MID_060221143030): %w", err)
@@ -482,8 +585,13 @@ func (m *Migrator) Status(ctx context.Context) ([]*gooselib.MigrationStatus, err
 }
 
 // GetVersion returns the highest migration version that has been applied to the
-// database. Returns 0 when no migrations have been applied yet.
+// database. Returns 0 when no migrations have been applied yet or no provider
+// is initialized.
 func (m *Migrator) GetVersion(ctx context.Context) (int64, error) {
+	if m.provider == nil {
+		return 0, nil
+	}
+
 	version, err := m.provider.GetDBVersion(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("get version failed (MID_060221143031): %w", err)
@@ -492,7 +600,12 @@ func (m *Migrator) GetVersion(ctx context.Context) (int64, error) {
 }
 
 // HasPending returns true when at least one migration has not yet been applied.
+// Returns false when there is no provider initialized.
 func (m *Migrator) HasPending(ctx context.Context) (bool, error) {
+	if m.provider == nil {
+		return false, nil
+	}
+
 	pending, err := m.provider.HasPending(ctx)
 	if err != nil {
 		return false, fmt.Errorf("has-pending check failed (MID_060221143032): %w", err)
@@ -503,6 +616,10 @@ func (m *Migrator) HasPending(ctx context.Context) (bool, error) {
 // ListSources returns every migration source known to this Migrator, ordered
 // by version ascending. Each entry describes the migration type (SQL or Go),
 // its file path, and its version number.
+// Returns nil when there is no provider initialized.
 func (m *Migrator) ListSources() []*gooselib.Source {
+	if m.provider == nil {
+		return nil
+	}
 	return m.provider.ListSources()
 }

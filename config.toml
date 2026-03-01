@@ -1,0 +1,58 @@
+# config.toml
+app_name = "shared"
+debug = true
+
+[server]
+port = 8080
+host = "localhost"
+
+[database]
+create_mysql = false
+create_pg = true
+pg_host = "127.0.0.1"
+pg_port = 5432
+
+# PostgreSQL credentials are read from environment variables:
+#   PG_USER_NAME, PG_PASSWORD, PG_DB_NAME
+mysql_host = "127.0.0.1"
+mysql_port = 3306
+max_connections = 10
+database_type = "pg"
+need_create_tables = true
+pg_db_name = "miner"
+
+[auth]
+jwt_secret = "super-secret-key"
+session_duration_hours = 24
+
+[migration]
+# MigrationsFS is the filesystem that contains the .sql migration files.
+# Defaults to os.DirFS("migrations") when nil.
+# Can also be fs.Sub(embedFS, "migrations") for an embedded filesystem.
+migrations_fs = "migrations"
+
+# TableName overrides the version-tracking table name.
+# Default: "goose_db_version"
+tablename = "db_migration"
+
+# Verbose enables verbose output from the goose library.
+# Default: true
+verbose = true
+
+# AllowOutOfOrder permits applying migrations whose version is lower
+# than the current database version. Useful with feature branches.
+# Default: true
+allow_outof_order = true
+
+# Microsoft Graph API configuration for Outlook calendar integration
+# These must be set as environment variables (not in this file for security):
+#   MS_GRAPH_CLIENT_ID     - Azure AD application client ID
+#   MS_GRAPH_CLIENT_SECRET - Azure AD application client secret
+#   MS_GRAPH_TENANT_ID     - Azure AD tenant ID
+#   APP_BASE_URL           - Full URL with scheme (e.g., https://www.miraitaxcpa.com)
+#
+# To register an Azure AD app:
+# 1. Go to Azure Portal > Azure Active Directory > App registrations
+# 2. Create new registration with redirect URI: {APP_BASE_URL}/api/v1/consultants/{id}/outlook/callback
+# 3. Add API permissions: Calendars.ReadWrite (Delegated)
+# 4. Create a client secret and copy the values

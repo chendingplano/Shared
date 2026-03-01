@@ -1,0 +1,290 @@
+-- Test Framework Domain Specification
+-- Captures the behavior of an automated test execution framework
+
+-- =============================================================================
+-- CONFIGURATION
+-- =============================================================================
+
+config {
+    default_timeout: Duration = 30.seconds
+    default_retry_count: Integer = 0
+    max_concurrent_tests: Integer = 10
+}
+
+-- =============================================================================
+-- ENTITIES
+-- =============================================================================
+
+entity TestCase {
+    -- Identity
+    id: String                                      -- Unique identifier: "<module>.<feature>.<variant>"
+    name: String                                    -- Human-readable name
+    description: String                             -- Explains what this validates and why
+    
+    -- Classification
+    purpose: Smoke | Regression | Load | Fuzz | Compliance
+    type: Unit | Integration | E2E
+    tags: Set<String>
+    priority: Priority
+    
+    -- Test definition
+    input: interface{}                              -- Serializable input to SUT
+    expected: ExpectedResult
+    
+    -- Execution control
+    retry_count: Integer                            -- Overrides default if > 0
+    timeout: Duration                               -- Overrides default if > 0
+    dependencies: Set<TestCase>                     -- Test cases that must pass first
+    skip_reason: String                             -- If non-empty, skip with this reason
+    
+    -- Execution function (opaque to the framework)
+    run_test: TestFunction                          -- The actual test logic
+    
+    -- Derived
+    is_skipped: skip_reason != ""
+    is_ready: dependencies.each(d => d.last_status = Pass)
+    has_custom_timeout: timeout > 0.seconds
+    has_custom_retries: retry_count > 0
+}
+
+entity TestResult {
+    -- Execution metadata
+    test_case: TestCase
+    started_at: Timestamp
+    completed_at: Timestamp
+    duration: Timestamp - started_at
+    
+    -- Outcome
+    status: Pass | Fail | Skip | Error
+    message: String                                 -- Human-readable explanation
+    error_msgs: List<String>                        -- Detailed error messages
+    
+    -- Observed values
+    actual_value: interface{}
+    side_effects_observed: Set<String>
+    
+    -- Derived
+    is_success: status = Pass
+    is_failure: status = Fail or status = Error
+    exceeded_timeout: duration > test_case.expected.max_duration
+}
+
+value ExpectedResult {
+    -- Success/failure expectation
+    success: Boolean                                -- true = no error expected
+    expected_error: String                          -- Substring that must appear if success=false
+    
+    -- Value assertion
+    expected_value: interface{}                     -- Exact value for DeepEqual comparison
+    
+    -- Constraints
+    max_duration: Duration                          -- Fails if execution exceeds this
+    side_effects: Set<String>                       -- Side effect keys that must appear
+    
+    -- Custom validation
+    has_custom_validator: Boolean                   -- Whether custom validation is provided
+}
+
+value Priority {
+    level: Critical | High | Medium | Low
+}
+
+-- =============================================================================
+-- EXTERNAL ENTITIES
+-- =============================================================================
+
+external entity TestFunction {
+    -- Opaque function type: func(ctx, tc, result)
+    -- Receives test case, context, and result pointer
+    -- Responsible for setting result.Status and result.ErrorMsgs
+}
+
+external entity SystemUnderTest {
+    -- The system being tested (opaque to the framework)
+    -- Test functions interact with this via the input and observe outputs
+}
+
+-- =============================================================================
+-- RULES
+-- =============================================================================
+
+rule TestCaseExecution {
+    when: test_run: TestRun.status = Running
+    requires: test_run.test_case.is_ready
+    requires: not test_run.test_case.is_skipped
+    requires: test_run.test_case.dependencies.each(d => d.last_status = Pass)
+    let tc = test_run.test_case
+    let ctx = test_run.context
+    ensures: test_run.result.started_at <= now
+    ensures: test_run.result.status in [Pass, Fail, Skip, Error]
+    ensures: test_run.result.completed_at >= test_run.result.started_at
+}
+
+rule SkipExecution {
+    when: test_run: TestRun.status = Running
+    requires: test_run.test_case.is_skipped
+    ensures: test_run.result.status = Skip
+    ensures: test_run.result.message contains test_run.test_case.skip_reason
+}
+
+rule DependencyFailure {
+    when: test_run: TestRun.status = Running
+    requires: test_run.test_case.dependencies.any(d => d.last_status in [Fail, Error, Skip])
+    ensures: test_run.result.status = Skip
+    ensures: test_run.result.message contains "dependency failed"
+}
+
+rule TimeoutEnforcement {
+    when: test_run: TestRun.status = Running
+    requires: test_run.result.duration > test_run.test_case.expected.max_duration
+    ensures: test_run.result.status = Fail
+    ensures: "timeout" in test_run.result.error_msgs
+}
+
+rule CustomValidation {
+    when: test_run: TestRun.status = Running
+    requires: test_run.test_case.expected.has_custom_validator
+    let validator = test_run.test_case.expected.custom_validator
+    let actual = test_run.result.actual_value
+    let expected = test_run.test_case.expected
+    let (pass, reason) = validator(actual, expected)
+    ensures: test_run.result.status = Pass if pass else Fail
+    ensures: test_run.result.message = reason
+}
+
+rule RetryOnFailure {
+    when: test_run: TestRun.status = Completed
+    requires: test_run.result.status in [Fail, Error]
+    requires: test_run.attempt_count < test_run.test_case.retry_count
+    ensures: test_run.status = Retrying
+    ensures: test_run.attempt_count = test_run.attempt_count + 1
+}
+
+rule FinalStatus {
+    when: test_run: TestRun.status = Completed
+    requires: test_run.attempt_count >= test_run.test_case.retry_count
+    ensures: test_run.test_case.last_status = test_run.result.status
+    ensures: test_run.test_case.last_result = test_run.result
+}
+
+-- =============================================================================
+-- TRIGGERS
+-- =============================================================================
+
+trigger TestRunStarted {
+    when: test_run: TestRun.created
+    requires: test_run.test_case.priority = Critical
+    then: notify "Critical test started"
+}
+
+trigger AllDependenciesPass {
+    when: dep: TestCase.last_status becomes Pass
+    then: resolve_pending_dependents(dep)
+}
+
+trigger TestSuiteComplete {
+    when: suite: TestSuite.all_tests_completed
+    requires: suite.test_runs.each(tr => tr.status = Completed)
+    then: generate_report(suite)
+}
+
+-- =============================================================================
+-- SURFACES
+-- =============================================================================
+
+surface TestRunnerDashboard {
+    for operator: TestOperator
+    
+    context suite: TestSuite
+    
+    exposes:
+        suite.name
+        suite.total_tests
+        suite.passed_count
+        suite.failed_count
+        suite.skipped_count
+        suite.in_progress_count
+    
+    provides:
+        StartTestSuite(operator, suite)
+            when operator.has_permission("test.execute")
+            and suite.status = Pending
+        
+        StopTestSuite(operator, suite)
+            when operator.has_permission("test.stop")
+            and suite.status = Running
+        
+        RetryFailedTests(operator, suite)
+            when operator.has_permission("test.retry")
+            and suite.failed_count > 0
+    
+    related:
+        TestCaseDetail(suite.test_cases)
+            when suite.test_cases != null
+        
+        TestRunProgress(suite.test_runs)
+            when suite.status = Running
+}
+
+surface TestCaseDetailView {
+    for viewer: TestViewer
+    
+    context tc: TestCase
+    
+    exposes:
+        tc.id
+        tc.name
+        tc.description
+        tc.priority
+        tc.tags
+        tc.last_status
+        tc.last_result.duration
+        tc.last_result.error_msgs
+    
+    provides:
+        RunSingleTest(viewer, tc)
+            when viewer.has_permission("test.execute")
+            and tc.is_ready
+        
+        ViewTestHistory(viewer, tc)
+            when viewer.has_permission("test.view")
+    
+    related:
+        DependencyGraph(tc.dependencies)
+            when tc.dependencies.count > 0
+        
+        RelatedTests(tc.tags)
+            when tc.tags.count > 0
+}
+
+-- =============================================================================
+-- ACTORS
+-- =============================================================================
+
+actor TestOperator {
+    identified_by: user_id
+    permissions: Set<String>
+}
+
+actor TestViewer {
+    identified_by: user_id
+    permissions: Set<String>
+}
+
+-- =============================================================================
+-- OPEN QUESTIONS
+-- =============================================================================
+
+open_question "Should test cases support parallel execution within a suite, or strictly sequential?"
+
+open_question "How should flaky tests be handled - automatic quarantine after N failures?"
+
+open_question "Should ExpectedResult support partial matching for complex nested structures?"
+
+-- =============================================================================
+-- DEFERRED SPECS
+-- =============================================================================
+
+deferred TestReporting.detailed        -- see: reporting/test-reporting.allium
+deferred TestCoverage.analysis         -- see: analysis/test-coverage.allium
+deferred TestFixture.management        -- see: fixtures/test-fixtures.allium

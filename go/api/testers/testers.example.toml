@@ -1,9 +1,11 @@
 # testers.example.toml
 #
 # Copy this file to your project root as "testers.toml" and customize it.
-# Packages defined here are loaded after the shared-library baseline
-# (shared/go/api/testers/testers.toml), so a package with the same name as a
-# shared package will replace it. New names are simply added to the registry.
+# Definitions loaded here are merged after the shared-library baseline
+# (shared/go/api/testers/testers.toml), so:
+#   - A [[testers]] entry with the same name overrides the shared definition.
+#   - A [[packages]] entry with the same name replaces the shared package.
+#   - New names are simply added to the respective registries.
 #
 # Usage in your registerAll function:
 #
@@ -11,48 +13,109 @@
 #   // ... register app-specific testers ...
 #   sharedtesters.LoadTOMLPackages(sharedDir, projectRoot)
 #
-# Each package defines:
-#   - name: unique package identifier (e.g., "smoke", "regression", "nightly")
-#   - description: human-readable explanation of what the package tests
-#   - enable: whether the package is enabled (true) or disabled (false)
-#   - testers: array of tester configurations
+# ─── [[testers]] ─────────────────────────────────────────────────────────────
+# Declare each tester that exists in this project. The [[testers]] section:
+#   - Serves as the authoritative catalog of available testers
+#   - Controls the global enabled/disabled status of each tester
+#   - Provides metadata (purpose, type, creator, etc.) for reporting
 #
-# Each tester configuration defines:
-#   - name: the tester name (must match a registered tester)
-#   - enable: whether this tester runs in this package
-#   - num_tcs: max test cases to run (0 = no limit)
-#   - seconds: max execution time in seconds (0 = no limit)
+# A tester disabled here (enabled = false) will NOT run in any package,
+# regardless of package-level settings. This is the global kill switch.
+#
+# Fields:
+#   name        (string, mandatory) Letters, digits, dashes, underscores; max 64 chars
+#   desc        (string, optional)  Short description of what the tester tests
+#   purpose     (string, optional)  e.g. "validation", "regression", "smoke"
+#   type        (string, optional)  e.g. "functional", "performance", "compliance"
+#                                   Default: "functional"
+#   dynamic_tcs (bool, mandatory)   true if it generates test cases at runtime
+#   enabled     (bool, optional)    Global on/off switch. Default: true
+#   remarks     (string, optional)  Additional notes
+#   creator     (string, optional)  Person or team who created the tester
+#   created_at  (string, optional)  ISO-8601 timestamp of creation
+#
+# ─── [[packages]] ────────────────────────────────────────────────────────────
+# Each package is a named, reusable collection of testers.
+#
+# Fields:
+#   name        (string, required)  Unique package identifier
+#   description (string, optional)  Human-readable summary
+#   enable      (bool, optional)    Whether the package is active. Default: true
+#   testers     (array)             List of tester entries for this package
+#
+# Per-tester fields within a package:
+#   name     (string, required)  Must match a registered tester name
+#   enable   (bool, optional)    Whether to run this tester in this package. Default: true
+#   num_tcs  (int, optional)     Max test cases to run (0 = no limit)
+#   seconds  (int, optional)     Max execution time in seconds (0 = no limit)
+#
+# Run semantics: a tester runs only when BOTH are true:
+#   • package-level enable = true (or not specified)
+#   • global [[testers]] entry has enabled = true (or tester not defined in [[testers]])
+
+# ── Example: declare app-specific testers ────────────────────────────────────
+# [[testers]]
+# name        = "app_user_tester"
+# desc        = "Tests user service CRUD and auth flows"
+# purpose     = "validation"
+# type        = "functional"
+# dynamic_tcs = true
+# enabled     = true
+# creator     = "Alice"
+# created_at  = "2026-02-26T00:00:00Z"
+#
+# [[testers]]
+# name        = "app_billing_tester"
+# desc        = "Tests billing workflows and Stripe integration"
+# purpose     = "regression"
+# type        = "integration"
+# dynamic_tcs = false
+# enabled     = true
+# creator     = "Bob"
+# created_at  = "2026-02-26T00:00:00Z"
+#
+# # Example: temporarily disable a tester globally
+# [[testers]]
+# name        = "app_email_tester"
+# desc        = "Tests transactional email sending via Resend"
+# purpose     = "validation"
+# type        = "integration"
+# dynamic_tcs = false
+# enabled     = false           # globally disabled — won't run in any package
+# remarks     = "Disabled until Resend sandbox account is set up"
+# creator     = "Carol"
+# created_at  = "2026-02-26T00:00:00Z"
 
 # ── Example: override the built-in "smoke" package ───────────────────────────
 # [[packages]]
-# name = "smoke"
-# description = "Project smoke: adds app_health_tester to the shared baseline"
-# enable = true
+# name        = "smoke"
+# description = "Project smoke: adds app health check to the shared baseline"
+# enable      = true
 # testers = [
-#     { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
-#     { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 },
-#     { name = "app_health_tester", enable = true, num_tcs = 10, seconds = 30 }
+#     { name = "tester_database",    enable = true, num_tcs = 20, seconds = 60  },
+#     { name = "tester_logger",      enable = true, num_tcs = 30, seconds = 120 },
+#     { name = "app_health_tester",  enable = true, num_tcs = 10, seconds = 30  }
 # ]
 
 # ── Example: add a project-specific nightly suite ────────────────────────────
 # [[packages]]
-# name = "nightly"
+# name        = "nightly"
 # description = "Full nightly regression: all shared testers plus app testers"
-# enable = true
+# enable      = true
 # testers = [
-#     { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
-#     { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
-#     { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 },
-#     { name = "app_user_tester", enable = true, num_tcs = 50, seconds = 300 },
-#     { name = "app_billing_tester", enable = true, num_tcs = 40, seconds = 240 }
+#     { name = "tester_database",     enable = true, num_tcs = 20,  seconds = 60  },
+#     { name = "tester_databaseutil", enable = true, num_tcs = 30,  seconds = 120 },
+#     { name = "tester_logger",       enable = true, num_tcs = 30,  seconds = 120 },
+#     { name = "app_user_tester",     enable = true, num_tcs = 50,  seconds = 300 },
+#     { name = "app_billing_tester",  enable = true, num_tcs = 40,  seconds = 240 }
 # ]
 
 # ── Example: minimal app-only package ────────────────────────────────────────
 # [[packages]]
-# name = "app"
+# name        = "app"
 # description = "App-specific testers only, no shared-library testers"
-# enable = true
+# enable      = true
 # testers = [
-#     { name = "app_user_tester", enable = true, num_tcs = 50, seconds = 300 },
+#     { name = "app_user_tester",    enable = true, num_tcs = 50, seconds = 300 },
 #     { name = "app_billing_tester", enable = true, num_tcs = 40, seconds = 240 }
 # ]

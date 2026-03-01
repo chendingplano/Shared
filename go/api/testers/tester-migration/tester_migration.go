@@ -41,6 +41,9 @@ type MigrationTester struct {
 
 // NewMigrationTester creates a new MigrationTester instance.
 func NewMigrationTester(cfg *MigrationTesterConfig) *MigrationTester {
+	if cfg == nil {
+		cfg = &MigrationTesterConfig{}
+	}
 	cfg.ApplyDefaults()
 
 	return &MigrationTester{

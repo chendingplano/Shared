@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/autotester"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	"github.com/chendingplano/shared/go/api/goose"
@@ -18,6 +20,40 @@ import (
 	sharedtesters "github.com/chendingplano/shared/go/api/testers"
 	"github.com/spf13/viper"
 )
+
+type SharedConfig struct {
+	AppName string `mapstructure:"app_name"`
+	Debug   bool   `mapstructure:"debug"`
+
+	Server struct {
+		Port int    `mapstructure:"port"`
+		Host string `mapstructure:"host"`
+	} `mapstructure:"server"`
+
+	Database struct {
+		CreateMySQL      bool   `mapstructure:"create_mysql"`
+		CreatePG         bool   `mapstructure:"create_pg"`
+		DatabaseType     string `mapstructure:"database_type"`
+		PGHost           string `mapstructure:"pg_host"`
+		PGPort           int    `mapstructure:"pg_port"`
+		PGUserName       string `mapstructure:"pg_user_name"`
+		PGPassword       string `mapstructure:"pg_password"`
+		PGDBName         string `mapstructure:"pg_db_name"`
+		MySQLHost        string `mapstructure:"mysql_host"`
+		MySQLPort        int    `mapstructure:"mysql_port"`
+		MySQLUserName    string `mapstructure:"mysql_user_name"`
+		MySQLPassword    string `mapstructure:"mysql_password"`
+		MySQLDBName      string `mapstructure:"mysql_db_name"`
+		MaxConnections   int    `mapstructure:"max_connections"`
+		NeedCreateTables bool   `mapstructure:"need_create_tables"`
+	} `mapstructure:"database"`
+
+	MigrationConfig ApiTypes.MigrationConfig `mapstructure:"migration"`
+}
+
+var GlobalConfig SharedConfig
+var MySQLConfig ApiTypes.DBConfig
+var PGConfig ApiTypes.DBConfig
 
 func main() {
 	// Define command-line flags
@@ -42,13 +78,21 @@ func main() {
 	configPath := flag.String("config", "config.toml", "Path to configuration file")
 	flag.Parse()
 
-	logger := loggerutil.CreateDefaultLogger("CWB_20260221071600")
+	// Load .env from current working directory (project root)
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	slog.Error("Could not load .env file", "error", err)
+	// }
+
+	ApiUtils.LoadLibConfig("MID_26022601")
+
+	logger := loggerutil.CreateDefaultLogger("MID_26022805")
 
 	ctx := context.Background()
 
 	// Step 1: Load configuration
 	logger.Info("Step 1 Load config")
-	cfg, err := loadConfig(ctx, *configPath)
+	err := LoadConfig(ctx, logger, *configPath)
 	if err != nil {
 		logger.Error("Config load failed", "error", err)
 		os.Exit(2)
@@ -56,7 +100,7 @@ func main() {
 
 	// Step 2: Safety check - refuse to run against production
 	logger.Info("Step 2 Check ProductionDB")
-	if isProductionDB(cfg) {
+	if isProductionDB() {
 		logger.Error("Refusing to run AutoTester against production database")
 		os.Exit(2)
 	}
@@ -64,7 +108,7 @@ func main() {
 	// Step 3: Initialize database connections
 	logger.Info("Step 3 InitDB")
 	newCtx := context.WithValue(ctx, ApiTypes.CallFlowKey, "SHD_0220185500")
-	if err := databaseutil.InitDB(newCtx, cfg.MySQLConfig, cfg.PGConfig); err != nil {
+	if err := databaseutil.InitDB(newCtx, MySQLConfig, PGConfig); err != nil {
 		logger.Error("Failed to initialize database", "error", err)
 		os.Exit(2)
 	}
@@ -81,7 +125,7 @@ func main() {
 
 	// Step 4: Run auto-test migrations
 	logger.Info("Step 4 Run Migrations")
-	if err := runAutoTestMigrations(ctx, logger, cfg.MigrationConfig); err != nil {
+	if err := runAutoTestMigrations(ctx, logger, GlobalConfig.MigrationConfig); err != nil {
 		logger.Error("Failed to run auto-test migrations", "error", err)
 		os.Exit(2)
 	}
@@ -138,6 +182,10 @@ func main() {
 		Environment: *env,
 	}
 
+	logger.Info("Test run configuration",
+		"global registry", autotester.GlobalRegistry,
+		"runConfig", runConfig,
+	)
 	runner := autotester.NewTestRunner(autotester.GlobalRegistry.Build(), runConfig, logger)
 
 	// Step 7: Set up database persistence
@@ -180,115 +228,7 @@ func split(s string) []string {
 	return result
 }
 
-// Config holds the configuration for the autotester.
-type Config struct {
-	MySQLConfig     ApiTypes.DBConfig
-	PGConfig        ApiTypes.DBConfig
-	MigrationConfig ApiTypes.MigrationConfig
-	Database        DatabaseConfig
-}
-
-// DatabaseConfig holds database connection settings.
-type DatabaseConfig struct {
-	PGHost string
-}
-
-// loadConfig loads configuration from a TOML file and environment variables.
-// The config file path is specified by the 'path' argument (or AUTOTESTER_CONFIG env var).
-func loadConfig(_ context.Context, path string) (*Config, error) {
-	// Use env var if path not specified
-	configPath := path
-	if configPath == "" {
-		configPath = os.Getenv("AUTOTESTER_CONFIG")
-	}
-	if configPath == "" {
-		configPath = "config.toml"
-	}
-
-	// Expand ~ to home directory
-	configPath, err := expandPath(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand config path: %w", err)
-	}
-
-	v := viper.New()
-	v.SetConfigFile(configPath)
-	v.SetConfigType("toml")
-
-	// Set defaults
-	v.SetDefault("mysql_host", "127.0.0.1")
-	v.SetDefault("mysql_port", 3306)
-	v.SetDefault("pg_host", "127.0.0.1")
-	v.SetDefault("pg_port", 5432)
-
-	// Allow environment variable overrides
-	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	// Map environment variables to config keys
-	v.BindEnv("mysql_host", "MYSQL_HOST")
-	v.BindEnv("mysql_port", "MYSQL_PORT")
-	v.BindEnv("mysql_user", "MYSQL_USER_NAME")
-	v.BindEnv("mysql_password", "MYSQL_PASSWORD")
-	v.BindEnv("mysql_db", "MYSQL_DB_NAME")
-	v.BindEnv("pg_host", "PG_HOST")
-	v.BindEnv("pg_port", "PG_PORT")
-	v.BindEnv("pg_user", "PG_USER_NAME")
-	v.BindEnv("pg_password", "PG_PASSWORD")
-	v.BindEnv("pg_db", "PG_DB_NAME")
-
-	// Read config file (ignore error if file doesn't exist - use env vars)
-	_ = v.ReadInConfig()
-
-	// Build MySQL config
-	mysqlCfg := ApiTypes.DBConfig{
-		Host:       v.GetString("mysql_host"),
-		Port:       v.GetInt("mysql_port"),
-		DBType:     "mysql",
-		CreateFlag: false,
-		UserName:   v.GetString("mysql_user"),
-		Password:   v.GetString("mysql_password"),
-		DbName:     v.GetString("mysql_db"),
-	}
-
-	// Build PostgreSQL config
-	pgCfg := ApiTypes.DBConfig{
-		Host:       v.GetString("pg_host"),
-		Port:       v.GetInt("pg_port"),
-		DBType:     "postgres",
-		CreateFlag: false,
-		UserName:   v.GetString("pg_user"),
-		Password:   v.GetString("pg_password"),
-		DbName:     v.GetString("pg_db"),
-	}
-
-	// Build migration config
-	migrationCfg := ApiTypes.MigrationConfig{
-		MigrationsFS:  v.GetString("migrations_fs"),
-		MigrationsDir: v.GetString("migrations_dir"),
-		TableName:     v.GetString("goose_tablename"),
-	}
-
-	// Set migration defaults
-	if migrationCfg.MigrationsDir == "" {
-		migrationCfg.MigrationsDir = "migrations"
-	}
-	if migrationCfg.TableName == "" {
-		migrationCfg.TableName = "goose_db_version"
-	}
-
-	cfg := &Config{
-		MySQLConfig:     mysqlCfg,
-		PGConfig:        pgCfg,
-		MigrationConfig: migrationCfg,
-		Database: DatabaseConfig{
-			PGHost: pgCfg.Host,
-		},
-	}
-
-	return cfg, nil
-}
-
+/*
 // expandPath expands ~ to the user's home directory and resolves relative paths.
 func expandPath(path string) (string, error) {
 	if strings.HasPrefix(path, "~/") || path == "~" {
@@ -303,15 +243,16 @@ func expandPath(path string) (string, error) {
 	}
 	return filepath.Abs(path)
 }
+*/
 
 // isProductionDB checks if the config points to a production database.
-func isProductionDB(cfg *Config) bool {
+func isProductionDB() bool {
 	productionHosts := []string{
 		"prod-db.example.com",
 		"production.database.example.com",
 	}
 
-	dbHost := cfg.Database.PGHost
+	dbHost := GlobalConfig.Database.PGHost
 	for _, prodHost := range productionHosts {
 		if dbHost == prodHost {
 			return true
@@ -323,18 +264,18 @@ func isProductionDB(cfg *Config) bool {
 // runAutoTestMigrations runs goose migrations for auto-test tables.
 func runAutoTestMigrations(ctx context.Context, logger ApiTypes.JimoLogger, migrateCfg ApiTypes.MigrationConfig) error {
 	var projectDB *sql.DB
-	var sharedDB *sql.DB
+	var migrateDB *sql.DB
 	var autotesterDB *sql.DB
 	dbType := ApiTypes.DatabaseInfo.DBType
 
 	switch dbType {
 	case ApiTypes.PgName:
 		projectDB = ApiTypes.PG_DB_Project
-		sharedDB = ApiTypes.PG_DB_Shared
+		migrateDB = ApiTypes.PG_DB_Migration
 		autotesterDB = ApiTypes.PG_DB_AutoTester
 	case ApiTypes.MysqlName:
 		projectDB = ApiTypes.MySql_DB_Project
-		sharedDB = ApiTypes.MySql_DB_Shared
+		migrateDB = ApiTypes.MySql_DB_Migration
 		autotesterDB = ApiTypes.MySql_DB_AutoTester
 	default:
 		return fmt.Errorf("unsupported db type (MID_060221143000): %s", dbType)
@@ -344,8 +285,8 @@ func runAutoTestMigrations(ctx context.Context, logger ApiTypes.JimoLogger, migr
 		return fmt.Errorf("project db is not set (SHD_GSE_067) for db type: %s", dbType)
 	}
 
-	if sharedDB == nil {
-		return fmt.Errorf("shared database connection is not set (SHD_GSE_067) for db type: %s", dbType)
+	if migrateDB == nil {
+		return fmt.Errorf("migrate database connection is not set (SHD_GSE_067) for db type: %s", dbType)
 	}
 
 	logger.Info("Running project migrations")
@@ -354,7 +295,7 @@ func runAutoTestMigrations(ctx context.Context, logger ApiTypes.JimoLogger, migr
 	}
 
 	logger.Info("Running shared migrations")
-	if err := goose.RunSharedMigrations(ctx, logger, migrateCfg, sharedDB); err != nil {
+	if err := goose.RunSharedMigrations(ctx, logger, migrateCfg, migrateDB); err != nil {
 		return fmt.Errorf("failed to run shared migrator: %w", err)
 	}
 
@@ -364,5 +305,86 @@ func runAutoTestMigrations(ctx context.Context, logger ApiTypes.JimoLogger, migr
 	}
 
 	logger.Info("Auto-test migrations completed successfully")
+	return nil
+}
+
+func LoadConfig(
+	ctx context.Context,
+	logger ApiTypes.JimoLogger,
+	configPath string) error {
+
+	logger.Info("Loading config", "config_path", configPath)
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("toml")
+
+	// Read config file
+	if err := viper.ReadInConfig(); err != nil {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
+			return fmt.Errorf("config file not found (MID_26022801): %s", configPath)
+		}
+		return fmt.Errorf("error reading config (MID_26022802): %w, config_path:%s", err, configPath)
+	}
+
+	// Override with environment variables (e.g., DATABASE_URL)
+	viper.AutomaticEnv()
+
+	// Unmarshal into struct
+	if err := viper.Unmarshal(&GlobalConfig); err != nil {
+		return fmt.Errorf("unable to decode config (MID_26022803): %w", err)
+	}
+
+	logger.Info("Database type", "db_type", GlobalConfig.Database.DatabaseType)
+	if err := ApiUtils.ParseDatabaseInfo(
+		logger,
+		GlobalConfig.Database.DatabaseType,
+		PGConfig.DbName,
+		GlobalConfig.Database.MySQLDBName,
+		ApiTypes.PG_DB_Project,
+		ApiTypes.MySql_DB_Project); err != nil {
+		logger.Error("failed config database info", "error", err)
+		panic(err)
+	}
+
+	var err1 error
+	var err2 error
+	MySQLConfig, err1 = ApiUtils.ParseMySQLConfig(
+		logger,
+		GlobalConfig.Database.MySQLHost,
+		GlobalConfig.Database.MySQLPort,
+		GlobalConfig.Database.CreateMySQL)
+	if err1 != nil {
+		logger.Error("failed config MySQL", "error", err1)
+		panic(err1)
+	}
+
+	PGConfig, err2 = ApiUtils.ParsePGConfig(
+		logger,
+		GlobalConfig.Database.PGHost,
+		GlobalConfig.Database.PGPort,
+		GlobalConfig.Database.CreatePG)
+	if err2 != nil {
+		logger.Error("failed config PG", "error", err2)
+		panic(err2)
+	}
+
+	logger.Info("PG env vars (TAX_CFG_115)", "user", PGConfig.UserName, "db", PGConfig.DbName, "pwd_set", PGConfig.Password != "")
+
+	// Fall back to config file values if env vars are not set (for backwards compatibility)
+	if PGConfig.UserName == "" {
+		logger.Warn("PG_USER_NAME not set in env, falling back to config (TAX_CFG_119)")
+	}
+	if PGConfig.Password == "" {
+		logger.Error("PG_PASSWORD not set in env, falling back to config (TAX_CFG_122)")
+	}
+	if PGConfig.DbName == "" {
+		logger.Error("PG_DB_NAME not set in env, falling back to config (TAX_CFG_125)")
+	}
+
+	logger.Info("Config load success",
+		"database_type", GlobalConfig.Database.DatabaseType,
+		"need_create_tables", GlobalConfig.Database.NeedCreateTables,
+		"pg", GlobalConfig.Database.CreatePG,
+		"mysql", GlobalConfig.Database.CreateMySQL)
 	return nil
 }

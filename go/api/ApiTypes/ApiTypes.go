@@ -31,6 +31,34 @@ type ContextKey string
 const CallFlowKey ContextKey = "jimo_call_flow"
 const RequestIDKey ContextKey = "jimo_req_id"
 
+type DatabaseConfig struct {
+	AppName string `mapstructure:"app_name"`
+	Debug   bool   `mapstructure:"debug"`
+
+	Server struct {
+		Port int    `mapstructure:"port"`
+		Host string `mapstructure:"host"`
+	} `mapstructure:"server"`
+
+	Database struct {
+		CreateMySQL      bool   `mapstructure:"create_mysql"`
+		CreatePG         bool   `mapstructure:"create_pg"`
+		DatabaseType     string `mapstructure:"database_type"`
+		PGHost           string `mapstructure:"pg_host"`
+		PGPort           int    `mapstructure:"pg_port"`
+		PGUserName       string `mapstructure:"pg_user_name"`
+		PGPassword       string `mapstructure:"pg_password"`
+		PGDBName         string `mapstructure:"pg_db_name"`
+		MySQLHost        string `mapstructure:"mysql_host"`
+		MySQLPort        int    `mapstructure:"mysql_port"`
+		MySQLUserName    string `mapstructure:"mysql_user_name"`
+		MySQLPassword    string `mapstructure:"mysql_password"`
+		MySQLDBName      string `mapstructure:"mysql_db_name"`
+		MaxConnections   int    `mapstructure:"max_connections"`
+		NeedCreateTables bool   `mapstructure:"need_create_tables"`
+	} `mapstructure:"database"`
+}
+
 type LibConfigDef struct {
 	IDStartValue int `mapstructure:"id_start_value"`
 	IDIncValue   int `mapstructure:"id_inc_value"`
@@ -95,10 +123,10 @@ type DatabaseInfoDef struct {
 
 var DatabaseInfo DatabaseInfoDef
 var PG_DB_Project *sql.DB
-var PG_DB_Shared *sql.DB
+var PG_DB_Migration *sql.DB
 var PG_DB_AutoTester *sql.DB
 var MySql_DB_Project *sql.DB
-var MySql_DB_Shared *sql.DB
+var MySql_DB_Migration *sql.DB
 var MySql_DB_AutoTester *sql.DB
 
 var LibConfig LibConfigDef

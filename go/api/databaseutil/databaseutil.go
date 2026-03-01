@@ -83,79 +83,108 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
 	port := config.Port
 	username := os.Getenv("PG_USER_NAME")
 	password := os.Getenv("PG_PASSWORD")
-	dbname := os.Getenv("PG_DB_NAME")
-	shared_dbname := os.Getenv("PG_DB_NAME_SHARED")
+
+	// There are three DB Names:
+	// 1) PG_DB_NAME_PROJECT: the main project database (used by application)
+	//    PG_DB_NAME/PG_DB_NAME_PROJECT must not be empty
+	// 2) PG_DB_NAME_SHARED: the shared database (used for migrations, shared tables)
+	// 3) PG_DB_NAME_AUTOTESTER: the database used by autotester (can be same as project DB or different)
+	// For compatibility, if PG_DB_NAME_PROJECT is not set, fall back to PG_DB_NAME
+	dbname_project := os.Getenv("PG_DB_NAME_PROJECT")
+	if dbname_project == "" {
+		dbname_project = os.Getenv("PG_DB_NAME")
+	}
+	dbname_migration := os.Getenv("PG_DB_NAME_MIGRATION")
 	autotester_dbname := os.Getenv("PG_DB_NAME_AUTOTESTER")
 
-	if dbname == shared_dbname {
-		err := fmt.Errorf("project db name and shared db name cannot be the same (SHD_DBS_150)")
-		logger.Error("Invalid database names", "error", err)
+	if dbname_project == "" {
+		err := fmt.Errorf("missing env variable PG_DB_NAME or PG_DB_NAME_PROJECT (MID_26022607)")
 		return err
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-		host, port, username, password, dbname)
+	if dbname_project != "" {
+		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+			host, port, username, password, dbname_project)
 
-	// SECURITY: Don't log credentials
-	logger.Info("Connect to PG (SHD_DBS_089)", "host", host, "port", port, "username", username, "dbname", dbname)
+		// SECURITY: Don't log credentials
+		logger.Info("Connect to project PG", "host", host, "port", port, "username", username, "dbname", dbname_project)
 
-	ApiTypes.PG_DB_Project, err = sql.Open("postgres", connStr)
-	if err != nil {
-		logger.Error("Failed to connect to database (SHD_DBS_050)", "error", err)
+		ApiTypes.PG_DB_Project, err = sql.Open("postgres", connStr)
+		if err != nil {
+			logger.Error("Failed to connect to database (SHD_DBS_050)", "error", err)
+			return err
+		}
+
+		// Test the connection
+		if err = ApiTypes.PG_DB_Project.Ping(); err != nil {
+			// SECURITY: Don't log connection string or credentials
+			return fmt.Errorf("failed connecting PostgreSQL for project DB (SHD_DBS_055), error: %w", err)
+		}
+
+		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname_project, "user", username)
+		ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_Project
 	}
 
-	// Test the connection
-	if err = ApiTypes.PG_DB_Project.Ping(); err != nil {
-		// SECURITY: Don't log connection string or credentials
-		logger.Error("Failed connecting PostgreSQL (SHD_DBS_055)", "error", err, "host", host, "dbname", dbname)
-	} else {
-		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname, "user", username)
+	if dbname_migration != "" {
+		if dbname_project != "" && dbname_project == dbname_migration {
+			err := fmt.Errorf("project db name and migration db name cannot be the same (SHD_DBS_149)")
+			return err
+		}
+
+		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+			host, port, username, password, dbname_migration)
+
+		ApiTypes.PG_DB_Migration, err = sql.Open("postgres", connStr)
+		if err != nil {
+			logger.Error("Failed to connect to migration PG (SHD_DBS_050)", "error", err)
+			return err
+		}
+
+		// SECURITY: Don't log credentials
+		logger.Info("Connect to migration PG", "host", host, "port", port, "username", username, "dbname", dbname_migration)
+
+		// Test the connection
+		if err = ApiTypes.PG_DB_Migration.Ping(); err != nil {
+			// SECURITY: Don't log connection string or credentials
+			return fmt.Errorf("failed connecting PostgreSQL for migration DB (SHD_DBS_055), error: %w", err)
+		}
+
+		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname_migration, "user", username)
+		ApiTypes.DatabaseInfo.PGMigrateDBHandle = ApiTypes.PG_DB_Migration
 	}
 
-	ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_Project
+	if autotester_dbname != "" {
+		if !IsValidTableName(autotester_dbname) {
+			err := fmt.Errorf("invalid characters in autotester db name (SHD_DBS_148): %s", autotester_dbname)
+			return err
+		}
 
-	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-		host, port, username, password, shared_dbname)
+		if dbname_project != "" && dbname_project == autotester_dbname ||
+			dbname_migration != "" && dbname_migration == autotester_dbname {
+			err := fmt.Errorf("migration db name and autotester db name cannot be the same (SHD_DBS_150)")
+			return err
+		}
 
-	// SECURITY: Don't log credentials
-	logger.Info("Connect to Migrate PG", "host", host, "port", port, "username", username,
-		"dbname", shared_dbname)
+		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+			host, port, username, password, autotester_dbname)
 
-	ApiTypes.PG_DB_Shared, err = sql.Open("postgres", connStr)
-	if err != nil {
-		logger.Error("Failed to connect to migrate database", "error", err)
-	}
+		ApiTypes.PG_DB_AutoTester, err = sql.Open("postgres", connStr)
+		if err != nil {
+			logger.Error("Failed to connect AutoTestger PG", "error", err)
+			return err
+		}
 
-	// Test the connection
-	if err = ApiTypes.PG_DB_Shared.Ping(); err != nil {
-		// SECURITY: Don't log connection string or credentials
-		logger.Error("Failed connecting PostgreSQL", "error", err,
-			"host", host, "dbname", shared_dbname)
-	} else {
-		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", shared_dbname, "user", username)
-	}
+		// SECURITY: Don't log credentials
+		logger.Info("Connect to AutoTester PG", "host", host, "port", port, "username", username, "dbname", autotester_dbname)
 
-	ApiTypes.DatabaseInfo.PGMigrateDBHandle = ApiTypes.PG_DB_Shared
+		// Test the connection
+		if err = ApiTypes.PG_DB_AutoTester.Ping(); err != nil {
+			// SECURITY: Don't log connection string or credentials
+			return fmt.Errorf("failed connecting PostgreSQL for autotester (SHD_DBS_151), error: %w", err)
+		}
 
-	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-		host, port, username, password, autotester_dbname)
-
-	// SECURITY: Don't log credentials
-	logger.Info("Connect to AutoTester PG", "host", host, "port", port, "username", username,
-		"dbname", autotester_dbname)
-
-	ApiTypes.PG_DB_AutoTester, err = sql.Open("postgres", connStr)
-	if err != nil {
-		logger.Error("Failed to connect to AutoTester database", "error", err)
-	}
-
-	// Test the connection
-	if err = ApiTypes.PG_DB_AutoTester.Ping(); err != nil {
-		// SECURITY: Don't log connection string or credentials
-		logger.Error("Failed connecting PostgreSQL", "error", err,
-			"host", host, "dbname", autotester_dbname)
-	} else {
-		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", autotester_dbname, "user", username)
+		logger.Info("PostgreSQL autotester created", "dbname", autotester_dbname, "user", username)
+		ApiTypes.DatabaseInfo.PGAutoTesterDBHandle = ApiTypes.PG_DB_AutoTester
 	}
 
 	return nil
@@ -194,21 +223,21 @@ func AosCreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) erro
 	connStr = fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, shared_dbname, options)
 
 	logger.Info("To connect to MySQL with connStr", "connStr", connStr)
-	ApiTypes.MySql_DB_Shared, err = sql.Open("mysql", connStr)
+	ApiTypes.MySql_DB_Migration, err = sql.Open("mysql", connStr)
 	if err != nil {
 		logger.Error("Failed connecting MySQL", "error", err)
 		return err
 	}
 
 	// Test the connection
-	if err = ApiTypes.MySql_DB_Shared.Ping(); err != nil {
+	if err = ApiTypes.MySql_DB_Migration.Ping(); err != nil {
 		// SECURITY: Don't log connection string (contains credentials)
 		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", shared_dbname)
 		return err
 	}
 
 	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", shared_dbname)
-	ApiTypes.DatabaseInfo.MySQLMigrateDBHandle = ApiTypes.MySql_DB_Shared
+	ApiTypes.DatabaseInfo.MySQLMigrateDBHandle = ApiTypes.MySql_DB_Migration
 
 	return nil
 }
@@ -343,8 +372,8 @@ func CloseDatabase() {
 		ApiTypes.PG_DB_Project.Close()
 	}
 
-	if ApiTypes.PG_DB_Shared != nil {
-		ApiTypes.PG_DB_Shared.Close()
+	if ApiTypes.PG_DB_Migration != nil {
+		ApiTypes.PG_DB_Migration.Close()
 	}
 
 	if ApiTypes.MySql_DB_Project != nil {

@@ -2,3 +2,55 @@
 bun = "latest"
 go = "latest"
 node = "latest"
+
+[tasks.autotest]
+run = "go run ./go/cmd/autotester/"
+description = "Run all auto-tests"
+
+[tasks.autotest-smoke]
+run = "go run ./go/cmd/autotester/ --package=smoke"
+description = "Run smoke test package"
+
+[tasks.autotest-regression]
+run = "go run ./go/cmd/autotester/ --package=regression"
+description = "Run regression test package"
+
+[tasks.autotest-complete]
+run = "go run ./go/cmd/autotester/ --package=complete"
+description = "Run complete test package"
+
+[tasks.autotest-parallel]
+run = "go run ./go/cmd/autotester/ --package=complete --parallel --max-parallel=8"
+description = "Run all tests in parallel"
+
+[tasks.autotest-purpose]
+run = '''
+go run ./go/cmd/autotester/ --purpose={{env.PURPOSE | default(smoke)}}
+'''
+description = "Run tests by purpose (set PURPOSE env var)"
+
+[tasks.autotest-type]
+run = '''
+go run ./go/cmd/autotester/ --type={{env.TYPE | default(integration)}}
+'''
+description = "Run tests by type (set TYPE env var)"
+
+[tasks.autotest-tester]
+run = '''
+go run ./go/cmd/autotester/ --tester={{env.TESTER}}
+'''
+description = "Run specific tester (set TESTER env var)"
+
+[tasks.autotest-test-id]
+run = '''
+go run ./go/cmd/autotester/ --test-id={{env.TEST_ID}}
+'''
+description = "Run specific test case IDs (set TEST_ID env var)"
+
+[tasks.autotest-verbose]
+run = "go run ./go/cmd/autotester/ --verbose --skip-cleanup"
+description = "Run tests with verbose logging and skip cleanup"
+
+[tasks.autotest-stop-on-fail]
+run = "go run ./go/cmd/autotester/ --package=regression --stop-on-fail --json-report=/tmp/autotester-report.json"
+description = "Run tests stopping on first failure with JSON report"

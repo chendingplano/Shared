@@ -1,0 +1,115 @@
+# testers.toml — shared-library tester definitions and package configurations
+#
+# This file defines:
+#   1. [[testers]] — the catalog of available testers with metadata and global
+#      enabled/disabled status. A tester disabled here will not run in any
+#      package, regardless of package-level settings.
+#   2. [[packages]] — named, reusable collections of testers to run together.
+#
+# Projects that call LoadTOMLPackages() will load this file as a baseline.
+# Project-level testers.toml files can override or extend these definitions.
+#
+# ─── [[testers]] ─────────────────────────────────────────────────────────────
+# Each [[testers]] entry declares:
+#   - name:        letters, digits, dashes, underscores; up to 64 chars (mandatory)
+#   - desc:        short description (optional)
+#   - purpose:     purpose of the tester (optional)
+#   - type:        tester type: "functional", "performance", "compliance", etc.
+#                  (default: "functional")
+#   - dynamic_tcs: true if it can generate test cases dynamically (mandatory)
+#   - enabled:     true/false — global on/off switch (default: true)
+#   - remarks:     additional notes (optional)
+#   - creator:     person who created the tester (optional)
+#   - created_at:  ISO-8601 creation timestamp (optional)
+#
+# ─── [[packages]] ────────────────────────────────────────────────────────────
+# Each [[packages]] entry defines:
+#   - name:        unique package identifier (e.g., "smoke", "regression")
+#   - description: human-readable explanation of what the package tests
+#   - enable:      whether the package is enabled (true) or disabled (false)
+#   - testers:     array of tester configurations
+#
+# Each tester configuration within a package defines:
+#   - name:    the tester name (must match a registered tester)
+#   - enable:  whether this tester runs in this package (default: true)
+#   - num_tcs: max test cases to run (0 = no limit)
+#   - seconds: max execution time in seconds (0 = no limit)
+#
+# Run semantics: a tester is executed only when BOTH conditions are true:
+#   • the package-level tester entry has enable = true, AND
+#   • the global tester definition has enabled = true (or is not defined here)
+#
+# A tester stops when either num_tcs or seconds limit is reached.
+
+# ─── Tester Definitions ──────────────────────────────────────────────────────
+
+[[testers]]
+name        = "tester_database"
+desc        = "Tests database connectivity and basic CRUD operations"
+purpose     = "validation"
+type        = "integration"
+dynamic_tcs = true
+enabled     = true
+creator     = "AutoTester Framework"
+created_at  = "2026-02-20T00:00:00Z"
+
+[[testers]]
+name        = "tester_databaseutil"
+desc        = "Tests database utility functions and table management"
+purpose     = "validation"
+type        = "integration"
+dynamic_tcs = false
+enabled     = true
+creator     = "AutoTester Framework"
+created_at  = "2026-02-20T00:00:00Z"
+
+[[testers]]
+name        = "tester_logger"
+desc        = "Tests the logger utility package"
+purpose     = "validation"
+type        = "functional"
+dynamic_tcs = false
+enabled     = true
+creator     = "AutoTester Framework"
+created_at  = "2026-02-20T00:00:00Z"
+
+[[testers]]
+name        = "tester_migration"
+desc        = "Tests database migration scripts"
+purpose     = "regression"
+type        = "integration"
+dynamic_tcs = true
+enabled     = true
+creator     = "AutoTester Framework"
+created_at  = "2026-02-20T00:00:00Z"
+
+# ─── Packages ────────────────────────────────────────────────────────────────
+
+[[packages]]
+name = "smoke"
+description = "Fast sanity check: verifies database connectivity and logger are operational"
+enable = true
+testers = [
+    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+    { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 }
+]
+
+[[packages]]
+name = "regression"
+description = "Core regression suite: database utilities and logger correctness"
+enable = false
+testers = [
+    { name = "tester_database", enable = false, num_tcs = 20, seconds = 60 },
+    { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
+    { name = "tester_logger", enable = false, num_tcs = 30, seconds = 120 }
+]
+
+[[packages]]
+name = "complete"
+description = "Full shared-library suite: all three shared testers"
+enable = true
+testers = [
+    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
+    { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
+    { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 }
+]

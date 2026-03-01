@@ -38,6 +38,13 @@ type TestRunner struct {
 // NewTestRunner creates a new TestRunner instance.
 func NewTestRunner(testers []Tester, config *RunConfig, logger ApiTypes.JimoLogger) *TestRunner {
 	// Set defaults
+	logger.Info("Initializing TestRunner with config",
+		"parallel", config.Parallel,
+		"max_parallel", config.MaxParallel,
+		"case_timeout", config.CaseTimeout,
+		"run_timeout", config.RunTimeout,
+		"environment", config.Environment,
+	)
 	if config.MaxParallel <= 0 {
 		config.MaxParallel = 4
 	}
@@ -87,6 +94,7 @@ func (r *TestRunner) Run(ctx context.Context) error {
 
 	// Resolve PackageName → TesterNames when a package is requested and no
 	// explicit tester names override it.
+	r.logger.Info("Resolving tester package", "package", r.config.PackageName)
 	if r.config.PackageName != "" && len(r.config.TesterNames) == 0 {
 		pkg, ok := GlobalPackageRegistry.Get(r.config.PackageName)
 		if !ok {
@@ -238,7 +246,16 @@ func (r *TestRunner) executeParallelTesters(ctx context.Context) {
 }
 
 // testerMatches checks if a tester matches the configured filters.
+// A tester is excluded if it is globally disabled in GlobalTesterDefinitionRegistry,
+// regardless of any other filter settings.
 func (r *TestRunner) testerMatches(tester Tester) bool {
+	// Check global tester enabled status (from [[testers]] section in testers.toml).
+	// A tester not present in the registry is considered enabled by default.
+	if !GlobalTesterDefinitionRegistry.IsEnabled(tester.Name()) {
+		r.logger.Debug("Tester disabled globally", "tester", tester.Name())
+		return false
+	}
+
 	// Filter by tester names
 	if len(r.config.TesterNames) > 0 {
 		matched := false
