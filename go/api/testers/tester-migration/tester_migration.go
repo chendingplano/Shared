@@ -9,7 +9,6 @@ package tester_migration
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,73 +19,60 @@ import (
 	autotester "github.com/chendingplano/shared/go/api/autotester"
 	"github.com/chendingplano/shared/go/api/databaseutil"
 	sharedgoose "github.com/chendingplano/shared/go/api/goose"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // MigrationTester tests the Goose migration system.
 type MigrationTester struct {
-	autotester.BaseTester
-
-	// Configuration
-	cfg *MigrationTesterConfig
-
-	// Runtime state
-	dutDB *sql.DB
-
-	// Migration directories (created for testing)
-	testMigrationsDir string
+	autotester.BaseTester // Embed for default implementation
+	logger                ApiTypes.JimoLogger
 
 	// State tracking
 	state MigrationSUTState
 }
 
 // NewMigrationTester creates a new MigrationTester instance.
-func NewMigrationTester(cfg *MigrationTesterConfig) *MigrationTester {
-	if cfg == nil {
-		cfg = &MigrationTesterConfig{}
-	}
-	cfg.ApplyDefaults()
-
+// The cfg parameter must have DUTDB set; other fields will use defaults if not specified.
+func NewMigrationTester() *MigrationTester {
+	logger := loggerutil.CreateDefaultLogger("MID_26031213")
 	return &MigrationTester{
 		BaseTester: autotester.NewBaseTester(
 			"tester_migration",
-			"Tests the goose database migration system (Up, Down, CreateAndApply, version tracking)",
-			"regression",
+			"Tests the goose database migration system",
+			"validation",
 			"integration",
-			[]string{"database", "migration", "goose", "shared"},
+			[]string{"migration", "database", "goose"},
 		),
-		cfg: cfg,
+		logger: logger,
 	}
 }
 
 // Prepare sets up the test environment for migration testing.
 func (t *MigrationTester) Prepare(ctx context.Context) error {
 	// 1. Verify DUT is reachable
-	if err := t.cfg.DUTDB.PingContext(ctx); err != nil {
+	if err := autotester.AutotesterConfig.DUTDBHandle.PingContext(ctx); err != nil {
 		return fmt.Errorf("DUT not reachable (MID_260224100001): %w", err)
 	}
 
 	// 2. Validate DUT name starts with "testonly_"
-	if t.cfg.DUTDBName != "" {
-		if !strings.HasPrefix(t.cfg.DUTDBName, "testonly_") {
-			return fmt.Errorf("DUT name must start with 'testonly_' (MID_260224100002), got: %s", t.cfg.DUTDBName)
+	if autotester.AutotesterConfig.DUTDBName != "" {
+		if !strings.HasPrefix(autotester.AutotesterConfig.DUTDBName, "testonly_") {
+			return fmt.Errorf("DUT name must start with 'testonly_' (MID_260224100002), got: %s", autotester.AutotesterConfig.DUTDBName)
 		}
 	}
 
 	// 3. Validate migrations directory starts with "testonly_"
-	if !strings.HasPrefix(t.cfg.MigrationsDir, "testonly_") {
-		return fmt.Errorf("migrations dir must start with 'testonly_' (MID_260224100003), got: %s", t.cfg.MigrationsDir)
+	if !strings.HasPrefix(autotester.AutotesterConfig.MigrationConfig.MigrationsDir, "testonly_") {
+		return fmt.Errorf("migrations dir must start with 'testonly_' (MID_260224100003), got: %s", autotester.AutotesterConfig.MigrationConfig.MigrationsDir)
 	}
 
-	t.dutDB = t.cfg.DUTDB
-	t.testMigrationsDir = t.cfg.MigrationsDir
-
 	// 4. Create migrations directory if it doesn't exist
-	if err := os.MkdirAll(t.testMigrationsDir, 0755); err != nil {
+	if err := os.MkdirAll(autotester.AutotesterConfig.MigrationConfig.MigrationsDir, 0755); err != nil {
 		return fmt.Errorf("create migrations dir (MID_260224100004): %w", err)
 	}
 
 	// 5. Drop goose tracking table from DUT
-	_, err := t.cfg.DUTDB.ExecContext(ctx, "DROP TABLE IF EXISTS "+t.cfg.TableName)
+	_, err := autotester.AutotesterConfig.MigrationDBHandle.ExecContext(ctx, "DROP TABLE IF EXISTS "+autotester.AutotesterConfig.MigrationConfig.TableName)
 	if err != nil {
 		return fmt.Errorf("drop tracking table (MID_260224100005): %w", err)
 	}
@@ -122,7 +108,7 @@ func (t *MigrationTester) Cleanup(ctx context.Context) error {
 	}
 
 	// 2. Drop db_migrations from DUT
-	_, err := t.cfg.DUTDB.ExecContext(ctx, "DROP TABLE IF EXISTS "+t.cfg.TableName)
+	_, err := autotester.AutotesterConfig.MigrationDBHandle.ExecContext(ctx, "DROP TABLE IF EXISTS "+autotester.AutotesterConfig.MigrationConfig.TableName)
 	if err != nil {
 		return fmt.Errorf("drop tracking table (MID_260224100011): %w", err)
 	}
@@ -140,7 +126,7 @@ func (t *MigrationTester) dropTestTables(ctx context.Context) error {
 		WHERE table_schema = 'public' 
 		  AND table_name LIKE 'testonly_%'
 	`
-	rows, err := t.cfg.DUTDB.QueryContext(ctx, query)
+	rows, err := autotester.AutotesterConfig.DUTDBHandle.QueryContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("query test tables (MID_260224100012): %w", err)
 	}
@@ -165,7 +151,7 @@ func (t *MigrationTester) dropTestTables(ctx context.Context) error {
 			continue // Skip invalid table names for safety
 		}
 		dropQuery := fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table)
-		if _, err := t.cfg.DUTDB.ExecContext(ctx, dropQuery); err != nil {
+		if _, err := autotester.AutotesterConfig.DUTDBHandle.ExecContext(ctx, dropQuery); err != nil {
 			return fmt.Errorf("drop table %s (MID_260224100015): %w", table, err)
 		}
 	}
@@ -175,7 +161,7 @@ func (t *MigrationTester) dropTestTables(ctx context.Context) error {
 
 // clearMigrationsDir deletes all .sql files from the migrations directory.
 func (t *MigrationTester) clearMigrationsDir(_ context.Context) error {
-	entries, err := os.ReadDir(t.testMigrationsDir)
+	entries, err := os.ReadDir(autotester.AutotesterConfig.MigrationConfig.MigrationsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // Directory doesn't exist, nothing to clear
@@ -185,7 +171,7 @@ func (t *MigrationTester) clearMigrationsDir(_ context.Context) error {
 
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-			fullPath := filepath.Join(t.testMigrationsDir, entry.Name())
+			fullPath := filepath.Join(autotester.AutotesterConfig.MigrationConfig.MigrationsDir, entry.Name())
 			if err := os.Remove(fullPath); err != nil {
 				return fmt.Errorf("remove migration file %s (MID_260224100017): %w", entry.Name(), err)
 			}
@@ -197,7 +183,7 @@ func (t *MigrationTester) clearMigrationsDir(_ context.Context) error {
 
 // buildMigrationsPool creates synthetic migration files for testing.
 func (t *MigrationTester) buildMigrationsPool(_ context.Context) error {
-	for i := 1; i <= t.cfg.MaxMigrationsInPool; i++ {
+	for i := 1; i <= autotester.AutotesterConfig.MaxMigrationsInPool; i++ {
 		version := time.Now().UTC().Format("20060102150405")
 		if i < 10 {
 			version = fmt.Sprintf("%s%02d", version[:12], i)
@@ -217,7 +203,7 @@ func (t *MigrationTester) buildMigrationsPool(_ context.Context) error {
 		filename := fmt.Sprintf("%s_create_table_%02d.sql", version, i)
 		content := buildMigrationFileContent(upSQL, downSQL)
 
-		fullPath := filepath.Join(t.testMigrationsDir, filename)
+		fullPath := filepath.Join(autotester.AutotesterConfig.MigrationConfig.MigrationsDir, filename)
 		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("write migration file %s (MID_260224100018): %w", filename, err)
 		}
@@ -246,8 +232,8 @@ func buildMigrationFileContent(upSQL, downSQL string) string {
 func (t *MigrationTester) buildMigrator(allowOutOfOrder bool) *sharedgoose.Migrator {
 	migrateCfg := ApiTypes.MigrationConfig{
 		MigrationsFS:  "",
-		MigrationsDir: t.testMigrationsDir,
-		TableName:     t.cfg.TableName,
+		MigrationsDir: autotester.AutotesterConfig.MigrationConfig.MigrationsDir,
+		TableName:     autotester.AutotesterConfig.MigrationConfig.TableName,
 		Verbose:       "false",
 		AllowOutOfOrder: func() string {
 			if allowOutOfOrder {
@@ -258,7 +244,7 @@ func (t *MigrationTester) buildMigrator(allowOutOfOrder bool) *sharedgoose.Migra
 	}
 
 	logger := &nopLogger{}
-	migrator, err := sharedgoose.NewWithDB(t.dutDB, t.cfg.DUTDBType, migrateCfg, logger)
+	migrator, err := sharedgoose.NewWithDB(autotester.AutotesterConfig.MigrationDBHandle, autotester.AutotesterConfig.DBType, migrateCfg, logger)
 	if err != nil {
 		return nil
 	}
@@ -368,26 +354,26 @@ func (t *MigrationTester) dispatch(ctx context.Context, input migrationInput, mi
 
 // observeSideEffects inspects the DUT to determine what side effects occurred.
 func (t *MigrationTester) observeSideEffects(ctx context.Context, result *autotester.TestResult) {
-	// Check if tracking table exists
+	// Check if tracking table exists in MigrationDB
 	query := `
 		SELECT EXISTS (
-			SELECT FROM information_schema.tables 
+			SELECT FROM information_schema.tables
 			WHERE table_schema = 'public' AND table_name = $1
 		)
 	`
 	var trackingTableExists bool
-	if err := t.cfg.DUTDB.QueryRowContext(ctx, query, t.cfg.TableName).Scan(&trackingTableExists); err == nil {
+	if err := autotester.AutotesterConfig.MigrationDBHandle.QueryRowContext(ctx, query, autotester.AutotesterConfig.MigrationConfig.TableName).Scan(&trackingTableExists); err == nil {
 		if trackingTableExists {
 			result.SideEffectsObserved = append(result.SideEffectsObserved, string(SideEffectTrackingTableCreated))
 		}
 	}
 
-	// Check for testonly_ tables
+	// Check for testonly_ tables in DUT
 	tablesQuery := `
-		SELECT table_name FROM information_schema.tables 
+		SELECT table_name FROM information_schema.tables
 		WHERE table_schema = 'public' AND table_name LIKE 'testonly_%'
 	`
-	rows, err := t.cfg.DUTDB.QueryContext(ctx, tablesQuery)
+	rows, err := autotester.AutotesterConfig.DUTDBHandle.QueryContext(ctx, tablesQuery)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {

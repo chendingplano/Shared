@@ -13,12 +13,11 @@ import (
 // DatabaseTester tests database connection and basic operations.
 type DatabaseTester struct {
 	autotester.BaseTester
-	dbConfig *ApiTypes.DBConfig
-	testDB   *sql.DB
+	testDB *sql.DB
 }
 
 // NewDatabaseTester creates a new database tester.
-func NewDatabaseTester(dbConfig *ApiTypes.DBConfig) *DatabaseTester {
+func NewDatabaseTester() *DatabaseTester {
 	return &DatabaseTester{
 		BaseTester: autotester.NewBaseTester(
 			"tester_database",
@@ -27,16 +26,15 @@ func NewDatabaseTester(dbConfig *ApiTypes.DBConfig) *DatabaseTester {
 			"integration",
 			[]string{"database", "core", "critical"},
 		),
-		dbConfig: dbConfig,
 	}
 }
 
 // Prepare establishes a test database connection.
 func (t *DatabaseTester) Prepare(ctx context.Context) error {
-	if ApiTypes.PG_DB_Project == nil {
+	if ApiTypes.CommonConfig.PGConf.ProjectDBHandle == nil {
 		return fmt.Errorf("database connection not initialized (MID_260222132450)")
 	}
-	t.testDB = ApiTypes.PG_DB_Project
+	t.testDB = ApiTypes.CommonConfig.PGConf.ProjectDBHandle
 
 	// Verify connection
 	if err := t.testDB.PingContext(ctx); err != nil {

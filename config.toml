@@ -1,25 +1,23 @@
 # config.toml
+[app_info]
 app_name = "shared"
 debug = true
-
-[server]
 port = 8080
 host = "localhost"
-
-[database]
-create_mysql = false
-create_pg = true
-pg_host = "127.0.0.1"
-pg_port = 5432
-
-# PostgreSQL credentials are read from environment variables:
-#   PG_USER_NAME, PG_PASSWORD, PG_DB_NAME
-mysql_host = "127.0.0.1"
-mysql_port = 3306
-max_connections = 10
 database_type = "pg"
 need_create_tables = true
-pg_db_name = "miner"
+
+[mysql]
+create = false
+host = "127.0.0.1"
+port = 3306
+max_connections = 10
+
+[postgres]
+create = true
+host = "127.0.0.1"
+port = 5432
+max_connections = 10
 
 [auth]
 jwt_secret = "super-secret-key"

@@ -31,37 +31,55 @@ type ContextKey string
 const CallFlowKey ContextKey = "jimo_call_flow"
 const RequestIDKey ContextKey = "jimo_req_id"
 
-type DatabaseConfig struct {
-	AppName string `mapstructure:"app_name"`
-	Debug   bool   `mapstructure:"debug"`
+var DBType string
+var ProjectDBHandle *sql.DB
+var MigrationDBHandle *sql.DB
+var AutotesterDBHandle *sql.DB
 
-	Server struct {
-		Port int    `mapstructure:"port"`
-		Host string `mapstructure:"host"`
-	} `mapstructure:"server"`
-
-	Database struct {
-		CreateMySQL      bool   `mapstructure:"create_mysql"`
-		CreatePG         bool   `mapstructure:"create_pg"`
-		DatabaseType     string `mapstructure:"database_type"`
-		PGHost           string `mapstructure:"pg_host"`
-		PGPort           int    `mapstructure:"pg_port"`
-		PGUserName       string `mapstructure:"pg_user_name"`
-		PGPassword       string `mapstructure:"pg_password"`
-		PGDBName         string `mapstructure:"pg_db_name"`
-		MySQLHost        string `mapstructure:"mysql_host"`
-		MySQLPort        int    `mapstructure:"mysql_port"`
-		MySQLUserName    string `mapstructure:"mysql_user_name"`
-		MySQLPassword    string `mapstructure:"mysql_password"`
-		MySQLDBName      string `mapstructure:"mysql_db_name"`
-		MaxConnections   int    `mapstructure:"max_connections"`
-		NeedCreateTables bool   `mapstructure:"need_create_tables"`
-	} `mapstructure:"database"`
+type AppInfo struct {
+	AppName          string `mapstructure:"app_name"`
+	Debug            bool   `mapstructure:"debug"`
+	Port             int    `mapstructure:"port"`
+	Host             string `mapstructure:"host"`
+	NeedCreateTables bool   `mapstructure:"need_create_tables"`
+	DatabaseType     string `mapstructure:"database_type"`
 }
 
+type DatabaseConfig struct {
+	Create         bool   `mapstructure:"create"`
+	Host           string `mapstructure:"host"`
+	Port           int    `mapstructure:"port"`
+	MaxConnections int    `mapstructure:"max_connections"`
+
+	UserName           string
+	Password           string
+	ProjectDBName      string
+	MigrationDBName    string
+	AutotesterDBName   string
+	MigrationTableName string
+
+	ProjectDBHandle    *sql.DB
+	MigrationDBHandle  *sql.DB
+	AutotesterDBHandle *sql.DB
+}
+
+type CommonConfigDef struct {
+	AppInfo         AppInfo         `mapstructure:"app_info"`
+	MySQLConf       DatabaseConfig  `mapstructure:"mysql"`
+	PGConf          DatabaseConfig  `mapstructure:"postgres"`
+	MigrationConfig MigrationConfig `mapstructure:"migration"`
+	Auth            struct {
+		JWTSecret            string `mapstructure:"jwt_secret"`
+		SessionDurationHours int    `mapstructure:"session_duration_hours"`
+	} `mapstructure:"auth"`
+}
+
+var CommonConfig CommonConfigDef
+
 type LibConfigDef struct {
-	IDStartValue int `mapstructure:"id_start_value"`
-	IDIncValue   int `mapstructure:"id_inc_value"`
+	IDStartValue       int  `mapstructure:"id_start_value"`
+	IDIncValue         int  `mapstructure:"id_inc_value"`
+	AllowDynamicTables bool `mapstructure:"allow_dynamic_tables"`
 
 	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
 	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
@@ -72,7 +90,6 @@ type SystemTableNames struct {
 	TableNameTest            string `mapstructure:"table_name_test"`
 	TableNameLoginSessions   string `mapstructure:"table_name_login_sessions"`
 	TableNameSessionLog      string `mapstructure:"table_name_session_log"`
-	TableNameUsers           string `mapstructure:"table_name_users"`
 	TableNameActivityLog     string `mapstructure:"table_name_activity_log"`
 	TableNameIDMgr           string `mapstructure:"table_name_id_mgr"`
 	TableNameEmailStore      string `mapstructure:"table_name_email_store"`
@@ -82,6 +99,7 @@ type SystemTableNames struct {
 	TableNameAutoTestRuns    string `mapstructure:"table_name_auto_test_runs"`
 	TableNameAutoTestResults string `mapstructure:"table_name_auto_test_results"`
 	TableNameAutoTestLogs    string `mapstructure:"table_name_auto_test_logs"`
+	TableNameDBMigrations    string `mapstructure:"table_name_goose"`
 }
 
 type SystemIDs struct {
@@ -99,48 +117,10 @@ const (
 	TokenContextKey ContextKey = "token"
 )
 
-type DBConfig struct {
-	Host       string
-	Port       int
-	DBType     string
-	CreateFlag bool
-	UserName   string
-	Password   string
-	DbName     string
-}
-
-type DatabaseInfoDef struct {
-	DBType                  string
-	PGDBName                string
-	PGDBHandle              *sql.DB
-	PGMigrateDBHandle       *sql.DB
-	PGAutoTesterDBHandle    *sql.DB
-	MySQLDBName             string
-	MySQLDBHandle           *sql.DB
-	MySQLMigrateDBHandle    *sql.DB
-	MySQLAutoTesterDBHandle *sql.DB
-}
-
-var DatabaseInfo DatabaseInfoDef
-var PG_DB_Project *sql.DB
-var PG_DB_Migration *sql.DB
-var PG_DB_AutoTester *sql.DB
-var MySql_DB_Project *sql.DB
-var MySql_DB_Migration *sql.DB
-var MySql_DB_AutoTester *sql.DB
-
 var LibConfig LibConfigDef
-
-func GetDBType() string {
-	return DatabaseInfo.DBType
-}
 
 func GetActivityLogTableName() string {
 	return LibConfig.SystemTableNames.TableNameActivityLog
-}
-
-func GetUsersTableName() string {
-	return LibConfig.SystemTableNames.TableNameUsers
 }
 
 func GetSessionsTableName() string {
@@ -549,6 +529,7 @@ type MigrationConfig struct {
 
 	// TableName is the goose version-tracking table name.
 	// Defaults to "goose_db_version" when empty.
+	DBName    string `json:"dbname"`
 	TableName string `json:"tablename" mapstructure:"tablename"`
 
 	// Verbose enables verbose logging from the goose library itself.
@@ -560,4 +541,104 @@ type MigrationConfig struct {
 	// feature branches add migrations independently.
 	// Defaults to true.
 	AllowOutOfOrder string `json:"allow_outof_order" mapstructure:"allow_outof_order"`
+}
+
+// TesterDefinition holds the metadata for a tester as declared in a [[testers]]
+// entry in a testers.toml file. It is the authoritative record of a tester's
+// identity, purpose, and global enabled/disabled status.
+//
+// A tester that is disabled here (Enabled = false) will not run in any package,
+// regardless of package-level settings. This acts as a global kill switch.
+//
+// Example testers.toml entry:
+//
+//	[[testers]]
+//	name        = "tester_database"
+//	desc        = "Tests database connectivity and basic CRUD operations"
+//	purpose     = "validation"
+//	type        = "integration"
+//	dynamic_tcs = true
+//	enabled     = true
+//	creator     = "AutoTester Framework"
+//	created_at  = "2026-02-20T00:00:00Z"
+type TesterDefinition struct {
+	// Name is the unique machine-readable identifier.
+	// Allowed characters: letters, digits, dashes, underscores. Max 64 chars.
+	Name string `toml:"name"`
+
+	// Desc is a short, human-readable description of what the tester tests.
+	Desc string `toml:"desc"`
+
+	// Purpose is the tester's intended purpose (e.g. "validation", "regression").
+	Purpose string `toml:"purpose"`
+
+	// Type is the tester's category (e.g. "functional", "performance",
+	// "compliance", "integration"). Default: "functional".
+	Type string `toml:"type"`
+
+	// DynamicTcs indicates whether this tester can generate test cases
+	// dynamically at runtime (true) or only uses static hard-coded cases (false).
+	DynamicTcs bool `toml:"dynamic_tcs"`
+
+	// Enabled is the global on/off switch for this tester.
+	// A nil pointer means the field was absent in TOML — treated as true (default enabled).
+	// Set to false to prevent the tester from running in any package.
+	Enabled *bool `toml:"enabled"`
+
+	// Remarks holds any additional notes about the tester.
+	Remarks string `toml:"remarks"`
+
+	// Creator is the person or team who authored this tester.
+	Creator string `toml:"creator"`
+
+	// CreatedAt is the ISO-8601 timestamp of when this tester was created.
+	CreatedAt string `toml:"created_at"`
+}
+
+// IsEnabled returns the effective enabled status of this tester definition.
+// Returns true if Enabled is nil (field absent in TOML → default enabled) or
+// if it points to true.
+func (td *TesterDefinition) IsEnabled() bool {
+	if td.Enabled == nil {
+		return true // default: enabled when not specified
+	}
+	return *td.Enabled
+}
+
+// TesterConfig is the configuration for a single tester within a package.
+// It controls whether the tester runs and its execution limits.
+//
+// Example:
+//
+//	{ name = "tester_database", enable = true, num_tcs = 20, seconds = 60 }
+type TesterConfig struct {
+	Name    string `toml:"name"`
+	Enable  bool   `toml:"enable"` // If false, tester is excluded from the package
+	NumTcs  int    `toml:"num_tcs"`
+	Seconds int    `toml:"seconds"`
+}
+
+type PackageConfig struct {
+	Name        string         `toml:"name"`
+	Description string         `toml:"description"`
+	Enable      bool           `toml:"enable"` // Ignored: packages are always loaded
+	Testers     []TesterConfig `toml:"testers"`
+}
+
+// MigrationTesterConfig holds the configuration for the MigrationTester.
+type AutotesterConfigDef struct {
+	// DUT: Isolated test database for migration testing; NEVER production.
+	// Database name MUST start with "testonly_" for safety.
+	DBType      string `toml:"db_type"`
+	DUTDBName   string `toml:"tester_db_name"`
+	DUTDBHandle *sql.DB
+
+	MigrationConfig   MigrationConfig `toml:"migration_config"`
+	MigrationDBHandle *sql.DB
+
+	NumDynamicCases     int `toml:"dft_num_dynamic_tcs"`   // default: 80
+	MaxMigrationsInPool int `toml:"max_migraions_in_pool"` // default: 20
+
+	Testers  []TesterDefinition `toml:"testers"`
+	Packages []PackageConfig    `toml:"packages"`
 }

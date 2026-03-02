@@ -97,14 +97,34 @@ func (r *TestRunner) Run(ctx context.Context) error {
 	r.logger.Info("Resolving tester package", "package", r.config.PackageName)
 	if r.config.PackageName != "" && len(r.config.TesterNames) == 0 {
 		pkg, ok := GlobalPackageRegistry.Get(r.config.PackageName)
-		if !ok {
+
+		// Handle "complete" package: runs all globally enabled testers.
+		// If the package is defined, check its enable flag. If not defined,
+		// treat as enable = true (default behavior).
+		if r.config.PackageName == "complete" {
+			packageEnabled := true // Default: enabled if not defined
+			if ok && pkg != nil {
+				// Package exists, check its enable status
+				packageEnabled = pkg.Enable
+			}
+
+			if packageEnabled {
+				// Collect all testers that are globally enabled
+				allTesters := GlobalTesterDefinitionRegistry.AllEnabled()
+				r.config.TesterNames = allTesters
+				r.logger.Info("Complete package: running all enabled testers",
+					"testers", strings.Join(r.config.TesterNames, ", "),
+				)
+			}
+		} else if !ok {
 			return fmt.Errorf("package %q not found in GlobalPackageRegistry (MID_240226100001)", r.config.PackageName)
+		} else {
+			r.config.TesterNames = pkg.TesterNames
+			r.logger.Info("Resolved tester package",
+				"package", r.config.PackageName,
+				"testers", strings.Join(r.config.TesterNames, ", "),
+			)
 		}
-		r.config.TesterNames = pkg.TesterNames
-		r.logger.Info("Resolved tester package",
-			"package", r.config.PackageName,
-			"testers", strings.Join(r.config.TesterNames, ", "),
-		)
 	}
 
 	r.logger.Info("AutoTester run started",
@@ -209,10 +229,14 @@ func getHostname() string {
 
 // executeSequentialTesters runs testers one after another.
 func (r *TestRunner) executeSequentialTesters(ctx context.Context) {
+	r.logger.Info("executeTester sequential")
 	for _, tester := range r.testers {
 		if ctx.Err() != nil {
+			r.logger.Warn("execution ended prematurally", "error", ctx.Err())
 			return
 		}
+
+		r.logger.Info("Run test", "name", tester.Name())
 		if !r.testerMatches(tester) {
 			continue
 		}
@@ -225,6 +249,7 @@ func (r *TestRunner) executeParallelTesters(ctx context.Context) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, r.config.MaxParallel)
 
+	r.logger.Info("executeTester parallel")
 	for _, tester := range r.testers {
 		if ctx.Err() != nil {
 			break
@@ -801,18 +826,21 @@ func (r *TestRunner) printSummary() {
 
 	passRate := r.summary.PassRate()
 
-	r.logger.Info("AutoTester Run Complete",
-		"run_id", r.runID,
-		"seed", r.seed,
-		"env", r.config.Environment,
-		"duration", r.summary.Duration.String(),
-		"total", r.summary.Total,
-		"passed", r.summary.Passed,
-		"failed", r.summary.Failed,
-		"skipped", r.summary.Skipped,
-		"errored", r.summary.Errored,
-		"pass_rate", fmt.Sprintf("%.1f%%", passRate),
-	)
+	r.logger.Line("")
+	r.logger.Line("")
+	r.logger.Info("AutoTester Run Complete")
+	r.logger.Line("========================================")
+	r.logger.Line(fmt.Sprintf("   run_id:%s", r.runID))
+	r.logger.Line(fmt.Sprintf("   seed:%d", r.seed))
+	r.logger.Line(fmt.Sprintf("   env:%s", r.config.Environment))
+	r.logger.Line(fmt.Sprintf("   duration:%s", r.summary.Duration.String()))
+	r.logger.Line(fmt.Sprintf("   total:%d", r.summary.Total))
+	r.logger.Line(fmt.Sprintf("   passed:%d", r.summary.Passed))
+	r.logger.Line(fmt.Sprintf("   failed:%d", r.summary.Failed))
+	r.logger.Line(fmt.Sprintf("   skipped:%d", r.summary.Skipped))
+	r.logger.Line(fmt.Sprintf("   errored:%d", r.summary.Errored))
+	r.logger.Line(fmt.Sprintf("   pass_rate:%1f%%", passRate))
+	r.logger.Line("========================================")
 
 	if len(r.summary.Failures) > 0 {
 		r.logger.Info("FAILURES:")

@@ -25,6 +25,10 @@ type TesterPackage struct {
 	// Description is a human-readable explanation of what this package covers.
 	Description string
 
+	// Enable indicates whether the package is enabled.
+	// Default: true (enabled).
+	Enable bool
+
 	// TesterNames is the ordered list of tester names included in this package.
 	// Each name must match a name registered in TesterRegistry.
 	// The order determines sequential execution order when Parallel=false.

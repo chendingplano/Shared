@@ -76,7 +76,17 @@ The shared library reads configuration from environment variables. No `.env` fil
 | `APP_BASE_URL` | `http://localhost:8080` | Default base URL |
 
 
-### 2. Application Configuration (ChenWeb Example)
+### 2. libconfig.toml
+
+The config file shared/libconfig.toml is used to config shared/. The config is loaded and parsed
+to ```go ApiTypes.LibConfig``` 
+
+To load and parse libconfig.toml:
+```go
+    ApiUtils.LoadLibConfig("MID_26022601")
+```
+
+### 3. Application Configuration (ChenWeb Example)
 
 **File: `ChenWeb/.env`** (for development with separate frontend):
 

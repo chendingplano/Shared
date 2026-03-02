@@ -347,18 +347,11 @@ func HandleDBQuery(
 		return ApiTypes.CustomHttpStatus_InternalError, resp
 	}
 
-	db_type := ApiTypes.DatabaseInfo.DBType
-	var db *sql.DB
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.DatabaseInfo.MySQLDBHandle
-
-	case ApiTypes.PgName:
-		db = ApiTypes.DatabaseInfo.PGDBHandle
-
-	default:
-		error_msg := fmt.Sprintf("invalid db type:%s:%s:%s, table_name:%s, loc:%s (SHD_RHD_447)",
-			db_type, ApiTypes.MysqlName, ApiTypes.PgName, table_name, req.Loc)
+	db_type := ApiTypes.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	if db == nil {
+		error_msg := fmt.Sprintf("invalid db type:%s, table_name:%s, loc:%s (SHD_RHD_447)",
+			db_type, table_name, req.Loc)
 		logger.Error("HandleJimoRequest", "error_msg", error_msg)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_355", call_flow)
 		resp := ApiTypes.JimoResponse{
@@ -697,19 +690,9 @@ func HandleDBInsert(
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
-	db_type := ApiTypes.DatabaseInfo.DBType
-	var db *sql.DB
-	var err error
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.DatabaseInfo.MySQLDBHandle
-		err = InsertBatch(new_ctx, user_name, db, table_name, req, field_defs, records, 30, db_type)
-
-	case ApiTypes.PgName:
-		db = ApiTypes.DatabaseInfo.PGDBHandle
-		err = InsertBatch(new_ctx, user_name, db, table_name, req, field_defs, records, 30, db_type)
-
-	default:
+	db_type := ApiTypes.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	if db == nil {
 		error_msg := fmt.Sprintf("invalid db type:%s", db_type)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_669", call_flow)
 		logger.Error("HandleJimoRequest", "error_msg", error_msg)
@@ -722,6 +705,7 @@ func HandleDBInsert(
 		return ApiTypes.CustomHttpStatus_BadRequest, resp
 	}
 
+	err := InsertBatch(new_ctx, user_name, db, table_name, req, field_defs, records, 30, db_type)
 	if err != nil {
 		error_msg := fmt.Sprintf("failed insert to db:%v", err)
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_721", call_flow)
@@ -793,16 +777,9 @@ func HandleDBUpdate(
 	table_name := req.TableName
 	field_defs := req.FieldDefs
 
-	db_type := ApiTypes.GetDBType()
-	var db *sql.DB
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
-
-	default:
+	db_type := ApiTypes.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	if db == nil {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_799", call_flow)
 		logger.Error("db_type not supported", "db_type", db_type)
 		resp := ApiTypes.JimoResponse{
@@ -1015,16 +992,9 @@ func HandleDBDelete(
 	table_name := req.TableName
 	field_defs := req.FieldDefs
 
-	db_type := ApiTypes.GetDBType()
-	var db *sql.DB
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
-
-	default:
+	db_type := ApiTypes.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	if db == nil {
 		new_call_flow := fmt.Sprintf("%s->SHD_RHD_024", call_flow)
 		logger.Error("db_type not supported", "db_type", db_type)
 		resp := ApiTypes.JimoResponse{

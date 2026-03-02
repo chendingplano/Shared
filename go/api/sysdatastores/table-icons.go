@@ -194,9 +194,9 @@ func InsertIcon(
 	rc ApiTypes.RequestContext,
 	icon *ApiTypes.IconDef) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var insert_stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -205,7 +205,6 @@ func InsertIcon(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		insert_stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ("+
 			"$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "+
 			"RETURNING %s",
@@ -271,9 +270,9 @@ func GetIconByID(
 	rc ApiTypes.RequestContext,
 	id string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var query string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -282,7 +281,6 @@ func GetIconByID(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = $1", Icons_selected_field_names, IconsTableName)
 
 	default:
@@ -313,9 +311,9 @@ func GetIconByFileName(
 	category string,
 	fileName string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var query string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -324,7 +322,6 @@ func GetIconByFileName(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE category = $1 AND file_name = $2",
 			Icons_selected_field_names, IconsTableName)
 
@@ -355,8 +352,8 @@ func ListIcons(
 	rc ApiTypes.RequestContext,
 	req ApiTypes.IconListRequest) ([]*ApiTypes.IconDef, int, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -365,7 +362,6 @@ func ListIcons(
 		return nil, 0, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_ICN_340): %s", db_type)
@@ -456,8 +452,8 @@ func UpdateIcon(
 	req ApiTypes.IconUpdateRequest,
 	updater string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -466,7 +462,6 @@ func UpdateIcon(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_ICN_437): %s", db_type)
@@ -547,9 +542,9 @@ func DeleteIcon(
 	rc ApiTypes.RequestContext,
 	id string) error {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -558,7 +553,6 @@ func DeleteIcon(
 		return err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE id = $1", IconsTableName)
 
 	default:
@@ -592,9 +586,9 @@ func DeleteIcon(
 func GetDistinctCategories(
 	rc ApiTypes.RequestContext) ([]string, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var query string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 
 	switch db_type {
 	case ApiTypes.MysqlName:
@@ -603,7 +597,6 @@ func GetDistinctCategories(
 		return nil, err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("SELECT DISTINCT category FROM %s ORDER BY category", IconsTableName)
 
 	default:

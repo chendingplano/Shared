@@ -2,6 +2,9 @@ package autotester
 
 import (
 	"sync"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // TesterFactory is a function that constructs a Tester.
@@ -12,11 +15,13 @@ type TesterFactory func() Tester
 type TesterRegistry struct {
 	factories map[string]TesterFactory
 	mu        sync.RWMutex
+	logger    ApiTypes.JimoLogger
 }
 
 // GlobalRegistry is the default global tester registry.
 // Applications can use this directly or create their own registry.
 var GlobalRegistry = &TesterRegistry{
+	logger:    loggerutil.CreateDefaultLogger("MID_26022805"),
 	factories: make(map[string]TesterFactory),
 }
 
@@ -30,6 +35,7 @@ func (r *TesterRegistry) Register(name string, factory TesterFactory) {
 		panic("duplicate tester name: " + name)
 	}
 
+	r.logger.Info("Register tester", "name", name)
 	r.factories[name] = factory
 }
 
@@ -41,7 +47,9 @@ func (r *TesterRegistry) Build() []Tester {
 
 	testers := make([]Tester, 0, len(r.factories))
 	for _, factory := range r.factories {
-		testers = append(testers, factory())
+		tester := factory()
+		r.logger.Info("add tester", "name", tester.Name())
+		testers = append(testers, tester)
 	}
 	return testers
 }

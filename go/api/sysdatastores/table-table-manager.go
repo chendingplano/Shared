@@ -10,7 +10,7 @@ import (
 )
 
 func CreateTableManagerTable(logger ApiTypes.JimoLogger) error {
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameTableManager
 	var stmt string
 	const common_fields = "db_type VARCHAR(32) NOT NULL, " +
@@ -23,17 +23,15 @@ func CreateTableManagerTable(logger ApiTypes.JimoLogger) error {
 		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
 		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
 
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + common_fields +
 			") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" +
 			common_fields + ")"
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("database type not supported:%s (MID_TMG_042)", db_type)

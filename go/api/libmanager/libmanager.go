@@ -32,33 +32,19 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 		logger.Info("Kratos authenticator enabled")
 	}
 
-	auth.SetAuthInfo(ApiTypes.GetDBType(),
+	auth.SetAuthInfo(ApiTypes.DBType,
 		ApiUtils.GetDefaultHomeURL(),
-		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions,
-		ApiTypes.LibConfig.SystemTableNames.TableNameUsers)
+		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
-	switch db_type {
-	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
-
-	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
-
-	default:
-		logger.Error("db_type not supported", "db_type", db_type)
-		os.Exit(1)
-	}
-
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	if db == nil {
 		logger.Error("db is not set")
 		os.Exit(1)
 	}
 
-	stores.InitSharedStores(db_type, db)
+	stores.InitSharedStores(ApiTypes.DBType, db)
 	sysdatastores.InitActivityLogCache(
-		db_type,
+		ApiTypes.DBType,
 		ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog,
 		db)
 
@@ -75,7 +61,7 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	}
 
 	// 3. Init SessionLog
-	sysdatastores.InitSessionLogCache(db_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
+	sysdatastores.InitSessionLogCache(ApiTypes.DBType, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
 
 	// 4. Init the icon service
 	icons.InitIconService(admin_rc)

@@ -3,8 +3,10 @@ package ApiUtils
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -84,13 +86,13 @@ func sendMailSMTP(
 	logger := rc.GetLogger()
 	if from == "" {
 		logger.Error("Missing required SMTP_FROM environment variable")
-		return fmt.Errorf("SMTP configuration error: SMTP_FROM not set")
+		return fmt.Errorf("(MID_26031025) SMTP configuration error: SMTP_FROM not set")
 	}
 
 	password := os.Getenv("SMTP_PASSWORD")
 	if password == "" {
 		logger.Error("Missing required SMTP_PASSWORD environment variable")
-		return fmt.Errorf("SMTP configuration error: SMTP_PASSWORD not set")
+		return fmt.Errorf("(MID_26031026) SMTP configuration error: SMTP_PASSWORD not set")
 	}
 
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -144,7 +146,7 @@ func sendMailSMTP(
 	// 🚀 Send email
 	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, []byte(msg.String()))
 	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		return fmt.Errorf("(MID_26031027) failed to send email: %w", err)
 	}
 
 	logger.Info("Email sent successfully",
@@ -200,7 +202,7 @@ func IsDuplicateKeyError(err error) bool {
 func ConvertToJSON(jsonStr string) (map[string]interface{}, error) {
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &jsonData); err != nil {
-		return nil, fmt.Errorf("deserialization error: %v", err)
+		return nil, fmt.Errorf("(MID_26031028) deserialization error: %v", err)
 	}
 	return jsonData, nil
 }
@@ -209,7 +211,7 @@ func ConvertToJSON(jsonStr string) (map[string]interface{}, error) {
 func ConvertToAny(str string) (interface{}, string, error) {
 	var genericObj interface{}
 	if err := json.Unmarshal([]byte(str), &genericObj); err != nil {
-		return nil, "", fmt.Errorf("deserialization error: %v", err)
+		return nil, "", fmt.Errorf("(MID_26031029) deserialization error: %v", err)
 	}
 
 	switch genericObj.(type) {
@@ -394,7 +396,7 @@ func ParseTimestamp(s string) (time.Time, error) {
 	// Note: this function is kind of specific to PostgreSQL. If you
 	// are using other databases, please verify it before using it!
 	if s == "" {
-		return time.Time{}, fmt.Errorf("empty timestamp")
+		return time.Time{}, fmt.Errorf("(MID_26031030) empty timestamp")
 	}
 
 	// Try common PostgreSQL formats
@@ -417,7 +419,7 @@ func ParseTimestamp(s string) (time.Time, error) {
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("unable to parse timestamp: %s", s)
+	return time.Time{}, fmt.Errorf("(MID_26031031) unable to parse timestamp: %s", s)
 }
 
 func GenerateUUID() string {
@@ -734,10 +736,10 @@ func ReadMigrationConfig(filename string, logger ApiTypes.JimoLogger) (*ApiTypes
 	// Read config file
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return nil, fmt.Errorf("config file not found:%s, error:%v (SHD_20260221081100)", filename, err)
+			return nil, fmt.Errorf("(MID_26031032) config file not found:%s, error:%v (SHD_20260221081100)", filename, err)
 		}
 
-		return nil, fmt.Errorf("failed reading config file:%s, error:%v (SHD_20260221081101)", filename, err)
+		return nil, fmt.Errorf("(MID_26031033) failed reading config file:%s, error:%v (SHD_20260221081101)", filename, err)
 	}
 
 	// Override with environment variables (e.g., DATABASE_URL)
@@ -746,7 +748,7 @@ func ReadMigrationConfig(filename string, logger ApiTypes.JimoLogger) (*ApiTypes
 	// Unmarshal into struct
 	var config *ApiTypes.MigrationConfig
 	if err := viper.Unmarshal(config); err != nil {
-		return nil, fmt.Errorf("unable to decode migration config:%s, error:%w (SHD_20260221081102)", filename, err)
+		return nil, fmt.Errorf("(MID_26031034) unable to decode migration config:%s, error:%w (SHD_20260221081102)", filename, err)
 	}
 
 	logger.Info("Loading config success", "filename", filename)
@@ -773,4 +775,223 @@ func ApplyDefaults(migrate_cfg *ApiTypes.MigrationConfig) {
 	if migrate_cfg.AllowOutOfOrder != "false" {
 	}
 	migrate_cfg.AllowOutOfOrder = "true"
+}
+
+// CreatePGDB does the following:
+// - set config.UserName by env var "PG_USER_NAME"
+// - set config.Password by env var "PG_PASSWORD"
+func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) error {
+	if !config.Create {
+		logger.Warn("PG is not turned on!")
+		return nil
+	}
+
+	var err error
+	host := config.Host
+	port := config.Port
+	config.UserName = os.Getenv("PG_USER_NAME")
+	config.Password = os.Getenv("PG_PASSWORD")
+	config.ProjectDBName = os.Getenv("PG_DB_NAME")
+	config.MigrationDBName = os.Getenv("PG_DB_NAME_MIGRATION")
+	config.AutotesterDBName = os.Getenv("PG_DB_NAME_AUTOTESTER")
+
+	// There are three DB Names:
+	// 1) PROJECT_PG_DB_NAME: the main project database (used by application)
+	// 2) PG_DB_NAME_SHARED: the shared database (used for migrations, shared tables)
+	// 3) PG_DB_NAME_AUTOTESTER: the database used by autotester (can be same as project DB or different)
+
+	// Step 1: Create Project DB
+	logger.Info("createPGDB", "dbname", config.ProjectDBName)
+	if config.ProjectDBName == "" {
+		return fmt.Errorf("(MID_26031035) missing env variable PG_DB_NAME (MID_26022607)")
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+		host, port, config.UserName, config.Password, config.ProjectDBName)
+
+	// SECURITY: Don't log credentials
+	logger.Info("Connect to project PG",
+		"host", host,
+		"port", port,
+		"username", config.UserName,
+		"dbname", config.ProjectDBName)
+
+	config.ProjectDBHandle, err = sql.Open("postgres", connStr)
+	if err != nil {
+		logger.Error("Failed to connect to database", "error", err)
+		return err
+	}
+
+	// Test the connection
+	if err = config.ProjectDBHandle.Ping(); err != nil {
+		// SECURITY: Don't log connection string or credentials
+		return fmt.Errorf("(MID_26031036) failed connecting PostgreSQL for project DB (SHD_DBS_055), error: %w", err)
+	}
+
+	logger.Info("PostgreSQL created", "dbname", config.ProjectDBName, "user", config.UserName)
+
+	// Step 2: Create Migration DB
+	if config.MigrationDBName == "" {
+		return fmt.Errorf("(MID_26031037) missing env variable PG_DB_NAME_MIGRATION")
+	}
+
+	if config.ProjectDBName == config.MigrationDBName {
+		err := fmt.Errorf("(MID_26031038) project db name and migration db name cannot be the same (SHD_DBS_149)")
+		return err
+	}
+
+	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+		host, port, config.UserName, config.Password, config.MigrationDBName)
+
+	config.MigrationDBHandle, err = sql.Open("postgres", connStr)
+	if err != nil {
+		logger.Error("Failed to connect to migration PG (SHD_DBS_050)", "error", err)
+		return err
+	}
+
+	// Test the connection
+	if err = config.MigrationDBHandle.Ping(); err != nil {
+		return fmt.Errorf("(MID_26031039) failed connecting PG for migration (SHD_DBS_055), error: %w", err)
+	}
+
+	// SECURITY: Don't log credentials
+	logger.Info("Connect to migration PG",
+		"host", host,
+		"port", port,
+		"username", config.UserName,
+		"dbname", config.MigrationDBName)
+
+	// Step 3: Create Autotester DB
+	if config.AutotesterDBName == "" {
+		return fmt.Errorf("(MID_26031040) missing env variable PG_DB_NAME_AUTOTESTER")
+	}
+
+	if config.AutotesterDBName == config.MigrationDBName {
+		return fmt.Errorf("(MID_26031041) autotester db name and migration db name cannot be the same (SHD_DBS_169)")
+	}
+
+	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+		host, port, config.UserName, config.Password, config.AutotesterDBName)
+
+	config.AutotesterDBHandle, err = sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("(MID_26031042) Failed to connect to autotester PG (SHD_DBS_050) error:%w", err)
+	}
+
+	// Test the connection
+	if err = config.AutotesterDBHandle.Ping(); err != nil {
+		return fmt.Errorf("(MID_26031020) failed connecting PG for autotester (SHD_DBS_182), error: %w", err)
+	}
+
+	// SECURITY: Don't log credentials
+	logger.Info("Connect to autotester PG",
+		"dbname", config.AutotesterDBName)
+
+	return nil
+}
+
+func CreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DatabaseConfig) error {
+	if !config.Create {
+		return nil
+	}
+
+	logger.Error("Mysql not supported yet!")
+	return fmt.Errorf("(MID_26030901) Mysql not supported yet")
+}
+
+func LoadConfig(
+	ctx context.Context,
+	logger ApiTypes.JimoLogger,
+	configPath string) error {
+	call_flow := "ARX_CFG_071"
+	if v, ok := ctx.Value(ApiTypes.CallFlowKey).(string); ok {
+		call_flow = v
+	}
+
+	logger.Info("Loading config", "config_path", configPath)
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("toml")
+
+	// Read config file
+	if err := viper.ReadInConfig(); err != nil {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
+			return fmt.Errorf("(MID_26031021) config file not found (%s->TAX_CFG_054): %s", call_flow, configPath)
+		}
+		return fmt.Errorf("(MID_26031022) error reading config (%s->TAX_CFG_056): %w, config_path:%s", call_flow, err, configPath)
+	}
+
+	// Override with environment variables (e.g., DATABASE_URL)
+	viper.AutomaticEnv()
+
+	// Unmarshal into struct
+	if err := viper.Unmarshal(&ApiTypes.CommonConfig); err != nil {
+		return fmt.Errorf("(MID_26031023) unable to decode common config (%s->TAX_CFG_064): %w", call_flow, err)
+	}
+
+	if err := CreatePGDB(logger, &ApiTypes.CommonConfig.PGConf); err != nil {
+		logger.Error("failed config PG DB", "error", err)
+		panic(err)
+	}
+
+	if err := CreateMySqlDB(logger, ApiTypes.CommonConfig.MySQLConf); err != nil {
+		logger.Error("failed config MySQL DB", "error", err)
+		panic(err)
+	}
+
+	if err := SetConfig(ApiTypes.CommonConfig); err != nil {
+		return fmt.Errorf("failed setting config, error:%w", err)
+	}
+
+	logger.Info("CommonConfig",
+		"database_type", ApiTypes.CommonConfig.AppInfo.DatabaseType,
+		"need_create_tables", ApiTypes.CommonConfig.AppInfo.NeedCreateTables,
+		"pg", ApiTypes.CommonConfig.PGConf.Create,
+		"mysql", ApiTypes.CommonConfig.MySQLConf.Create)
+
+	return nil
+}
+
+func SetConfig(config ApiTypes.CommonConfigDef) error {
+	ApiTypes.DBType = config.AppInfo.DatabaseType
+
+	if ApiTypes.DBType == "" {
+		return fmt.Errorf("(MID_26030902) dbtype is empty")
+	}
+
+	switch ApiTypes.DBType {
+	case "pg":
+		ApiTypes.ProjectDBHandle = config.PGConf.ProjectDBHandle
+		if ApiTypes.ProjectDBHandle == nil {
+			return fmt.Errorf("(MID_26030904) project db is nil")
+		}
+
+		ApiTypes.MigrationDBHandle = config.PGConf.MigrationDBHandle
+		if ApiTypes.MigrationDBHandle == nil {
+			return fmt.Errorf("(MID_26030914) migration db is nil")
+		}
+
+		ApiTypes.AutotesterDBHandle = config.PGConf.AutotesterDBHandle
+		if ApiTypes.AutotesterDBHandle == nil {
+			return fmt.Errorf("(MID_26030905) autotester db is nil")
+		}
+
+	case "mysql":
+		ApiTypes.ProjectDBHandle = config.MySQLConf.ProjectDBHandle
+		if ApiTypes.ProjectDBHandle == nil {
+			return fmt.Errorf("(MID_26030906) project db is nil")
+		}
+
+		ApiTypes.MigrationDBHandle = config.MySQLConf.MigrationDBHandle
+		if ApiTypes.MigrationDBHandle == nil {
+			return fmt.Errorf("(MID_26030906) migration db is nil")
+		}
+
+		ApiTypes.AutotesterDBHandle = config.MySQLConf.AutotesterDBHandle
+		if ApiTypes.AutotesterDBHandle == nil {
+			return fmt.Errorf("(MID_26030907) autotester db is nil")
+		}
+	}
+
+	return nil
 }

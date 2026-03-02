@@ -514,7 +514,6 @@ func HandleEmailVerifyBase(
 
 	logger.Info("Handle email verify",
 		"token", ApiUtils.MaskToken(token),
-		"db_type", ApiTypes.DatabaseInfo.DBType,
 		"tablename", ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 
 	// SECURITY: Validate token and check expiration

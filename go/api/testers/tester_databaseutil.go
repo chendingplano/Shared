@@ -31,10 +31,10 @@ func NewDatabaseUtilTester() *DatabaseUtilTester {
 
 // Prepare sets up the test environment.
 func (t *DatabaseUtilTester) Prepare(ctx context.Context) error {
-	if ApiTypes.PG_DB_Project == nil {
+	t.testDB = ApiTypes.CommonConfig.PGConf.ProjectDBHandle
+	if t.testDB == nil {
 		return fmt.Errorf("database connection not initialized (MID_260222132430)")
 	}
-	t.testDB = ApiTypes.PG_DB_Project
 	return nil
 }
 

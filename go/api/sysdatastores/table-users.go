@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/ApiUtils"
@@ -150,17 +149,15 @@ func GetUserInfoByEmail(
 	user_email string) (*ApiTypes.UserInfo, error) {
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
+	table_name := "users"
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE email = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE email = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
@@ -192,18 +189,17 @@ func GetUserInfoByUserID(
 	user_id string) (*ApiTypes.UserInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
+	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	table_name := "users"
 	logger := rc.GetLogger()
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE id = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
@@ -292,65 +288,69 @@ func GetUserInfoByToken(
 	rc ApiTypes.RequestContext,
 	token string) (*ApiTypes.UserInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
-	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
-	logger := rc.GetLogger()
-	switch db_type {
-	case ApiTypes.MysqlName:
-		query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = ? LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_Project
+	return nil, fmt.Errorf("(MID_26030301) 'users' table not supported")
+	/*
+		var query string
+		var db *sql.DB
+		db_type := ApiTypes.DatabaseInfo.DBType
+		table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+		logger := rc.GetLogger()
+		switch db_type {
+		case ApiTypes.MysqlName:
+			query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = ? LIMIT 1", Users_selected_field_names, table_name)
+			db = ApiTypes.MySql_DB_Project
 
-	case ApiTypes.PgName:
-		query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = $1 LIMIT 1", Users_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_Project
+		case ApiTypes.PgName:
+			query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = $1 LIMIT 1", Users_selected_field_names, table_name)
+			db = ApiTypes.PG_DB_Project
 
-	default:
-		err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
-		logger.Error("db_type not supported", "db_type", db_type)
-		return nil, err
-	}
-
-	row := db.QueryRow(query, token)
-
-	user_info := new(ApiTypes.UserInfo)
-	err := scanUserRecord(row, user_info)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			logger.Warn("no user found", "token", token)
-		} else {
-			logger.Error("failed scanning user record",
-				"error", err,
-				"token", token)
+		default:
+			err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
+			logger.Error("db_type not supported", "db_type", db_type)
+			return nil, err
 		}
-		return nil, err
-	}
 
-	// SECURITY: Check if token has expired (24-hour validity)
-	if !user_info.VTokenExpiresAt.IsZero() && time.Now().After(user_info.VTokenExpiresAt) {
-		logger.Warn("password reset token expired",
+		row := db.QueryRow(query, token)
+
+		user_info := new(ApiTypes.UserInfo)
+		err := scanUserRecord(row, user_info)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				logger.Warn("no user found", "token", token)
+			} else {
+				logger.Error("failed scanning user record",
+					"error", err,
+					"token", token)
+			}
+			return nil, err
+		}
+
+		// SECURITY: Check if token has expired (24-hour validity)
+		if !user_info.VTokenExpiresAt.IsZero() && time.Now().After(user_info.VTokenExpiresAt) {
+			logger.Warn("password reset token expired",
+				"email", user_info.Email,
+				"expired_at", user_info.VTokenExpiresAt)
+			return nil, ErrTokenExpired
+		}
+
+		logger.Info("User info retrieved",
+			"status", user_info.UserStatus,
+			"token", token,
 			"email", user_info.Email,
-			"expired_at", user_info.VTokenExpiresAt)
-		return nil, ErrTokenExpired
-	}
-
-	logger.Info("User info retrieved",
-		"status", user_info.UserStatus,
-		"token", token,
-		"email", user_info.Email,
-		"is_admin", user_info.Admin)
-	return user_info, nil
+			"is_admin", user_info.Admin)
+		return user_info, nil
+	*/
 }
 
 func UpsertUser(
 	rc ApiTypes.RequestContext,
 	user_info *ApiTypes.UserInfo) error {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var insert_stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	db_type := ApiTypes.DBType
+	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	table_name := "users"
 	switch db_type {
 	case ApiTypes.MysqlName:
 		err := fmt.Errorf("mysql not supported yet")
@@ -358,7 +358,6 @@ func UpsertUser(
 		return err
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		insert_stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ("+
 			"$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, "+
 			"$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, "+
@@ -515,18 +514,17 @@ func UpsertUser(
 func MarkUserVerified(
 	rc ApiTypes.RequestContext,
 	user_name string) error {
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	db_type := ApiTypes.DBType
+	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	table_name := "users"
 	logger := rc.GetLogger()
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET user_status = 'active', verified = true WHERE name = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET user_status = 'active', verified = true WHERE name = $1", table_name)
 
 	default:
@@ -549,18 +547,17 @@ func MarkUserVerified(
 func UpdatePasswordByEmail(
 	rc ApiTypes.RequestContext,
 	email string, password string) error {
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
 	logger := rc.GetLogger()
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	db_type := ApiTypes.DBType
+	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	table_name := "users"
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET password = ?, user_status = 'active' WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET password = $1, user_status = 'active' WHERE email = $2", table_name)
 
 	default:
@@ -583,18 +580,17 @@ func UpdateAuthTokenByEmail(
 	rc ApiTypes.RequestContext,
 	email string,
 	auth_token string) error {
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
 	logger := rc.GetLogger()
-	db_type := ApiTypes.DatabaseInfo.DBType
-	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	db_type := ApiTypes.DBType
+	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
+	table_name := "users"
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token= ? WHERE email = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("UPDATE %s SET v_token= $1 WHERE email = $2", table_name)
 
 	default:

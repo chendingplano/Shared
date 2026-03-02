@@ -134,18 +134,16 @@ func GetPromptStoreTableDesc() string {
 func GetPromptInfoByName(rc ApiTypes.RequestContext, prompt_name string) (PromptRecordInfo, error) {
 	// This function retrieves a prompt record by prompt_name.
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore
 	var prompt_info PromptRecordInfo
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE prompt_name = ? LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE prompt_name = $1 LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_PST_326): %s", db_type)
@@ -178,17 +176,15 @@ func GetPromptInfoByName(rc ApiTypes.RequestContext, prompt_name string) (Prompt
 
 func GetPromptStatus(rc ApiTypes.RequestContext, prompt_name string) string {
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE prompt_name = ? LIMIT 1", table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE prompt_name = $1 LIMIT 1", table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err_msg := fmt.Sprintf("error: unsupported database type (SHD_PST_326): %s", db_type)

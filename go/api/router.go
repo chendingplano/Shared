@@ -74,5 +74,10 @@ func RegisterRoutes(e *echo.Echo) {
 	e.DELETE("/shared_api/v1/icons/:id", RequestHandlers.HandleDeleteIcon)
 	e.GET("/shared_api/v1/icons/file/:category/:filename", RequestHandlers.HandleServeIconFile)
 
+	// IP geolocation service (ip66.dev MMDB)
+	e.GET("/shared_api/v1/ipdb/lookup", RequestHandlers.HandleIPLookup)
+	e.GET("/shared_api/v1/ipdb/sync/status", RequestHandlers.HandleIPSyncStatus)
+	e.POST("/shared_api/v1/ipdb/sync/trigger", RequestHandlers.HandleIPSyncTrigger)
+
 	logger.Info("All routes registered", "use_kratos", useKratos)
 }

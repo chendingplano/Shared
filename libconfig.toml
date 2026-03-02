@@ -13,10 +13,10 @@ table_name_email_store          = "email_store"
 table_name_prompt_store         = "prompt_store"
 table_name_resources            = "resources"
 table_name_table_manager        = "table_manager"
-table_name_goose                = "db_migrations"
 table_name_auto_test_runs       = "auto_test_runs"
 table_name_auto_test_results    = "auto_test_results"
 table_name_auto_test_logs       = "auto_test_logs"
+table_name_goose                = "db_migrations"
 
 [system_ids]
 activity_log_id             = "IDs for activity log"

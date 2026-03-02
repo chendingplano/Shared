@@ -63,20 +63,18 @@ func CreateIDMgrTable(
 
 func AddOneID(rc ApiTypes.RequestContext, record IDMgrDef) error {
 	var stmt string
-	var db *sql.DB
-	db_type := ApiTypes.GetDBType()
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.GetIDMgrTableName()
 
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s)
               	VALUES (?, ?, ?, ?)`, table_name, id_mgr_insert_fieldnames)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s)
 				VALUES ($1, $2, $3, $4)`, table_name, id_mgr_insert_fieldnames)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		error_msg := fmt.Sprintf("unsupported database type (SHD_IMG_034): %s", db_type)
@@ -102,7 +100,7 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 	field_names := "id_name, crt_value, id_desc, caller_loc"
 	logger := rc.GetLogger()
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr
 	if table_name == "" {
 		error_msg := "IDMgr table name is empty (SHD_IMG_200)"
@@ -110,18 +108,16 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (?, ?, ?, ?)
               ON DUPLICATE KEY UPDATE id_name = id_name`, table_name, field_names)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4)
             ON CONFLICT (id_name)
             DO NOTHING`, table_name, field_names)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		// SHOULD NEVER HAPPEN!!!
@@ -143,19 +139,17 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 func NextIDBlock(id_name string, inc_size int) (int64, error) {
 	// This function retrieves a block of IDs and updates the record.
 	// Upon success, it returns the start log ID of the ID block.
-	var db *sql.DB
-	db_type := ApiTypes.GetDBType()
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.GetIDMgrTableName()
 	var query string
 
 	switch db_type {
 	case ApiTypes.MysqlName:
 		// Support MySQL 8.0.21+
-		db = ApiTypes.MySql_DB_Project
 		query = fmt.Sprintf("UPDATE %s SET crt_value = crt_value + ? WHERE id_name = ? RETURNING crt_value", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		query = fmt.Sprintf("UPDATE %s SET crt_value = crt_value + $1 WHERE id_name = $2 RETURNING crt_value", table_name)
 
 	default:

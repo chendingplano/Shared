@@ -108,18 +108,16 @@ func GetEmailStoreTableDesc() string {
 func CheckEmailExists(rc ApiTypes.RequestContext, email string) bool {
 	// This function checks whether 'user_name' is used in the users table.
 	logger := rc.GetLogger()
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	var query string
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE full_email = ?", table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE full_email = $1", table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		logger.Error("db_type not supported", "db_type", db_type)
@@ -140,18 +138,16 @@ func GetEmailInfoByEmail(rc ApiTypes.RequestContext, email string) (EmailInfo, e
 	// This function checks whether 'user_email' is used in the users table.
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	var email_info EmailInfo
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_email = ? LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE user_email = $1 LIMIT 1", emailstore_selected_field_names, table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err := fmt.Errorf("unsupported database type (SHD_EST_326): %s", db_type)
@@ -184,17 +180,15 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 	// This function checks whether 'user_name' is used in the users table.
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE full_email = ? LIMIT 1", table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		query = fmt.Sprintf("SELECT user_status FROM %s WHERE full_email = $1 LIMIT 1", table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		err_msg := fmt.Sprintf("error: unsupported database type (SHD_EST_326): %s", db_type)
@@ -220,18 +214,16 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 
 func AddEmail(rc ApiTypes.RequestContext, email_info EmailInfo) (bool, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			table_name, emailstore_insert_field_names)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
 			table_name, emailstore_insert_field_names)
 

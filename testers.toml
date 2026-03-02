@@ -42,6 +42,16 @@
 # A tester stops when either num_tcs or seconds limit is reached.
 
 # ─── Tester Definitions ──────────────────────────────────────────────────────
+tester_db_name              = "testonly_dut"
+db_type                     = "pg"
+pg_username                 = "admin"
+dft_num_dynamic_tcs         = 80
+max_migrations_in_pool      = 20
+
+[migration_config]
+migrations_dir              = "testonly_db_migrations"
+dbname                      = "testonly_migration_db"
+tablename                   = "testonly_db_migrations"
 
 [[testers]]
 name        = "tester_database"
@@ -108,8 +118,3 @@ testers = [
 name = "complete"
 description = "Full shared-library suite: all three shared testers"
 enable = true
-testers = [
-    { name = "tester_database", enable = true, num_tcs = 20, seconds = 60 },
-    { name = "tester_databaseutil", enable = true, num_tcs = 30, seconds = 120 },
-    { name = "tester_logger", enable = true, num_tcs = 30, seconds = 120 }
-]

@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/labstack/echo/v4"
 )
@@ -27,22 +27,21 @@ var AllowedLogicOps = map[string]bool{
 	"OR":  true,
 }
 
-func InitDB(ctx context.Context,
-	mysql_config ApiTypes.DBConfig,
-	pg_config ApiTypes.DBConfig) error {
+func InitDB(ctx context.Context, commonConfig ApiTypes.CommonConfigDef) error {
 	logger := loggerutil.CreateDefaultLogger("SHD_DBU_035")
 	call_flow, _ := ctx.Value(ApiTypes.CallFlowKey).(string)
 	logger.Info("InitDB called (SHD_DBS_0 45)", "caller", call_flow)
 
-	if pg_config.DBType != "pg" {
-		error_msg := fmt.Errorf("invalid PG config name (%s->SHD_DBS_056):%s", call_flow, pg_config.DBType)
+	if commonConfig.AppInfo.DatabaseType != "pg" {
+		error_msg := fmt.Errorf("(MID_26031070) invalid PG config name:%s",
+			commonConfig.AppInfo.DatabaseType)
 		logger.Error("Invalid PG config name", "error", error_msg)
 		return error_msg
 	}
 
-	if pg_config.CreateFlag {
+	if commonConfig.PGConf.Create {
 		logger.Info("To create PGDBMiner (SHD_DBS_024)")
-		err := CreatePGDB(logger, pg_config)
+		err := ApiUtils.CreatePGDB(logger, &commonConfig.PGConf)
 		if err != nil {
 			logger.Error("Failed creating PG connection (SHD_DBS_026)", "error", err)
 			return err
@@ -52,14 +51,8 @@ func InitDB(ctx context.Context,
 		logger.Info("PostgreSQL not configured (SHD_DBS_033)", "call_flow", call_flow)
 	}
 
-	if mysql_config.DBType != "mysql" {
-		error_msg := fmt.Errorf("invalid mysql config name (%s->SHD_DBS_072):%s", call_flow, mysql_config.DBType)
-		logger.Error("Invalid MySQL config name", "error", error_msg)
-		return error_msg
-	}
-
-	if mysql_config.CreateFlag {
-		err := AosCreateMySqlDB(logger, mysql_config)
+	if commonConfig.MySQLConf.Create {
+		err := ApiUtils.CreateMySqlDB(logger, commonConfig.MySQLConf)
 		if err != nil {
 			logger.Error("Failed creating MySQL connection (SHD_DBS_032)", "call_flow", call_flow, "error", err)
 			return err
@@ -75,171 +68,6 @@ func IsValidTableName(name string) bool {
 	// To prevent SQL injection, table names should be made of alphanumerics
 	// and underscores only;
 	return regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(name)
-}
-
-func CreatePGDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
-	var err error
-	host := config.Host
-	port := config.Port
-	username := os.Getenv("PG_USER_NAME")
-	password := os.Getenv("PG_PASSWORD")
-
-	// There are three DB Names:
-	// 1) PG_DB_NAME_PROJECT: the main project database (used by application)
-	//    PG_DB_NAME/PG_DB_NAME_PROJECT must not be empty
-	// 2) PG_DB_NAME_SHARED: the shared database (used for migrations, shared tables)
-	// 3) PG_DB_NAME_AUTOTESTER: the database used by autotester (can be same as project DB or different)
-	// For compatibility, if PG_DB_NAME_PROJECT is not set, fall back to PG_DB_NAME
-	dbname_project := os.Getenv("PG_DB_NAME_PROJECT")
-	if dbname_project == "" {
-		dbname_project = os.Getenv("PG_DB_NAME")
-	}
-	dbname_migration := os.Getenv("PG_DB_NAME_MIGRATION")
-	autotester_dbname := os.Getenv("PG_DB_NAME_AUTOTESTER")
-
-	if dbname_project == "" {
-		err := fmt.Errorf("missing env variable PG_DB_NAME or PG_DB_NAME_PROJECT (MID_26022607)")
-		return err
-	}
-
-	if dbname_project != "" {
-		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-			host, port, username, password, dbname_project)
-
-		// SECURITY: Don't log credentials
-		logger.Info("Connect to project PG", "host", host, "port", port, "username", username, "dbname", dbname_project)
-
-		ApiTypes.PG_DB_Project, err = sql.Open("postgres", connStr)
-		if err != nil {
-			logger.Error("Failed to connect to database (SHD_DBS_050)", "error", err)
-			return err
-		}
-
-		// Test the connection
-		if err = ApiTypes.PG_DB_Project.Ping(); err != nil {
-			// SECURITY: Don't log connection string or credentials
-			return fmt.Errorf("failed connecting PostgreSQL for project DB (SHD_DBS_055), error: %w", err)
-		}
-
-		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname_project, "user", username)
-		ApiTypes.DatabaseInfo.PGDBHandle = ApiTypes.PG_DB_Project
-	}
-
-	if dbname_migration != "" {
-		if dbname_project != "" && dbname_project == dbname_migration {
-			err := fmt.Errorf("project db name and migration db name cannot be the same (SHD_DBS_149)")
-			return err
-		}
-
-		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-			host, port, username, password, dbname_migration)
-
-		ApiTypes.PG_DB_Migration, err = sql.Open("postgres", connStr)
-		if err != nil {
-			logger.Error("Failed to connect to migration PG (SHD_DBS_050)", "error", err)
-			return err
-		}
-
-		// SECURITY: Don't log credentials
-		logger.Info("Connect to migration PG", "host", host, "port", port, "username", username, "dbname", dbname_migration)
-
-		// Test the connection
-		if err = ApiTypes.PG_DB_Migration.Ping(); err != nil {
-			// SECURITY: Don't log connection string or credentials
-			return fmt.Errorf("failed connecting PostgreSQL for migration DB (SHD_DBS_055), error: %w", err)
-		}
-
-		logger.Info("PostgreSQL created (SHD_DBS_058)", "dbname", dbname_migration, "user", username)
-		ApiTypes.DatabaseInfo.PGMigrateDBHandle = ApiTypes.PG_DB_Migration
-	}
-
-	if autotester_dbname != "" {
-		if !IsValidTableName(autotester_dbname) {
-			err := fmt.Errorf("invalid characters in autotester db name (SHD_DBS_148): %s", autotester_dbname)
-			return err
-		}
-
-		if dbname_project != "" && dbname_project == autotester_dbname ||
-			dbname_migration != "" && dbname_migration == autotester_dbname {
-			err := fmt.Errorf("migration db name and autotester db name cannot be the same (SHD_DBS_150)")
-			return err
-		}
-
-		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-			host, port, username, password, autotester_dbname)
-
-		ApiTypes.PG_DB_AutoTester, err = sql.Open("postgres", connStr)
-		if err != nil {
-			logger.Error("Failed to connect AutoTestger PG", "error", err)
-			return err
-		}
-
-		// SECURITY: Don't log credentials
-		logger.Info("Connect to AutoTester PG", "host", host, "port", port, "username", username, "dbname", autotester_dbname)
-
-		// Test the connection
-		if err = ApiTypes.PG_DB_AutoTester.Ping(); err != nil {
-			// SECURITY: Don't log connection string or credentials
-			return fmt.Errorf("failed connecting PostgreSQL for autotester (SHD_DBS_151), error: %w", err)
-		}
-
-		logger.Info("PostgreSQL autotester created", "dbname", autotester_dbname, "user", username)
-		ApiTypes.DatabaseInfo.PGAutoTesterDBHandle = ApiTypes.PG_DB_AutoTester
-	}
-
-	return nil
-}
-
-func AosCreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DBConfig) error {
-	var err error
-	host := config.Host
-	port := config.Port
-	username := os.Getenv("MYSQL_USER_NAME")
-	password := os.Getenv("MYSQL_PASSWORD")
-	db_name := os.Getenv("MYSQL_DB_NAME")
-	shared_dbname := os.Getenv("MYSQL_DB_NAME_SHARED")
-
-	options := "?tls=false&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
-	connStr := fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, db_name, options)
-
-	logger.Info("To connect to MySQL with connStr (SHD_DBS_081)", "connStr", connStr)
-	ApiTypes.MySql_DB_Project, err = sql.Open("mysql", connStr)
-	if err != nil {
-		logger.Error("Failed connecting MySQL", "error", err)
-		return err
-	}
-
-	// Test the connection
-	if err = ApiTypes.MySql_DB_Project.Ping(); err != nil {
-		// SECURITY: Don't log connection string (contains credentials)
-		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", db_name)
-		return err
-	}
-
-	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", db_name)
-	ApiTypes.DatabaseInfo.MySQLDBHandle = ApiTypes.MySql_DB_Project
-
-	options = "?tls=false&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
-	connStr = fmt.Sprintf("%s:%s@(%s:%d)/%s%s", username, password, host, port, shared_dbname, options)
-
-	logger.Info("To connect to MySQL with connStr", "connStr", connStr)
-	ApiTypes.MySql_DB_Migration, err = sql.Open("mysql", connStr)
-	if err != nil {
-		logger.Error("Failed connecting MySQL", "error", err)
-		return err
-	}
-
-	// Test the connection
-	if err = ApiTypes.MySql_DB_Migration.Ping(); err != nil {
-		// SECURITY: Don't log connection string (contains credentials)
-		logger.Error("Failed to ping MySQL (SHD_DBS_090)", "error", err, "host", host, "db", shared_dbname)
-		return err
-	}
-
-	logger.Info("Connected to MySQL database (SHD_DBS_174)", "host", host, "db", shared_dbname)
-	ApiTypes.DatabaseInfo.MySQLMigrateDBHandle = ApiTypes.MySql_DB_Migration
-
-	return nil
 }
 
 func HandleSelect(c echo.Context,
@@ -276,20 +104,20 @@ func HandleSelect(c echo.Context,
 		if i > 0 {
 			logic_opr = c.QueryParam(fmt.Sprintf("logic_opr_%d", i))
 			if logic_opr == "" || !AllowedLogicOps[logic_opr] {
-				error_msg := fmt.Errorf("invalid logic operator (SHD_DBS_177):%s", logic_opr)
+				error_msg := fmt.Errorf("(MID_26031072) invalid logic operator:%s", logic_opr)
 				logger.Error("Invalid logic operator in HandleSelect", "logic_opr", logic_opr, "error", error_msg)
 				return nil, error_msg
 			}
 		}
 
 		if !allowedFields[field] {
-			error_msg := fmt.Errorf("invalid field (SHD_DBS_183):%s", field)
+			error_msg := fmt.Errorf("(MID_26031073) invalid field:%s", field)
 			logger.Error("Invalid field in HandleSelect", "field", field)
 			return nil, error_msg
 		}
 
 		if !AllowedOps[op] {
-			error_msg := fmt.Errorf("invalid operator (SHD_DBS_188):%s", op)
+			error_msg := fmt.Errorf("(MID_26031074) invalid operator:%s", op)
 			return nil, error_msg
 		}
 
@@ -320,30 +148,33 @@ func HandleSelect(c echo.Context,
 	logger.Info("Constructed query", "query", query)
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		error_msg := fmt.Errorf("select failed (SHD_DBS_217), err:%v, query:%s", err, query)
+		error_msg := fmt.Errorf("(MID_26031075) select failed, err:%v, query:%s", err, query)
 		logger.Error("Failed to execute query", "error", error_msg)
 		return nil, error_msg
 	}
 	return rows, nil
 }
 
-func AosExecuteStatement(db_type string, stmt string) error {
+func AosExecuteStatement(
+	db *sql.DB,
+	db_type string,
+	stmt string) error {
 	switch db_type {
 	case ApiTypes.MysqlName:
-		return ExecuteStatement(ApiTypes.MySql_DB_Project, stmt)
+		return ExecuteStatement(db, stmt)
 
 	case ApiTypes.PgName:
-		return ExecuteStatement(ApiTypes.PG_DB_Project, stmt)
+		return ExecuteStatement(db, stmt)
 
 	default:
-		return fmt.Errorf("unsupported database type (SHD_DBS_153): %s", db_type)
+		return fmt.Errorf("(MID_26031076) unsupported database type: %s", db_type)
 	}
 }
 
 func ExecuteStatement(db *sql.DB, stmt string) error {
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction (SHD_DBS_158): %w", err)
+		return fmt.Errorf("(MID_26031077) failed to begin transaction: %w", err)
 	}
 
 	defer func() {
@@ -352,12 +183,12 @@ func ExecuteStatement(db *sql.DB, stmt string) error {
 
 	_, err1 := tx.Exec(stmt)
 	if err1 != nil {
-		return fmt.Errorf("failed to execute query (SHD_DBS_166), error: %w, stmt:%s", err1, stmt)
+		return fmt.Errorf("(MID_26031078) failed to execute query, error: %w, stmt:%s", err1, stmt)
 	}
 
 	// Commit the transaction
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction (SHD_DBS_171): %w", err)
+		return fmt.Errorf("(MID_26031079) failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -367,22 +198,39 @@ func StrPtr(s string) *string {
 	return &s
 }
 
-func CloseDatabase() {
-	if ApiTypes.PG_DB_Project != nil {
-		ApiTypes.PG_DB_Project.Close()
+func CloseDatabase(config ApiTypes.CommonConfigDef) {
+	if config.MySQLConf.ProjectDBHandle != nil {
+		config.MySQLConf.ProjectDBHandle.Close()
 	}
 
-	if ApiTypes.PG_DB_Migration != nil {
-		ApiTypes.PG_DB_Migration.Close()
+	if config.MySQLConf.MigrationDBHandle != nil {
+		config.MySQLConf.MigrationDBHandle.Close()
 	}
 
-	if ApiTypes.MySql_DB_Project != nil {
-		ApiTypes.MySql_DB_Project.Close()
+	if config.MySQLConf.AutotesterDBHandle != nil {
+		config.MySQLConf.AutotesterDBHandle.Close()
+	}
+
+	if config.PGConf.ProjectDBHandle != nil {
+		config.PGConf.ProjectDBHandle.Close()
+	}
+
+	if config.PGConf.MigrationDBHandle != nil {
+		config.PGConf.MigrationDBHandle.Close()
+	}
+
+	if config.PGConf.AutotesterDBHandle != nil {
+		config.PGConf.AutotesterDBHandle.Close()
 	}
 }
 
-func CreateGenericTable(rc ApiTypes.RequestContext, table_name string) error {
-	db_type := ApiTypes.DatabaseInfo.DBType
+func CreateGenericTable(
+	rc ApiTypes.RequestContext,
+	appInfo ApiTypes.AppInfo,
+	mysqlConfig ApiTypes.DatabaseConfig,
+	pgConfig ApiTypes.DatabaseConfig,
+	table_name string) error {
+	db_type := appInfo.DatabaseType
 	logger := rc.GetLogger()
 	const common_fields = "record_type VARCHAR(255) NOT NULL, " +
 		"doc_type VARCHAR(255) NOT NULL, " +
@@ -401,22 +249,22 @@ func CreateGenericTable(rc ApiTypes.RequestContext, table_name string) error {
 	var db *sql.DB
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
+		db = mysqlConfig.ProjectDBHandle
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" +
 			"doc_id BIGINT AUTO_INCREMENT PRIMARY KEY, " + common_fields +
 			") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
+		db = pgConfig.ProjectDBHandle
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + common_fields + ");"
 
 	default:
-		return fmt.Errorf("database type not supported:%s (SHD_DBS_315)", db_type)
+		return fmt.Errorf("(MID_26031080) database type not supported:%s", db_type)
 	}
 
 	_, err := db.Exec(stmt)
 	if err != nil {
-		return fmt.Errorf("failed to create table (SHD_DBS_320): %w", err)
+		return fmt.Errorf("(MID_26031081) failed to create table: %w", err)
 	}
 	logger.Info("Table created successfully (SHD_DBS_322)", "table_name", table_name)
 	return nil

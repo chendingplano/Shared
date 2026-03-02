@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	autotester "github.com/chendingplano/shared/go/api/autotester"
 	autotesters "github.com/chendingplano/shared/go/api/autotester"
 )
 
@@ -404,12 +405,12 @@ func (t *MigrationTester) GenerateTestCases(ctx context.Context) ([]autotesters.
 		return nil, nil // Use static cases only
 	}
 
-	cases := make([]autotesters.TestCase, 0, t.cfg.NumDynamicCases)
+	cases := make([]autotesters.TestCase, 0, autotester.AutotesterConfig.NumDynamicCases)
 
 	// Operation weights for weighted random selection
 	opWeights := []int{30, 15, 10, 20, 10, 5, 5, 5, 0} // Up, UpByOne, UpTo, Down, DownTo, Status, GetVersion, HasPending, CreateAndApply
 
-	for i := 0; i < t.cfg.NumDynamicCases; i++ {
+	for i := 0; i < autotester.AutotesterConfig.NumDynamicCases; i++ {
 		// Select operation based on weights
 		op := t.selectOperation(randFunc.Intn(100), opWeights)
 
@@ -507,8 +508,8 @@ func (t *MigrationTester) generatePreState(_ context.Context, _ interface{}) Mig
 
 // getInitialPoolFiles returns the migration files from the initial pool.
 func (t *MigrationTester) getInitialPoolFiles() []MigrationFile {
-	files := make([]MigrationFile, 0, t.cfg.MaxMigrationsInPool)
-	for i := 1; i <= t.cfg.MaxMigrationsInPool; i++ {
+	files := make([]MigrationFile, 0, autotester.AutotesterConfig.MaxMigrationsInPool)
+	for i := 1; i <= autotester.AutotesterConfig.MaxMigrationsInPool; i++ {
 		tableName := fmt.Sprintf("testonly_table_%02d", i)
 		upSQL := fmt.Sprintf("CREATE TABLE %s (id BIGSERIAL PRIMARY KEY, name VARCHAR(255))", tableName)
 		downSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
@@ -539,7 +540,7 @@ func (t *MigrationTester) getFullyAppliedState() MigrationSUTState {
 	}
 
 	tables := make(map[string]bool)
-	for i := 1; i <= t.cfg.MaxMigrationsInPool; i++ {
+	for i := 1; i <= autotester.AutotesterConfig.MaxMigrationsInPool; i++ {
 		tables[fmt.Sprintf("testonly_table_%02d", i)] = true
 	}
 

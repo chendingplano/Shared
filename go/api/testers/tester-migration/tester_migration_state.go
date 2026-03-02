@@ -36,6 +36,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
+	autotester "github.com/chendingplano/shared/go/api/autotester"
 )
 
 // syncState queries the DUT to update the internal state tracking.
@@ -50,9 +53,9 @@ func (t *MigrationTester) syncState(ctx context.Context) error {
 	// 1. Query current version from tracking table
 	versionQuery := fmt.Sprintf(`
 		SELECT COALESCE(MAX(version_id), 0) FROM %s
-	`, t.cfg.TableName)
+	`, autotester.AutotesterConfig.MigrationConfig.TableName)
 	var currentVersion int64
-	if err := t.cfg.DUTDB.QueryRowContext(ctx, versionQuery).Scan(&currentVersion); err != nil {
+	if err := autotester.AutotesterConfig.MigrationDBHandle.QueryRowContext(ctx, versionQuery).Scan(&currentVersion); err != nil {
 		// Table might not exist yet, that's ok
 		currentVersion = 0
 	}
@@ -63,8 +66,8 @@ func (t *MigrationTester) syncState(ctx context.Context) error {
 		SELECT version_id, migration_type 
 		FROM %s 
 		ORDER BY version_id ASC
-	`, t.cfg.TableName)
-	rows, err := t.cfg.DUTDB.QueryContext(ctx, appliedQuery)
+	`, autotester.AutotesterConfig.MigrationConfig.TableName)
+	rows, err := autotester.AutotesterConfig.MigrationDBHandle.QueryContext(ctx, appliedQuery)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -81,11 +84,11 @@ func (t *MigrationTester) syncState(ctx context.Context) error {
 	}
 
 	// 3. Scan migrations directory for all .sql files
-	entries, err := os.ReadDir(t.testMigrationsDir)
+	entries, err := os.ReadDir(autotester.AutotesterConfig.MigrationConfig.MigrationsDir)
 	if err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-				version := extractVersionFromFilename(entry.Name())
+				version := extractVersionFromFilename(t.logger, entry.Name())
 				isApplied := false
 				for _, record := range state.Applied {
 					if record.Version == version {
@@ -108,7 +111,7 @@ func (t *MigrationTester) syncState(ctx context.Context) error {
 		SELECT table_name FROM information_schema.tables 
 		WHERE table_schema = 'public' AND table_name LIKE 'testonly_%'
 	`
-	rows, err = t.cfg.DUTDB.QueryContext(ctx, tablesQuery)
+	rows, err = autotester.AutotesterConfig.MigrationDBHandle.QueryContext(ctx, tablesQuery)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -171,7 +174,7 @@ func (t *MigrationTester) resetToState(ctx context.Context, preState MigrationSU
 // resetDUT drops the tracking table and all testonly_ tables.
 func (t *MigrationTester) resetDUT(ctx context.Context) error {
 	// Drop tracking table
-	_, err := t.cfg.DUTDB.ExecContext(ctx, "DROP TABLE IF EXISTS "+t.cfg.TableName)
+	_, err := autotester.AutotesterConfig.MigrationDBHandle.ExecContext(ctx, "DROP TABLE IF EXISTS "+autotester.AutotesterConfig.MigrationConfig.TableName)
 	if err != nil {
 		return fmt.Errorf("drop tracking table (MID_260224100037): %w", err)
 	}
@@ -183,13 +186,13 @@ func (t *MigrationTester) resetDUT(ctx context.Context) error {
 // writeMigrationFile writes a migration file to the migrations directory.
 func (t *MigrationTester) writeMigrationFile(file MigrationFile) error {
 	content := buildMigrationFileContent(file.UpSQL, file.DownSQL)
-	fullPath := filepath.Join(t.testMigrationsDir, file.Filename)
+	fullPath := filepath.Join(autotester.AutotesterConfig.MigrationConfig.MigrationsDir, file.Filename)
 	return os.WriteFile(fullPath, []byte(content), 0644)
 }
 
 // extractVersionFromFilename parses the version number from a migration filename.
 // Expected format: YYYYMMDDHHMMSS_description.sql or version_description.sql
-func extractVersionFromFilename(filename string) int64 {
+func extractVersionFromFilename(logger ApiTypes.JimoLogger, filename string) int64 {
 	// Remove .sql suffix
 	name := strings.TrimSuffix(filename, ".sql")
 
@@ -208,10 +211,13 @@ func extractVersionFromFilename(filename string) int64 {
 		}
 		if len(versionStr) == 14 {
 			var year, month, day, hour, min, sec int64
-			fmt.Sscanf(versionStr, "%04d%02d%02d%02d%02d%02d", &year, &month, &day, &hour, &min, &sec)
-			// Return a simplified version number based on position in sequence
-			// For testing purposes, we just use a hash of the timestamp
-			return year*10000000000 + month*100000000 + day*1000000 + hour*10000 + min*100 + sec
+			_, err := fmt.Sscanf(versionStr, "%04d%02d%02d%02d%02d%02d", &year, &month, &day, &hour, &min, &sec)
+			if err == nil {
+				// Return a simplified version number based on position in sequence
+				// For testing purposes, we just use a hash of the timestamp
+				return year*10000000000 + month*100000000 + day*1000000 + hour*10000 + min*100 + sec
+			}
+			logger.Error("failed parsing version", "error", err)
 		}
 	}
 
@@ -220,4 +226,3 @@ func extractVersionFromFilename(filename string) int64 {
 	fmt.Sscanf(name, "%d", &version)
 	return version
 }
-

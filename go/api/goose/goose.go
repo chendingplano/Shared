@@ -210,7 +210,7 @@ func RunMigrations(
 			err, migrationsPath)
 	}
 
-	migrator, err := NewWithDB(db, ApiTypes.DatabaseInfo.DBType, cfg, logger)
+	migrator, err := NewWithDB(db, ApiTypes.DBType, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migrator (MID_060221143006): %w", err)
 	}
@@ -226,6 +226,9 @@ func RunMigrations(
 //
 // Use this variant when you need to run migrations against a database that is
 // separate from the shared library's global connection pool.
+//
+// 'db' is the migration DB
+// 'TableName' is the name of the table for tracking migration
 func NewWithDB(db *sql.DB,
 	dbType string,
 	migrate_cfg ApiTypes.MigrationConfig,

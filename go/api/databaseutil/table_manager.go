@@ -65,23 +65,11 @@ func InitTableManager() error {
 }
 
 func getCurrentDB() (*sql.DB, string, error) {
-	dbType := ApiTypes.DatabaseInfo.DBType
-	switch dbType {
-	case ApiTypes.MysqlName:
-		if ApiTypes.MySql_DB_Project == nil {
-			return nil, "", fmt.Errorf("MySQL DB handle is nil")
-		}
-		return ApiTypes.MySql_DB_Project, dbType, nil
-
-	case ApiTypes.PgName:
-		if ApiTypes.PG_DB_Project == nil {
-			return nil, "", fmt.Errorf("PostgreSQL DB handle is nil")
-		}
-		return ApiTypes.PG_DB_Project, dbType, nil
-
-	default:
-		return nil, "", fmt.Errorf("unsupported database type for TableManager: %s", dbType)
+	dbType := ApiTypes.DBType
+	if ApiTypes.ProjectDBHandle == nil {
+		return nil, dbType, fmt.Errorf("(MID_26030908) db handle is nil")
 	}
+	return ApiTypes.ProjectDBHandle, dbType, nil
 }
 
 // loadAll reads all non-deleted rows from table_manager and caches them.

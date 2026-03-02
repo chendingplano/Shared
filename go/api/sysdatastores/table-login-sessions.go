@@ -97,8 +97,8 @@ func SaveSession(
 	need_update_user bool) error {
 	logger := rc.GetLogger()
 	var stmt string
-	var db *sql.DB
-	db_type := ApiTypes.DatabaseInfo.DBType
+	var db *sql.DB = ApiTypes.ProjectDBHandle
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 
 	// Get user_id if available (for better session tracking)
@@ -113,14 +113,12 @@ func SaveSession(
 		stmt = fmt.Sprintf(`INSERT INTO %s (session_id, login_method, auth_token, status,
                     user_id, user_name, user_name_type, user_reg_id, user_email, expires_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table_name)
-		db = ApiTypes.MySql_DB_Project
 
 	case ApiTypes.PgName:
 		// Simple INSERT - session_id is PK, so each session is unique
 		stmt = fmt.Sprintf(`INSERT INTO %s (session_id, login_method, auth_token, status,
                     user_id, user_name, user_name_type, user_reg_id, user_email, expires_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, table_name)
-		db = ApiTypes.PG_DB_Project
 
 	default:
 		logger.Error("db_type not supported", "db_type", db_type)
@@ -168,19 +166,17 @@ func SaveSession(
 // DeleteUserSessions removes all sessions for a given user_id or user_email.
 // Use this for "logout from all devices" functionality.
 func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 	logger := rc.GetLogger()
 
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE user_email = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE user_email = $1", table_name)
 
 	default:
@@ -201,19 +197,17 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 }
 
 func DeleteSession(rc ApiTypes.RequestContext, session_id string) error {
-	var db *sql.DB
+	var db *sql.DB = ApiTypes.ProjectDBHandle
 	var stmt string
-	db_type := ApiTypes.DatabaseInfo.DBType
+	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 	logger := rc.GetLogger()
 
 	switch db_type {
 	case ApiTypes.MysqlName:
-		db = ApiTypes.MySql_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE session_id = ?", table_name)
 
 	case ApiTypes.PgName:
-		db = ApiTypes.PG_DB_Project
 		stmt = fmt.Sprintf("DELETE FROM %s WHERE session_id = $1", table_name)
 
 	default:
