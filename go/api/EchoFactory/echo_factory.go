@@ -482,8 +482,8 @@ func (e *echoContext) GetUserInfoByUserID(user_id string) (*ApiTypes.UserInfo, b
 		// 2. user pending verify:
 		// 3. database error: error: xxx
 		// 4. invalid user: (status not active)
-		if errors.Is(err, sql.ErrNoRows) {
-			// No user found with that email
+		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "identity not found") {
+			// No user found (DB or Kratos)
 			e.logger.Warn("No user found", "user_id", user_id)
 			return nil, false
 		}
