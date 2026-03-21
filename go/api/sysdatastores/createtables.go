@@ -35,9 +35,5 @@ func CreateSysTables(logger ApiTypes.JimoLogger) error {
 func RunMigrations(logger ApiTypes.JimoLogger, db *sql.DB, db_type string) {
 	logger.Info("Running database migrations")
 
-	// NO-OP: Users table migration removed — users are now managed by Kratos.
-	// The users table is no longer created (CreateUsersTable was removed)
-	// and will be dropped by mirai's schema migrations.
-
 	logger.Info("Database migrations completed")
 }

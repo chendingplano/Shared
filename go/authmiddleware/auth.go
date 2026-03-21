@@ -37,13 +37,10 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		rc := EchoFactory.NewFromEcho(c, "SHD_ATH_026")
 		logger := rc.GetLogger()
 		defer rc.Close()
-		defer rc.Close()
 		ctx := c.Request().Context()
 
 		path := c.Request().URL.Path
 		if isStaticAsset(path) {
-			// Let the request proceed without auth
-			logger.Info("static path", "path", path)
 			return next(c)
 		}
 
@@ -54,7 +51,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		authorization := c.Request().Header.Get("Authorization")
 		clientIP := c.RealIP()
 		method := c.Request().Method
-
+		
 		logger.Info("incoming request",
 			"path", path,
 			"method", method,
@@ -134,180 +131,11 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 			return nil, fmt.Errorf("kratos auth error: %w", err)
 		}
 		if user_info != nil {
-			logger.Info("valid session",
-				"email", user_email,
-				"is_admin", user_info.Admin,
-				"status", user_info.UserStatus,
-				"user_id", user_info.UserId)
-			return user_info, true, nil
-		}
-
-		logger.Info("invalid session, user not logged in", "email", user_email)
-		return nil, false, nil
-	}
-
-	logger.Error("failed retrieving user", "error", err, "email", user_email)
-	return user_info, false, err
-	/*
-		const selected_fields = "id, name, user_id_type, first_name, last_name," +
-			"email, user_mobile, user_address, verified, admin, " +
-			"email_visibility, user_status, avatar, locale"
-
-		table_name = ApiTypes.LibConfig.SystemTableNames.TableNameUsers
-		switch db_type {
-		case ApiTypes.MysqlName:
-			db = ApiTypes.MySql_DB_miner
-			query = fmt.Sprintf("SELECT %s FROM %s WHERE email = ? LIMIT 1",
-				selected_fields, table_name)
-
-		case ApiTypes.PgName:
-			db = ApiTypes.PG_DB_miner
-			query = fmt.Sprintf("SELECT %s FROM %s WHERE email = $1 LIMIT 1",
-				selected_fields, table_name)
-
-		default:
-			error_msg := fmt.Errorf("unsupported database type (SHD_DBS_234): %s", db_type)
-			logger.Error("unsupported database type",
-				"database_type", db_type)
-			return ApiTypes.UserInfo{}, false, error_msg
-		}
-
-		var user_info ApiTypes.UserInfo
-		var user_mobile, user_address, user_id, user_name, user_id_type,
-			first_name, last_name, avatar, locale,
-			email, verified, admin, emailVisibility,
-			user_status sql.NullString
-		err = db.QueryRow(query, user_email).Scan(
-			&user_id,
-			&user_name,
-			&user_id_type,
-			&first_name,
-			&last_name,
-			&email,
-			&user_mobile,
-			&user_address,
-			&verified,
-			&admin,
-			&emailVisibility,
-			&user_status,
-			&avatar,
-			&locale)
-
-		if err != nil {
-			if err == sql.ErrNoRows {
-				logger.Warn("No sessions found",
-					"session_id", session_id,
-					"user_email", user_email.String,
-					"loc", "SHD_UTL_329")
-				return ApiTypes.UserInfo{}, false, nil
-			}
-
-			error_msg := fmt.Errorf("failed to validate session (SHD_DBS_248): %w, stmt:%s", err, query)
-			logger.Error("failed to validate session",
-				"error", err,
-				"stmt", query)
-			return ApiTypes.UserInfo{}, false, error_msg
-		}
-
-		if user_id.Valid {
-			user_info.UserId = user_id.String
-		}
-
-		if user_name.Valid {
-			user_info.UserName = user_name.String
-		}
-
-		if user_id_type.Valid {
-			user_info.UserIdType = user_id_type.String
-		}
-
-		if first_name.Valid {
-			user_info.FirstName = first_name.String
-		}
-
-		if last_name.Valid {
-			user_info.LastName = last_name.String
-		}
-
-		if user_mobile.Valid {
-			user_info.UserMobile = user_mobile.String
-		}
-
-		if user_address.Valid {
-			user_info.UserAddress = user_address.String
-		}
-
-		if avatar.Valid {
-			user_info.Avatar = avatar.String
-		}
-
-		if locale.Valid {
-			user_info.Locale = locale.String
-		}
-
-		if email.Valid {
-			user_info.Email = email.String
-		}
-
-		if verified.Valid {
-			user_info.Verified = verified.String == "true"
-		}
-
-		if admin.Valid {
-			user_info.Admin = admin.String == "true"
-		}
-
-		if emailVisibility.Valid {
-			user_info.EmailVisibility = emailVisibility.String == "true"
-		}
-
-		if user_status.Valid {
-			user_info.UserStatus = user_status.String
-		}
-	*/
-
-}
-
-// isAuthenticated checks if the request is from an authenticated user
-// It retrieves the cookie from 'c'. If no cookie is found, it returns
-// 'no cookie found' and false.
-// If cookie is found, it checks whether the cookie is valid. If yes,
-// it returns user_name and true.
-// If the cookie is invalid, it removes the cookie.
-func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
-	logger := rc.GetLogger()
-
-	// 1. Try existing session_id cookie (old PG-based sessions)
-	cookie := rc.GetCookie("session_id")
-	logger.Info("isAuthenticated invoked", "cookie", cookie)
-	if cookie != "" {
-		user_info, valid, _ := IsValidSessionPG(rc, cookie)
-		if valid {
-			logger.Info("Cookie valid", "email", user_info.Email)
-			return user_info, nil
-		}
-
-		// Cookie exists but is invalid → delete it
-		logger.Info("Cookie invalid, removing cookie", "cookie", cookie)
-		rc.DeleteCookie("session_id")
-	}
-
-	// 2. Try Kratos session validation (when AUTH_USE_KRATOS=true)
-	// KratosAuthenticator is set from libmanager.InitLib() when Kratos is enabled.
-	if KratosAuthenticator != nil {
-		user_info, err := KratosAuthenticator(rc)
-		if err != nil {
-			logger.Info("Kratos auth failed", "error", err)
-			return nil, nil
-		}
-		if user_info != nil {
-			logger.Info("Kratos session valid", "email", user_info.Email)
 			return user_info, nil
 		}
 	}
 
-	logger.Warn("isAuthenticated failed")
-	return nil, nil
+	return nil, fmt.Errorf("no valid session found")
 }
 
 // isHTMLRequest checks if the client expects an HTML response (browser)
