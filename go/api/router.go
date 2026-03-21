@@ -18,26 +18,41 @@ func RegisterCSRFMiddleware(e *echo.Echo) {
 }
 
 func RegisterRoutes(e *echo.Echo) {
-	logger := loggerutil.CreateDefaultLogger("SHD_RTR_020")
+	var logger = loggerutil.CreateDefaultLogger("SHD_RTR_020")
+
+	// Check if Kratos authentication is enabled
 	useKratos := os.Getenv("AUTH_USE_KRATOS") == "true"
 
-	// Google OAuth
-	googleLogin := echo.HandlerFunc(auth.HandleGoogleLogin)
+	logger.Info("Register /auth/google/login route", "use_kratos", useKratos)
 	if useKratos {
-		googleLogin = auth.HandleGoogleLoginKratos
-	}
-	e.GET("/auth/google/login", googleLogin)
-	if !useKratos {
-		// Legacy callback — when Kratos is active, Google redirects to Kratos's
-		// own callback URL, so this endpoint is never hit.
-		e.GET("/auth/google/callback", auth.HandleGoogleCallback)
+		// Use Kratos OIDC for Google login - Kratos handles the full OAuth flow
+		e.GET("/auth/google/login", func(c echo.Context) error {
+			return auth.HandleGoogleLoginKratos(c)
+		})
+		// Note: With Kratos OIDC, the callback is handled by Kratos internally
+		// at /self-service/methods/oidc/callback/google
+		// We still register the legacy callback route for backwards compatibility
+		e.GET("/auth/google/callback", func(c echo.Context) error {
+			return auth.HandleGoogleCallback(c)
+		})
+	} else {
+		e.GET("/auth/google/login", func(c echo.Context) error {
+			return auth.HandleGoogleLogin(c)
+		})
+		e.GET("/auth/google/callback", func(c echo.Context) error {
+			return auth.HandleGoogleCallback(c)
+		})
 	}
 
-	// GitHub OAuth — legacy only, not yet migrated to Kratos
-	if !useKratos {
-		e.GET("/auth/github/login", auth.HandleGitHubLogin)
-		e.GET("/auth/github/callback", auth.HandleGitHubCallback)
-	}
+	logger.Info("Register /auth/github/login route")
+	e.GET("/auth/github/login", func(c echo.Context) error {
+		return auth.HandleGitHubLogin(c)
+	})
+
+	logger.Info("Register /auth/github/callback route")
+	e.GET("/auth/github/callback", func(c echo.Context) error {
+		return auth.HandleGitHubCallback(c)
+	})
 
 	// Email auth
 	emailLogin := echo.HandlerFunc(auth.HandleEmailLogin)

@@ -7,11 +7,30 @@ import (
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/chendingplano/shared/go/api/auth"
-	"github.com/dinglind/mirai/server/api/appdatastores"
 	"github.com/labstack/echo/v4"
 )
 
-// HandleGetAdminUsers returns all admin users for the consultant selector
+// GetAdminUsers fetches all Kratos identities and filters them by the isAdmin flag.
+// It returns the filtered list so callers can apply additional filtering (e.g. consultant exclusion).
+func GetAdminUsers(rc ApiTypes.RequestContext, isAdmin bool) ([]*ApiTypes.UserInfo, error) {
+	logger := rc.GetLogger()
+
+	allUsers, err := auth.KratosListAllIdentities(logger)
+	if err != nil {
+		return nil, err
+	}
+
+	users := make([]*ApiTypes.UserInfo, 0)
+	for _, user := range allUsers {
+		if user.Admin == isAdmin {
+			users = append(users, user)
+		}
+	}
+	return users, nil
+}
+
+// HandleGetAdminUsers returns all users filtered by the 'is_admin' query parameter.
+// Consultant-specific filtering is handled by the project-level handler.
 func HandleGetAdminUsers(e echo.Context) error {
 	rc := EchoFactory.NewFromEcho(e, "ARX_USH_020")
 	defer rc.Close()
@@ -37,8 +56,7 @@ func HandleGetAdminUsers(e echo.Context) error {
 		})
 	}
 
-	// Get all identities from Kratos and filter by admin flag
-	allUsers, err := auth.KratosListAllIdentities(logger)
+	users, err := GetAdminUsers(rc, isAdmin)
 	if err != nil {
 		logger.Error("failed retrieving identities", "error", err, "is_admin", isAdminStr)
 		return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -46,68 +64,6 @@ func HandleGetAdminUsers(e echo.Context) error {
 			"loc":    "USR_GAU_010",
 			"error":  "Failed to retrieve admin users",
 		})
-	}
-
-	// Filter by admin flag
-	users := make([]*ApiTypes.UserInfo, 0)
-	for _, user := range allUsers {
-		if user.Admin == isAdmin {
-			users = append(users, user)
-		}
-	}
-
-	// Check whether it is for consultant
-	forConsultantStr := e.QueryParam("consultant") // "true" or "false"
-	logger.Info("Handle get admin users", "is_admin", isAdminStr, "consultant", forConsultantStr)
-
-	if forConsultantStr != "" {
-		forConsultant, err := strconv.ParseBool(forConsultantStr)
-		if err != nil {
-			logger.Error("invalid 'consultant' parm: must be 'true' or 'false'", "consultant", forConsultantStr)
-			return e.JSON(http.StatusBadRequest, map[string]string{
-				"error": "'consultant' param must be true or false",
-				"loc":   "ARX_USH_059",
-			})
-		}
-
-		if forConsultant {
-			// Get existing consultant user IDs to filter them out
-			existingUserIDs, err := appdatastores.GetAllConsultantUserIDs(rc)
-			if err != nil {
-				logger.Error("failed check user IDs", "error", err, "is_admin", isAdminStr)
-				return e.JSON(http.StatusInternalServerError, map[string]string{
-					"status": "error",
-					"loc":    "USR_GAU_015",
-					"error":  "Failed to check existing consultants",
-				})
-			}
-
-			// Create a set for quick lookup
-			existingSet := make(map[string]bool)
-			for _, id := range existingUserIDs {
-				existingSet[id] = true
-			}
-
-			// Build response, filtering out users who are already consultants
-			logger.Info("Handle get admin users")
-			response := make([]ApiTypes.UserInfo, 0, len(users))
-			for _, user := range users {
-				userID := user.UserId
-				// Skip users who are already consultants
-				if existingSet[userID] {
-					continue
-				}
-
-				response = append(response, *user)
-			}
-
-			logger.Info("Retrieved users", "total", len(response), "is_admin", isAdminStr)
-			return e.JSON(http.StatusOK, map[string]interface{}{
-				"status": "ok",
-				"loc":    "USR_GAU_089",
-				"users":  response,
-			})
-		}
 	}
 
 	logger.Info("Retrieved users", "total", len(users), "is_admin", isAdminStr)
