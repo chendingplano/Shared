@@ -105,7 +105,7 @@ USE_EMBED_FRONTEND=""
 
 # API Base URL (for Vite config)
 VITE_API_BASE_URL=http://localhost:8080
-API_BASE_URL=http://localhost:8080
+APP_BASE_URL=http://localhost:8080
 
 # Auth configuration
 VITE_USE_AUTH_STORE="true"
@@ -286,7 +286,7 @@ USE_EMBED_FRONTEND="true"
 
 # API Base URL (same as app domain)
 VITE_API_BASE_URL=http://localhost:8080
-API_BASE_URL=http://localhost:8080
+APP_BASE_URL=http://localhost:8080
 
 # Auth configuration
 VITE_USE_AUTH_STORE="true"

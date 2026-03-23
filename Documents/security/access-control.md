@@ -198,7 +198,7 @@ await appAuthStore.logout();
 
 ```bash
 # Go Backend URL (for SvelteKit server-side calls)
-API_BASE_URL=http://localhost:8080
+APP_BASE_URL=http://localhost:8080
 
 # Kratos URL (for direct Kratos calls if needed)
 KRATOS_PUBLIC_URL=http://127.0.0.1:4433

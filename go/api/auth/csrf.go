@@ -7,7 +7,9 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -146,11 +148,17 @@ func IsSafeOrigin(c echo.Context) bool {
 
 	// If we have an Origin header, validate it
 	if origin != "" {
+		if isSameOriginAsRequest(origin, c) {
+			return true
+		}
 		return isOriginAllowed(origin, appDomain)
 	}
 
 	// No Origin header - check Referer as fallback
 	if referer != "" {
+		if isSameOriginAsRequest(referer, c) {
+			return true
+		}
 		return isOriginAllowed(referer, appDomain)
 	}
 
@@ -181,23 +189,55 @@ func IsSafeOrigin(c echo.Context) bool {
 
 // isOriginAllowed checks if the given origin matches the allowed domain
 func isOriginAllowed(origin string, appDomain string) bool {
-	// Strip protocol for comparison
-	origin = strings.TrimPrefix(origin, "http://")
-	origin = strings.TrimPrefix(origin, "https://")
-	appDomain = strings.TrimPrefix(appDomain, "http://")
-	appDomain = strings.TrimPrefix(appDomain, "https://")
+	originHost := extractHost(origin)
+	appDomainHost := extractHost(appDomain)
+	if originHost == "" || appDomainHost == "" {
+		return false
+	}
 
-	// Origin might include port and path
-	if strings.HasPrefix(origin, appDomain) {
+	if originHost == appDomainHost {
 		return true
 	}
 
 	// Allow localhost in development
 	if os.Getenv("ENV") != "production" {
-		if strings.HasPrefix(origin, "localhost") || strings.HasPrefix(origin, "127.0.0.1") {
+		if strings.HasPrefix(originHost, "localhost") || strings.HasPrefix(originHost, "127.0.0.1") {
 			return true
 		}
 	}
 
 	return false
+}
+
+func isSameOriginAsRequest(origin string, c echo.Context) bool {
+	originHost := extractHost(origin)
+	requestHost := extractHost(c.Request().Host)
+	if originHost == "" || requestHost == "" {
+		return false
+	}
+	return originHost == requestHost
+}
+
+func extractHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" {
+		return normalizeHostPort(parsed.Host)
+	}
+	return normalizeHostPort(raw)
+}
+
+func normalizeHostPort(rawHost string) string {
+	host := strings.TrimSpace(strings.ToLower(rawHost))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.Split(host, "/")[0]
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }

@@ -206,8 +206,6 @@ func (t *DatabaseTester) testSimpleQuery(
 
 // Cleanup closes the test database connection if it was created specifically for testing.
 func (t *DatabaseTester) Cleanup(ctx context.Context) error {
-	// Note: We don't close ApiTypes.PG_DB_Project here as it's shared
-	// The tester only uses the existing connection
 	t.testDB = nil
 	return nil
 }

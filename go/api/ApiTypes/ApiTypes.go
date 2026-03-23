@@ -39,8 +39,8 @@ var AutotesterDBHandle *sql.DB
 type AppInfo struct {
 	AppName          string `mapstructure:"app_name"`
 	Debug            bool   `mapstructure:"debug"`
-	Port             int    `mapstructure:"port"`
-	Host             string `mapstructure:"host"`
+	AppPort          int
+	AppHost          string
 	NeedCreateTables bool   `mapstructure:"need_create_tables"`
 	DatabaseType     string `mapstructure:"database_type"`
 }

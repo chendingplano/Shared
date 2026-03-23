@@ -547,35 +547,6 @@ func (e *echoContext) UpdateTokenByEmail(email string, token string) error {
 	}
 
 	return fmt.Errorf("[MID_26030301] table 'users' not supported")
-	/*
-		// Update the verification token in the users table
-		dbType := ApiTypes.DatabaseInfo.DBType
-		tableName := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
-		expiresAt := time.Now().Add(24 * time.Hour)
-
-		var db *sql.DB
-		var stmt string
-
-		switch dbType {
-		case ApiTypes.MysqlName:
-			db = ApiTypes.MySql_DB_Project
-			stmt = fmt.Sprintf("UPDATE %s SET v_token = ?, v_token_expires_at = ? WHERE email = ?", tableName)
-		case ApiTypes.PgName:
-			db = ApiTypes.PG_DB_Project
-			stmt = fmt.Sprintf("UPDATE %s SET v_token = $1, v_token_expires_at = $2 WHERE email = $3", tableName)
-		default:
-			return fmt.Errorf("unsupported database type (SHD_EFC_539): %s", dbType)
-		}
-
-		_, err := db.Exec(stmt, token, expiresAt, email)
-		if err != nil {
-			e.logger.Error("failed updating token", "error", err, "email", email)
-			return fmt.Errorf("failed to update token (SHD_EFC_545): %w", err)
-		}
-
-		e.logger.Info("Update token success", "email", email, "expires_at", expiresAt)
-		return nil
-	*/
 }
 
 func (e *echoContext) UpdateAppTokenByEmail(email string, token_name string, token string) error {

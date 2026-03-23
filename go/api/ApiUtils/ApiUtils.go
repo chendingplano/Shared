@@ -657,7 +657,7 @@ func LoadLibConfig(loc string) {
 	})
 }
 
-func GetSafeString(mapObj map[string]interface{}, key string) (string, bool) {
+func GetSafeString(mapObj map[string] any, key string) (string, bool) {
 	if mapObj == nil {
 		return "", false
 	}
@@ -679,7 +679,7 @@ func GetSafeString(mapObj map[string]interface{}, key string) (string, bool) {
 	}
 }
 
-func GetSafeSubObj(mapObj map[string]interface{}, key string) (map[string]interface{}, bool) {
+func GetSafeSubObj(mapObj map[string] any, key string) (map[string] any, bool) {
 	if mapObj == nil {
 		return nil, false
 	}
@@ -690,11 +690,11 @@ func GetSafeSubObj(mapObj map[string]interface{}, key string) (map[string]interf
 	}
 
 	switch v := val.(type) {
-	case map[string]interface{}:
+	case map[string] any:
 		return v, true
 
 	case map[string]string:
-		result := make(map[string]interface{})
+		result := make(map[string] any)
 		for k, c := range v {
 			result[k] = c
 		}
@@ -787,8 +787,17 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 	}
 
 	var err error
-	host := config.Host
-	port := config.Port
+	host := os.Getenv("PG_HOST")
+	if host == "" {
+		return fmt.Errorf("missing PG_HOST environment variable")
+	}
+
+	port_str := os.Getenv("PG_PORT")
+	port, err := strconv.Atoi(port_str)
+	if err != nil {
+		return fmt.Errorf("PG_PORT not configured or with invalid value, PG_PORT:%s", port_str)
+	}
+
 	config.UserName = os.Getenv("PG_USER_NAME")
 	config.Password = os.Getenv("PG_PASSWORD")
 	config.ProjectDBName = os.Getenv("PG_DB_NAME")
@@ -899,6 +908,8 @@ func CreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DatabaseConfig) e
 	return fmt.Errorf("(MID_26030901) Mysql not supported yet")
 }
 
+// All applications should call this function to
+// parse the common config into ApiTypes.CommonConfig!!!
 func LoadConfig(
 	ctx context.Context,
 	logger ApiTypes.JimoLogger,
@@ -928,6 +939,27 @@ func LoadConfig(
 	if err := viper.Unmarshal(&ApiTypes.CommonConfig); err != nil {
 		return fmt.Errorf("(MID_26031023) unable to decode common config (%s->TAX_CFG_064): %w", call_flow, err)
 	}
+
+	ApiTypes.CommonConfig.AppInfo.AppHost = os.Getenv("APP_HOST")
+	if ApiTypes.CommonConfig.AppInfo.AppHost == "" {
+		logger.Error("missing APP_HOST env variable")
+		err := fmt.Errorf("missing APP_HOST env variable")
+		panic(err)
+	}
+
+	port_str := os.Getenv("APP_PORT")
+	if port_str == "" {
+		logger.Error("missing APP_PORT env variable")
+		err := fmt.Errorf("missing APP_PORT env variable")
+		panic(err)
+	}
+
+	port_int, err := strconv.Atoi(port_str)
+	if err != nil {
+		logger.Error("invalid APP_PORT value", "APP_PORT", port_str)
+		panic(err)
+	}
+	ApiTypes.CommonConfig.AppInfo.AppPort = port_int
 
 	if err := CreatePGDB(logger, &ApiTypes.CommonConfig.PGConf); err != nil {
 		logger.Error("failed config PG DB", "error", err)

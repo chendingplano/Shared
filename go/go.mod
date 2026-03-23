@@ -13,6 +13,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/lmittmann/tint v1.1.2
 	github.com/ory/client-go v1.22.23
+	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/sftp v1.13.10
 	github.com/shopspring/decimal v1.4.0
@@ -22,20 +23,6 @@ require (
 	golang.org/x/image v0.34.0
 	golang.org/x/oauth2 v0.34.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-)
-
-require (
-	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/docker/go-metrics v0.0.1 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
-	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/oschwald/maxminddb-golang v1.13.1 // indirect
-	github.com/prometheus/client_golang v1.1.0 // indirect
-	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90 // indirect
-	github.com/prometheus/common v0.6.0 // indirect
-	github.com/prometheus/procfs v0.15.1 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 )
 
 require (

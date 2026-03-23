@@ -289,57 +289,6 @@ func GetUserInfoByToken(
 	token string) (*ApiTypes.UserInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
 	return nil, fmt.Errorf("(MID_26030301) 'users' table not supported")
-	/*
-		var query string
-		var db *sql.DB
-		db_type := ApiTypes.DatabaseInfo.DBType
-		table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
-		logger := rc.GetLogger()
-		switch db_type {
-		case ApiTypes.MysqlName:
-			query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = ? LIMIT 1", Users_selected_field_names, table_name)
-			db = ApiTypes.MySql_DB_Project
-
-		case ApiTypes.PgName:
-			query = fmt.Sprintf("SELECT %s FROM %s WHERE v_token = $1 LIMIT 1", Users_selected_field_names, table_name)
-			db = ApiTypes.PG_DB_Project
-
-		default:
-			err := fmt.Errorf("unsupported database type (SHD_USR_326): %s", db_type)
-			logger.Error("db_type not supported", "db_type", db_type)
-			return nil, err
-		}
-
-		row := db.QueryRow(query, token)
-
-		user_info := new(ApiTypes.UserInfo)
-		err := scanUserRecord(row, user_info)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				logger.Warn("no user found", "token", token)
-			} else {
-				logger.Error("failed scanning user record",
-					"error", err,
-					"token", token)
-			}
-			return nil, err
-		}
-
-		// SECURITY: Check if token has expired (24-hour validity)
-		if !user_info.VTokenExpiresAt.IsZero() && time.Now().After(user_info.VTokenExpiresAt) {
-			logger.Warn("password reset token expired",
-				"email", user_info.Email,
-				"expired_at", user_info.VTokenExpiresAt)
-			return nil, ErrTokenExpired
-		}
-
-		logger.Info("User info retrieved",
-			"status", user_info.UserStatus,
-			"token", token,
-			"email", user_info.Email,
-			"is_admin", user_info.Admin)
-		return user_info, nil
-	*/
 }
 
 func UpsertUser(

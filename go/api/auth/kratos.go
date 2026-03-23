@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,26 +44,7 @@ var kratosClient *KratosClient
 // InitKratosClient initializes the global Kratos client.
 // Call this during application startup.
 func InitKratosClient() {
-	kratosPublicURL := os.Getenv("KRATOS_PUBLIC_URL")
-	errMsg := ""
-	if kratosPublicURL == "" {
-		errMsg = "missing KRATOS_PUBLIC_URL env variable. Default to http://localhost:4433"
-		kratosPublicURL = "http://localhost:4433"
-	}
-
-	config := ory.NewConfiguration()
 	logger := loggerutil.CreateDefaultLogger("SHD_0207142900")
-	if errMsg != "" {
-		logger.Error(errMsg)
-	}
-
-	config.Servers = ory.ServerConfigurations{{URL: kratosPublicURL}}
-	kratosClient = &KratosClient{
-		client:    ory.NewAPIClient(config),
-		publicURL: kratosPublicURL,
-		logger:    logger,
-	}
-
 	EchoFactory.GetUserInfoByUserIDFunc = KratosGetIdentityByID
 	EchoFactory.GetUserInfoByEmailFunc = KratosGetIdentityByEmail
 	EchoFactory.KratosMarkUserVerifiedFunc = KratosMarkUserVerified
@@ -70,6 +52,21 @@ func InitKratosClient() {
 	EchoFactory.KratosUpdateIdentityFunc = KratosUpdateIdentityWrapper
 	EchoFactory.UpdateAppTokenByEmailFunc = UpdateAppTokenByEmail
 	EchoFactory.GetUserInfoByAppTokenFunc = KratosGetUserInfoByAppToken
+
+	kratosPublicURL := strings.TrimSpace(os.Getenv("KRATOS_PUBLIC_URL"))
+	if kratosPublicURL == "" {
+		logger.Error("missing KRATOS_PUBLIC_URL env variable; cannot initialize Kratos client")
+		kratosClient = nil
+		return
+	}
+
+	config := ory.NewConfiguration()
+	config.Servers = ory.ServerConfigurations{{URL: kratosPublicURL}}
+	kratosClient = &KratosClient{
+		client:    ory.NewAPIClient(config),
+		publicURL: kratosPublicURL,
+		logger:    logger,
+	}
 }
 
 // GetKratosClient returns the global Kratos client.
@@ -711,6 +708,7 @@ func HandleLogoutKratos(c echo.Context) error {
 
 // clearSessionCookies clears all session-related cookies
 func clearSessionCookies(c echo.Context) {
+	secure := shouldUseSecureCookies(c)
 	cookiesToClear := []string{"session_id", "session_token", "ory_kratos_session"}
 	for _, name := range cookiesToClear {
 		cookie := &http.Cookie{
@@ -719,7 +717,7 @@ func clearSessionCookies(c echo.Context) {
 			Path:     "/",
 			MaxAge:   -1,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   secure,
 		}
 		c.SetCookie(cookie)
 	}
@@ -786,15 +784,43 @@ func extractIdentityInfo(identity *ory.Identity) identityInfo {
 
 // setSessionTokenCookie sets the session_token cookie for native API flow sessions.
 func setSessionTokenCookie(c echo.Context, sessionToken string) {
+	secure := shouldUseSecureCookies(c)
 	c.SetCookie(&http.Cookie{
 		Name:     "session_token",
 		Value:    sessionToken,
 		Path:     "/",
 		Expires:  time.Now().Add(cookie_timeout_hours * time.Hour),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// shouldUseSecureCookies returns whether auth cookies should be marked Secure.
+// Browsers only accept Secure cookies over HTTPS, with localhost as a special case.
+func shouldUseSecureCookies(c echo.Context) bool {
+	if c == nil || c.Request() == nil {
+		return os.Getenv("ENV") == "production"
+	}
+
+	// Explicit HTTPS from Echo/request context.
+	if c.Scheme() == "https" || c.IsTLS() || c.Request().TLS != nil {
+		return true
+	}
+
+	// Respect reverse-proxy headers (e.g., Caddy/Nginx).
+	forwardedProto := strings.TrimSpace(strings.ToLower(c.Request().Header.Get("X-Forwarded-Proto")))
+	if strings.Contains(forwardedProto, "https") {
+		return true
+	}
+
+	// Localhost is treated as secure context by modern browsers in development.
+	host := c.Request().Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSpace(strings.ToLower(host))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // parseKratosUIError extracts a human-readable error message from a Kratos
@@ -1453,17 +1479,17 @@ func HandleGoogleLoginKratos(c echo.Context) error {
 
 	logger.Info("HandleGoogleLoginKratos called")
 
-	kratosURL := os.Getenv("KRATOS_PUBLIC_URL")
+	kratosURL := strings.TrimSpace(os.Getenv("KRATOS_PUBLIC_URL"))
 	if kratosURL == "" {
-		logger.Error("KRATOS_PUBLIC_URL not set, defaulting to http://localhost:4433")
-		kratosURL = "http://localhost:4433"
+		logger.Error("KRATOS_PUBLIC_URL not set")
+		return c.String(http.StatusInternalServerError, "Authentication service misconfigured")
 	}
 
 	// Get the frontend base URL for OAuth callback
-	frontendURL := os.Getenv("APP_BASE_URL")
+	frontendURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 	if frontendURL == "" {
-		logger.Error("APP_BASE_URL not set, defaulting to http://localhost:8080")
-		frontendURL = "http://localhost:8080"
+		logger.Error("APP_BASE_URL not set")
+		return c.String(http.StatusInternalServerError, "Application base URL is misconfigured")
 	}
 
 	// Get the user's intended destination after login (optional)
@@ -2195,13 +2221,14 @@ func HandleRecoverySubmitKratos(c echo.Context) error {
 					// Store recovery flow_id and email in short-lived cookies.
 					// These allow the set-password page to identify the user.
 					expiry := time.Now().Add(15 * time.Minute)
+					isSecure := os.Getenv("ENV") == "production"
 					c.SetCookie(&http.Cookie{
 						Name:     "recovery_flow",
 						Value:    reqBody.FlowID,
 						Path:     "/",
 						Expires:  expiry,
 						HttpOnly: true,
-						Secure:   true,
+						Secure:   isSecure,
 						SameSite: http.SameSiteLaxMode,
 					})
 					c.SetCookie(&http.Cookie{
@@ -2210,7 +2237,7 @@ func HandleRecoverySubmitKratos(c echo.Context) error {
 						Path:     "/",
 						Expires:  expiry,
 						HttpOnly: true,
-						Secure:   true,
+						Secure:   isSecure,
 						SameSite: http.SameSiteLaxMode,
 					})
 
@@ -2554,6 +2581,7 @@ func HandleSettingsSubmitKratos(c echo.Context) error {
 	logger.Info("Password updated successfully via Admin API", "identity_id", userInfo.UserId)
 
 	// Clear recovery cookies
+	secure := shouldUseSecureCookies(c)
 	for _, name := range []string{"recovery_flow", "recovery_email"} {
 		c.SetCookie(&http.Cookie{
 			Name:     name,
@@ -2562,7 +2590,7 @@ func HandleSettingsSubmitKratos(c echo.Context) error {
 			Expires:  time.Unix(0, 0),
 			MaxAge:   -1,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,
 		})
 	}
@@ -2586,11 +2614,7 @@ type KratosIdentityUpdate struct {
 
 // getKratosAdminURL returns the Kratos Admin API base URL from environment.
 func getKratosAdminURL() string {
-	adminURL := os.Getenv("KRATOS_ADMIN_URL")
-	if adminURL == "" {
-		adminURL = "http://localhost:4434"
-	}
-	return adminURL
+	return strings.TrimSpace(os.Getenv("KRATOS_ADMIN_URL"))
 }
 
 // KratosIdentityToUserInfo converts a raw Kratos identity JSON map to ApiTypes.UserInfo.
