@@ -89,13 +89,13 @@ The SUT exposes:
  └─────────────────┘ └──────┬───────┘ └─────────────────┘
                             │
                             ▼
-              ┌─────────────────────────────┐
-              │  PostgreSQL                 │
-              │  (PG_DB_AutoTester)         │
-              │  auto_test_runs             │
-              │  auto_test_results          │
-              │  auto_test_logs             │
-              └─────────────────────────────┘
+              ┌──────────────────────────---───┐
+              │  PostgreSQL                    │
+              │  (ApiTypes.AutotesterDBHandle) │
+              │  auto_test_runs                │
+              │  auto_test_results             │
+              │  auto_test_logs                │
+              └─────────---────────────────────┘
 ```
 
 ### 3.2 Tester Interface Implementation
@@ -155,7 +155,7 @@ The Migration Tester logs results to the AutoTester database tables:
 
 Tables are created at startup via:
 ```go
-autotesters.CreateAutoTestTables(logger, ApiTypes.PG_DB_AutoTester, dbType)
+autotesters.CreateAutoTestTables(logger, ApiTypes.AutoTester, dbType)
 ```
 
 ### 3.5 Registration
@@ -254,9 +254,9 @@ func NewMigrationTester() *MigrationTester {
 ```go
 func (t *MigrationTester) Prepare(ctx context.Context) error {
     // 1. Get database connections from ApiTypes globals
-    t.projectDB = ApiTypes.PG_DB_Project
-    t.sharedDB = ApiTypes.PG_DB_Shared
-    t.autotesterDB = ApiTypes.PG_DB_AutoTester
+    t.projectDB = ApiTypes.ProjectDBHandle
+    t.sharedDB = ApiTypes.MigrationDBHandle
+    t.autotesterDB = ApiTypes.AutotesterDBHandle
     
     // 2. Verify connections
     if err := t.projectDB.PingContext(ctx); err != nil {

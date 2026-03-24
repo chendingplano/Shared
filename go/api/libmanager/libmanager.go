@@ -36,9 +36,12 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 		ApiUtils.GetDefaultHomeURL(),
 		ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
 
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	// Use SharedDBHandle: all stores initialized here (shared stores, activity log,
+	// session log) are shared library tables that must live in the shared DB.
+	// For legacy projects (tax) SharedDBHandle == ProjectDBHandle, so no behaviour change.
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	if db == nil {
-		logger.Error("db is not set")
+		logger.Error("shared db is not set")
 		os.Exit(1)
 	}
 

@@ -213,7 +213,7 @@ func runAutoTestMigrations(
 	logger ApiTypes.JimoLogger,
 	migrateCfg ApiTypes.MigrationConfig) error {
 	var projectDB *sql.DB = ApiTypes.ProjectDBHandle
-	var migrateDB *sql.DB = ApiTypes.MigrationDBHandle
+	var migrateDB *sql.DB = ApiTypes.SharedMigrationDBHandle
 	var autotesterDB *sql.DB = ApiTypes.AutotesterDBHandle
 	dbType := ApiTypes.DBType
 

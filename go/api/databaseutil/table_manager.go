@@ -66,10 +66,10 @@ func InitTableManager() error {
 
 func getCurrentDB() (*sql.DB, string, error) {
 	dbType := ApiTypes.DBType
-	if ApiTypes.ProjectDBHandle == nil {
-		return nil, dbType, fmt.Errorf("(MID_26030908) db handle is nil")
+	if ApiTypes.SharedDBHandle == nil {
+		return nil, dbType, fmt.Errorf("(MID_26030908) shared db handle is nil")
 	}
-	return ApiTypes.ProjectDBHandle, dbType, nil
+	return ApiTypes.SharedDBHandle, dbType, nil
 }
 
 // loadAll reads all non-deleted rows from table_manager and caches them.

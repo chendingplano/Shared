@@ -56,3 +56,18 @@ To publish your library to [npm](https://www.npmjs.com):
 ```sh
 npm publish
 ```
+
+## Quick Command Reference
+
+| Command | Explanations |
+|---|---|
+| `mise tasks` | List all available `mise` tasks in `shared/`. |
+| `mise run autotest` | Run the AutoTester CLI package suite (`go/cmd/autotester`). |
+| `TESTNAME=goose_pg mise run go-test` | Run all Go tests under `./go/...` with PostgreSQL DSN built from env vars in `mise.local.toml`, always passing `-testname`. |
+| `TESTNAME=goose_pg TEST_DIR=./go/api/goose RECURSIVE=true mise run go-test` | Run tests for a specific directory and all its subdirectories with a required test name. |
+| `TESTNAME=goose_pg TEST_DIR=./go/api/goose RECURSIVE=false mise run go-test` | Run tests only in one specific directory (no subdirectories) with a required test name. |
+| `TESTNAME=goose_pg TEST_DIR=./go/api/goose RECURSIVE=false RUN_FILTER='^TestGoosePG' mise run go-test` | Run matching tests in a specific directory using `go test -run`, with a required test name. |
+| `go test ./go/... -v -count=1 -args -testname goose_pg` | Run all Go tests in `shared/go` directly (without `mise`) while passing an explicit test name. |
+| `go test ./go/api/goose -run '^TestGoosePG' -v -count=1 -args -testname goose_pg` | Run goose tests directly with verbose output, no cache, and explicit test name. |
+--------
+--------

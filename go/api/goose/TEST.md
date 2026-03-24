@@ -119,6 +119,17 @@ Fields:
 On every run where `PGTEST_DSN` / `-pg-dsn` is set, results are persisted to
 `autotester.test_log`. The schema is created automatically if it does not exist.
 
+Important runtime behavior:
+- If `PGTEST_DSN` is empty and `-pg-dsn` is not provided, the PostgreSQL setup branch is skipped entirely. In that case, no database/table creation and no DB logging will occur.
+- `go test` output is compact by default. Setup/debug logs (including `TestMain` logs) may not be shown unless you run with `-v` or the test fails.
+
+Quick verification command:
+
+```bash
+go test ./api/goose/ -run TestGoosePG -v -count=1 \
+  -pg-dsn "postgres://postgres:secret@localhost/testonly_goose?sslmode=disable"
+```
+
 ### Table definition
 
 ```sql
@@ -142,6 +153,12 @@ CREATE TABLE IF NOT EXISTS autotester.test_log (
 ### Querying results
 
 ```sql
+-- Confirm table exists
+SELECT schemaname, tablename
+FROM   pg_tables
+WHERE  schemaname = 'autotester'
+  AND  tablename  = 'test_log';
+
 -- Latest run for a given test name
 SELECT tcid, purpose, result, time_ms
 FROM   autotester.test_log

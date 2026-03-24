@@ -23,7 +23,7 @@ func CreateTableManagerTable(logger ApiTypes.JimoLogger) error {
 		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
 		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
 
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = "CREATE TABLE IF NOT EXISTS " + table_name + "(" + common_fields +

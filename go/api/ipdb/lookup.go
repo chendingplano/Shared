@@ -82,7 +82,7 @@ func LookupIP(logger ApiTypes.JimoLogger, ip string) (*IPRecord, error) {
 		return nil, err
 	}
 
-	db := ApiTypes.ProjectDBHandle
+	db := ApiTypes.SharedDBHandle
 	if db != nil {
 		cached, err := getCachedRecord(db, ip, svc.cacheTTLDays)
 		if err != nil {

@@ -36,9 +36,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -47,8 +50,8 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/lib/pq"
 	gooselib "github.com/pressly/goose/v3"
-	_ "github.com/lib/pq"
 )
 
 // ---------------------------------------------------------------------------
@@ -75,7 +78,7 @@ type tcRecord struct {
 }
 
 var (
-	tcIDGen   int64       // atomic; increments once per runTC call
+	tcIDGen   int64 // atomic; increments once per runTC call
 	tcRecMu   sync.Mutex
 	tcRecords []tcRecord
 
@@ -101,21 +104,16 @@ func TestMain(m *testing.M) {
 	}
 	if dsn != "" {
 		var err error
-		pgTestDB, err = sql.Open("postgres", dsn)
-		if err == nil {
+		pgTestDB, err = ensurePGDatabaseReady(dsn)
+		if err != nil {
+			log.Printf("***** failed creating the table")
+			fmt.Fprintf(os.Stderr,
+				"[goose_pg_test] WARNING: PostgreSQL unavailable (%v); integration tests will be skipped\n", err)
+		} else {
+			log.Printf("+++++ test table created")
 			pgTestDB.SetMaxOpenConns(5)
 			pgTestDB.SetConnMaxLifetime(30 * time.Minute)
-			if err = pgTestDB.Ping(); err != nil {
-				pgTestDB.Close()
-				pgTestDB = nil
-				fmt.Fprintf(os.Stderr,
-					"[goose_pg_test] WARNING: PostgreSQL unavailable (%v); integration tests will be skipped\n", err)
-			} else {
-				ensureTestLogTable(pgTestDB)
-			}
-		} else {
-			fmt.Fprintf(os.Stderr,
-				"[goose_pg_test] WARNING: sql.Open failed (%v); integration tests will be skipped\n", err)
+			ensureTestLogTable(pgTestDB)
 		}
 	}
 
@@ -217,6 +215,97 @@ CREATE TABLE IF NOT EXISTS autotester.test_log (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (testname, tcid, run_id)
 );`
+
+func ensurePGDatabaseReady(targetDSN string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", targetDSN)
+	if err != nil {
+		return nil, fmt.Errorf("sql.Open target DB: %w", err)
+	}
+	if err = db.Ping(); err == nil {
+		return db, nil
+	}
+	db.Close()
+
+	if !isMissingDatabaseError(err) {
+		return nil, fmt.Errorf("ping target DB: %w", err)
+	}
+
+	dbName, adminDSN, parseErr := parseTargetAndAdminDSN(targetDSN)
+	if parseErr != nil {
+		return nil, fmt.Errorf("target DB missing and DSN parse failed: %w", parseErr)
+	}
+	if createErr := createDatabaseIfNotExists(adminDSN, dbName); createErr != nil {
+		return nil, fmt.Errorf("create database %q failed: %w", dbName, createErr)
+	}
+
+	db, err = sql.Open("postgres", targetDSN)
+	if err != nil {
+		return nil, fmt.Errorf("re-open target DB: %w", err)
+	}
+	if err = db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping target DB after create: %w", err)
+	}
+	return db, nil
+}
+
+func isMissingDatabaseError(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return string(pqErr.Code) == "3D000" // invalid_catalog_name (database does not exist)
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "does not exist")
+}
+
+func createDatabaseIfNotExists(adminDSN, dbName string) error {
+	adminDB, err := sql.Open("postgres", adminDSN)
+	if err != nil {
+		return fmt.Errorf("open admin DB: %w", err)
+	}
+	defer adminDB.Close()
+
+	if err := adminDB.Ping(); err != nil {
+		return fmt.Errorf("ping admin DB: %w", err)
+	}
+
+	_, err = adminDB.Exec("CREATE DATABASE " + pq.QuoteIdentifier(dbName))
+	if err == nil {
+		return nil
+	}
+
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && string(pqErr.Code) == "42P04" {
+		return nil // duplicate_database
+	}
+	return err
+}
+
+func parseTargetAndAdminDSN(dsn string) (dbName string, adminDSN string, err error) {
+	if strings.Contains(dsn, "://") {
+		u, parseErr := url.Parse(dsn)
+		if parseErr != nil {
+			return "", "", parseErr
+		}
+		dbName = strings.TrimPrefix(u.Path, "/")
+		if dbName == "" {
+			return "", "", fmt.Errorf("missing DB name in URL DSN")
+		}
+		u.Path = "/postgres"
+		return dbName, u.String(), nil
+	}
+
+	// key=value DSN (e.g. "host=... user=... dbname=... sslmode=disable")
+	re := regexp.MustCompile(`(?:^|\s)dbname=([^ ]+)`)
+	m := re.FindStringSubmatch(dsn)
+	if len(m) != 2 {
+		return "", "", fmt.Errorf("missing dbname in DSN")
+	}
+	dbName = strings.Trim(m[1], `"'`)
+	adminDSN = re.ReplaceAllString(dsn, " dbname=postgres")
+	adminDSN = strings.TrimSpace(adminDSN)
+	return dbName, adminDSN, nil
+}
 
 func ensureTestLogTable(db *sql.DB) {
 	if _, err := db.Exec(createTestLogSQL); err != nil {
@@ -380,7 +469,7 @@ func mdEscape(s string) string {
 // Distinct from the one in goose_codex_test.go to avoid redeclaration.
 type pgFailFS struct{ err error }
 
-func (f pgFailFS) Open(string) (fs.File, error)        { return nil, errors.New("not implemented") }
+func (f pgFailFS) Open(string) (fs.File, error)          { return nil, errors.New("not implemented") }
 func (f pgFailFS) ReadDir(string) ([]fs.DirEntry, error) { return nil, f.err }
 
 // ---------------------------------------------------------------------------
@@ -1579,6 +1668,6 @@ func uniqueTableName(prefix string) string {
 // cleanupPGTable drops a table (or migration-version tracking table) if it
 // exists, silently ignoring errors (best-effort cleanup).
 func cleanupPGTable(db *sql.DB, name string) {
-	db.Exec("DROP TABLE IF EXISTS " + name)           //nolint:errcheck
-	db.Exec("DROP TABLE IF EXISTS public." + name)    //nolint:errcheck
+	db.Exec("DROP TABLE IF EXISTS " + name)        //nolint:errcheck
+	db.Exec("DROP TABLE IF EXISTS public." + name) //nolint:errcheck
 }

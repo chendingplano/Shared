@@ -203,8 +203,8 @@ func CloseDatabase(config ApiTypes.CommonConfigDef) {
 		config.MySQLConf.ProjectDBHandle.Close()
 	}
 
-	if config.MySQLConf.MigrationDBHandle != nil {
-		config.MySQLConf.MigrationDBHandle.Close()
+	if config.MySQLConf.SharedDBHandle != nil && config.MySQLConf.SharedDBHandle != config.MySQLConf.ProjectDBHandle {
+		config.MySQLConf.SharedDBHandle.Close()
 	}
 
 	if config.MySQLConf.AutotesterDBHandle != nil {
@@ -215,8 +215,8 @@ func CloseDatabase(config ApiTypes.CommonConfigDef) {
 		config.PGConf.ProjectDBHandle.Close()
 	}
 
-	if config.PGConf.MigrationDBHandle != nil {
-		config.PGConf.MigrationDBHandle.Close()
+	if config.PGConf.SharedDBHandle != nil && config.PGConf.SharedDBHandle != config.PGConf.ProjectDBHandle {
+		config.PGConf.SharedDBHandle.Close()
 	}
 
 	if config.PGConf.AutotesterDBHandle != nil {
