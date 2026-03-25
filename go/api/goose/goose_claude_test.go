@@ -63,6 +63,16 @@ var (
 	flagPgDSN    = flag.String("pg-dsn", "", "PostgreSQL DSN for integration tests (overrides $PGTEST_DSN)")
 )
 
+type testLogger struct{}
+
+func (testLogger) Debug(message string, args ...any) {}
+func (testLogger) Line(message string, args ...any)  {}
+func (testLogger) Info(message string, args ...any)  {}
+func (testLogger) Warn(message string, args ...any)  {}
+func (testLogger) Error(message string, args ...any) {}
+func (testLogger) Trace(message string)              {}
+func (testLogger) Close()                            {}
+
 // ---------------------------------------------------------------------------
 // Test-framework types
 // ---------------------------------------------------------------------------
@@ -471,12 +481,6 @@ type pgFailFS struct{ err error }
 
 func (f pgFailFS) Open(string) (fs.File, error)          { return nil, errors.New("not implemented") }
 func (f pgFailFS) ReadDir(string) ([]fs.DirEntry, error) { return nil, f.err }
-
-// ---------------------------------------------------------------------------
-// Shared testLogger (re-declared to avoid duplicate; identical implementation)
-// ---------------------------------------------------------------------------
-// NOTE: testLogger is already declared in goose_codex_test.go (same package),
-// so we reuse it directly.  No duplicate declaration needed here.
 
 // ---------------------------------------------------------------------------
 // ══════════════════════════════════════════════════════════════════════════

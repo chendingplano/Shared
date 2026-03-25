@@ -142,6 +142,15 @@ func RunProjectMigrations(ctx context.Context,
 		return fmt.Errorf("database connection is not initialized (MID_060221143035)")
 	}
 
+	// Default project migration table, but preserve configured migration dirs when provided.
+	cfg.TableName = "project.project_db_migration"
+	if strings.TrimSpace(cfg.MigrationsFS) == "" {
+		cfg.MigrationsFS = "project_migrations"
+	}
+	if strings.TrimSpace(cfg.MigrationsDir) == "" {
+		cfg.MigrationsDir = "project_migrations"
+	}
+
 	var err error
 	ProjectMigrator, err = RunMigrations(ctx, logger, "project migrator", cfg, db)
 	if err != nil {
@@ -160,6 +169,15 @@ func RunSharedMigrations(ctx context.Context,
 
 	if db == nil {
 		return fmt.Errorf("database connection is not initialized (MID_060221143002)")
+	}
+
+	// Default shared migration table, but preserve configured migration dirs when provided.
+	cfg.TableName = "shared.shared_db_migration"
+	if strings.TrimSpace(cfg.MigrationsFS) == "" {
+		cfg.MigrationsFS = "shared_migrations"
+	}
+	if strings.TrimSpace(cfg.MigrationsDir) == "" {
+		cfg.MigrationsDir = "shared_migrations"
 	}
 
 	var err error

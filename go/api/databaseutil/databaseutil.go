@@ -219,6 +219,10 @@ func CloseDatabase(config ApiTypes.CommonConfigDef) {
 		config.PGConf.SharedDBHandle.Close()
 	}
 
+	if config.PGConf.SharedMigrationDBHandle != nil && config.PGConf.SharedMigrationDBHandle != config.PGConf.ProjectDBHandle {
+		config.PGConf.SharedMigrationDBHandle.Close()
+	}
+
 	if config.PGConf.AutotesterDBHandle != nil {
 		config.PGConf.AutotesterDBHandle.Close()
 	}

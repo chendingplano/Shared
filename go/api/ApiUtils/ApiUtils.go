@@ -802,28 +802,19 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 	config.Password = os.Getenv("PG_PASSWORD")
 	config.AutotesterDBName = os.Getenv("PG_DB_NAME_AUTOTESTER")
 
-	// There are three DB naming modes:
-	// New mode (ChenWeb and future projects): PG_DB_NAME_PROJECT + PG_DB_NAME_SHARED
-	//   - PG_DB_NAME_PROJECT: project-owned tables
-	//   - PG_DB_NAME_SHARED: shared library tables (shared across all projects)
-	// Legacy mode (tax): PG_DB_NAME only — both project and shared tables live in the same DB
-
-	config.ProjectDBName = os.Getenv("PG_DB_NAME_PROJECT")
-	config.SharedDBName = os.Getenv("PG_DB_NAME_SHARED")
-	if config.ProjectDBName == "" || config.SharedDBName == "" {
-		// Fall back to legacy PG_DB_NAME for backwards compatibility (tax project)
-		legacyDBName := os.Getenv("PG_DB_NAME")
-		if legacyDBName == "" {
-			return fmt.Errorf("(MID_26031035) missing env variables: set PG_DB_NAME_PROJECT+PG_DB_NAME_SHARED, or PG_DB_NAME for legacy mode")
-		}
-		config.ProjectDBName = legacyDBName
-		config.SharedDBName = legacyDBName
+	// PG_DB_NAME defines the project DB. Shared tables live in the same DB.
+	// PG_DB_NAME_AUTOTESTER defines the autotester DB.
+	config.ProjectDBName = os.Getenv("PG_DB_NAME")
+	if config.ProjectDBName == "" {
+		return fmt.Errorf("(MID_26031035) missing env variable: PG_DB_NAME")
 	}
+	config.SharedDBName = config.ProjectDBName
 
-	// Step 1: Create Project DB
-	logger.Info("createPGDB", "project_dbname", config.ProjectDBName, "shared_dbname", config.SharedDBName)
+	// Step 1: Create project DB connection.
+	// search_path=project,shared,public: project tables resolve first, shared tables are also accessible.
+	logger.Info("createPGDB", "dbname", config.ProjectDBName)
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=project,shared,public'",
 		host, port, config.UserName, config.Password, config.ProjectDBName)
 
 	// SECURITY: Don't log credentials
@@ -847,37 +838,31 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	logger.Info("PostgreSQL created", "dbname", config.ProjectDBName, "user", config.UserName)
 
-	// Step 2: Create Shared DB connection.
-	// If SharedDBName == ProjectDBName (legacy mode), reuse the same connection.
-	// Otherwise open a separate connection to the shared DB.
-	if config.SharedDBName == config.ProjectDBName {
-		config.SharedDBHandle = config.ProjectDBHandle
-	} else {
-		sharedConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-			host, port, config.UserName, config.Password, config.SharedDBName)
-
-		logger.Info("Connect to shared PG",
-			"host", host,
-			"port", port,
-			"username", config.UserName,
-			"dbname", config.SharedDBName)
-
-		config.SharedDBHandle, err = sql.Open("postgres", sharedConnStr)
-		if err != nil {
-			return fmt.Errorf("(MID_26031037) failed to open shared PostgreSQL DB: %w", err)
-		}
-
-		if err = config.SharedDBHandle.Ping(); err != nil {
-			return fmt.Errorf("(MID_26031038) failed connecting PostgreSQL for shared DB (SHD_DBS_056), error: %w", err)
-		}
-
-		logger.Info("PostgreSQL shared DB created", "dbname", config.SharedDBName, "user", config.UserName)
+	// Ensure schemas exist (idempotent).
+	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS project"); err != nil {
+		return fmt.Errorf("(MID_26031045) failed to create 'project' schema: %w", err)
+	}
+	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS shared"); err != nil {
+		return fmt.Errorf("(MID_26031046) failed to create 'shared' schema: %w", err)
 	}
 
-	// Step 3: Set migration handles.
-	// Project migrations run against the project DB; shared migrations run against the shared DB.
+	// Step 2: SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
+	config.SharedDBHandle = config.ProjectDBHandle
 	config.ProjectMigrationDBHandle = config.ProjectDBHandle
-	config.SharedMigrationDBHandle = config.SharedDBHandle
+
+	// SharedMigrationDBHandle uses a separate connection scoped to the 'shared' schema,
+	// so that goose migrations for shared/ tables create objects in the right schema.
+	sharedMigConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=shared,public'",
+		host, port, config.UserName, config.Password, config.ProjectDBName)
+
+	config.SharedMigrationDBHandle, err = sql.Open("postgres", sharedMigConnStr)
+	if err != nil {
+		return fmt.Errorf("(MID_26031043) failed to open shared-migration PostgreSQL connection: %w", err)
+	}
+	if err = config.SharedMigrationDBHandle.Ping(); err != nil {
+		return fmt.Errorf("(MID_26031044) failed pinging PostgreSQL for shared-migration DB: %w", err)
+	}
+	logger.Info("PostgreSQL shared-migration connection created", "dbname", config.ProjectDBName, "search_path", "shared")
 
 	// Step 3: Create Autotester DB
 	if config.AutotesterDBName == "" {
@@ -1002,17 +987,10 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 		if ApiTypes.ProjectDBHandle == nil {
 			return fmt.Errorf("(MID_26030904) project db is nil")
 		}
-
-		ApiTypes.SharedDBHandle = config.PGConf.SharedDBHandle
-		if ApiTypes.SharedDBHandle == nil {
-			return fmt.Errorf("(MID_26030918) shared db is nil")
-		}
-
-		ApiTypes.ProjectMigrationDBHandle = config.PGConf.ProjectMigrationDBHandle
-		if ApiTypes.ProjectMigrationDBHandle == nil {
-			return fmt.Errorf("(MID_26030914) project migration db is nil")
-		}
-
+		// SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
+		ApiTypes.SharedDBHandle = config.PGConf.ProjectDBHandle
+		ApiTypes.ProjectMigrationDBHandle = config.PGConf.ProjectDBHandle
+		// SharedMigrationDBHandle has its own connection scoped to the 'shared' schema.
 		ApiTypes.SharedMigrationDBHandle = config.PGConf.SharedMigrationDBHandle
 		if ApiTypes.SharedMigrationDBHandle == nil {
 			return fmt.Errorf("(MID_26030915) shared migration db is nil")
@@ -1028,21 +1006,10 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 		if ApiTypes.ProjectDBHandle == nil {
 			return fmt.Errorf("(MID_26030906) project db is nil")
 		}
-
-		ApiTypes.SharedDBHandle = config.MySQLConf.SharedDBHandle
-		if ApiTypes.SharedDBHandle == nil {
-			return fmt.Errorf("(MID_26030919) shared db is nil")
-		}
-
-		ApiTypes.ProjectMigrationDBHandle = config.MySQLConf.ProjectMigrationDBHandle
-		if ApiTypes.ProjectMigrationDBHandle == nil {
-			return fmt.Errorf("(MID_26030916) project migration db is nil")
-		}
-
-		ApiTypes.SharedMigrationDBHandle = config.MySQLConf.SharedMigrationDBHandle
-		if ApiTypes.SharedMigrationDBHandle == nil {
-			return fmt.Errorf("(MID_26030917) shared migration db is nil")
-		}
+		// Backward-compat aliases all point to ProjectDBHandle
+		ApiTypes.SharedDBHandle = config.MySQLConf.ProjectDBHandle
+		ApiTypes.ProjectMigrationDBHandle = config.MySQLConf.ProjectDBHandle
+		ApiTypes.SharedMigrationDBHandle = config.MySQLConf.ProjectDBHandle
 
 		ApiTypes.AutotesterDBHandle = config.MySQLConf.AutotesterDBHandle
 		if ApiTypes.AutotesterDBHandle == nil {
