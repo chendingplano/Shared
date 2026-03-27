@@ -257,13 +257,12 @@ function createAuthStore(): AuthStore {
         return currentState.baseURL;
     };
 
-    // Check if user is already logged in via Kratos session cookie
+    // Check if user is already logged in via Kratos session cookie.
+    // NOTE: This must always hit /auth/me — do NOT add an early return
+    // when isLoggedIn is true. The SSE client calls this after detecting
+    // a server-side session expiry; skipping the fetch would leave the
+    // store stuck in isLoggedIn=true and the user stranded on a dead page.
     const checkAuthStatus = async () => {
-        // If already logged in with user info, skip the check
-        if (currentState.isLoggedIn && currentState.user) {
-            return;
-        }
-
         // Abort if auth check takes longer than 5 seconds (prevents infinite loading
         // when the browser's connection pool is exhausted or the server is unreachable)
         const controller = new AbortController();
