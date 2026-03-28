@@ -104,7 +104,7 @@ func GetResourceStoreTableDesc() string {
 func GetResourceByName(rc ApiTypes.RequestContext, resource_name string, resource_action string) (ApiTypes.ResourceDef, error) {
 	// This function retrieves a prompt record by prompt_name.
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameResources
 	var resource_info ApiTypes.ResourceDef

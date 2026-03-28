@@ -33,7 +33,9 @@ const RequestIDKey ContextKey = "jimo_req_id"
 
 var DBType string
 var ProjectDBHandle *sql.DB
-var MigrationDBHandle *sql.DB
+var SharedDBHandle *sql.DB
+var ProjectMigrationDBHandle *sql.DB
+var SharedMigrationDBHandle *sql.DB
 var AutotesterDBHandle *sql.DB
 
 type AppInfo struct {
@@ -51,16 +53,17 @@ type DatabaseConfig struct {
 	Port           int    `mapstructure:"port"`
 	MaxConnections int    `mapstructure:"max_connections"`
 
-	UserName           string
-	Password           string
-	ProjectDBName      string
-	MigrationDBName    string
-	AutotesterDBName   string
-	MigrationTableName string
+	UserName         string
+	Password         string
+	ProjectDBName    string
+	SharedDBName     string
+	AutotesterDBName string
 
-	ProjectDBHandle    *sql.DB
-	MigrationDBHandle  *sql.DB
-	AutotesterDBHandle *sql.DB
+	ProjectDBHandle          *sql.DB
+	SharedDBHandle           *sql.DB
+	ProjectMigrationDBHandle *sql.DB
+	SharedMigrationDBHandle  *sql.DB
+	AutotesterDBHandle       *sql.DB
 }
 
 type CommonConfigDef struct {

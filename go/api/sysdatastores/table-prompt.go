@@ -134,7 +134,7 @@ func GetPromptStoreTableDesc() string {
 func GetPromptInfoByName(rc ApiTypes.RequestContext, prompt_name string) (PromptRecordInfo, error) {
 	// This function retrieves a prompt record by prompt_name.
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore
 	var prompt_info PromptRecordInfo
@@ -176,7 +176,7 @@ func GetPromptInfoByName(rc ApiTypes.RequestContext, prompt_name string) (Prompt
 
 func GetPromptStatus(rc ApiTypes.RequestContext, prompt_name string) string {
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore
 	switch db_type {

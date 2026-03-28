@@ -54,3 +54,33 @@ description = "Run tests with verbose logging and skip cleanup"
 [tasks.autotest-stop-on-fail]
 run = "go run ./go/cmd/autotester/ --package=regression --stop-on-fail --json-report=/tmp/autotester-report.json"
 description = "Run tests stopping on first failure with JSON report"
+
+[tasks.go-test]
+run = '''
+set -euo pipefail
+
+if [ -z "${PG_HOST:-}" ] || [ -z "${PG_PORT:-}" ] || [ -z "${PG_USER_NAME:-}" ] || [ -z "${PG_PASSWORD:-}" ] || [ -z "${PG_DB_NAME_AUTOTESTER:-}" ]; then
+  echo "Missing PostgreSQL env vars. Required: PG_HOST, PG_PORT, PG_USER_NAME, PG_PASSWORD, PG_DB_NAME_AUTOTESTER"
+  exit 1
+fi
+
+export PGTEST_DSN="postgres://${PG_USER_NAME}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB_NAME_AUTOTESTER}?sslmode=disable"
+
+TEST_DIR="${TEST_DIR:-./go}"
+RECURSIVE="${RECURSIVE:-true}"
+RUN_FILTER="${RUN_FILTER:-}"
+TESTNAME="${TESTNAME:-goose_pg}"
+
+if [ "$RECURSIVE" = "true" ]; then
+  PKG="${TEST_DIR}/..."
+else
+  PKG="${TEST_DIR}"
+fi
+
+if [ -n "$RUN_FILTER" ]; then
+  go test "$PKG" -run "$RUN_FILTER" -v -count=1 -args -testname "$TESTNAME"
+else
+  go test "$PKG" -v -count=1 -args -testname "$TESTNAME"
+fi
+'''
+description = "Run Go tests in shared/go using PG env vars; always passes -testname via TESTNAME (default goose_pg). Set TEST_DIR, RECURSIVE, RUN_FILTER as needed"

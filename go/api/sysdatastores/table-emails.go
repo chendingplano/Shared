@@ -111,7 +111,7 @@ func CheckEmailExists(rc ApiTypes.RequestContext, email string) bool {
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE full_email = ?", table_name)
@@ -138,7 +138,7 @@ func GetEmailInfoByEmail(rc ApiTypes.RequestContext, email string) (EmailInfo, e
 	// This function checks whether 'user_email' is used in the users table.
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	var email_info EmailInfo
@@ -180,7 +180,7 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 	// This function checks whether 'user_name' is used in the users table.
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore
 	switch db_type {
@@ -214,7 +214,7 @@ func GetEmailStatus(rc ApiTypes.RequestContext, email string) string {
 
 func AddEmail(rc ApiTypes.RequestContext, email_info EmailInfo) (bool, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore

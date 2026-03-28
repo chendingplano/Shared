@@ -149,7 +149,7 @@ func GetUserInfoByEmail(
 	user_email string) (*ApiTypes.UserInfo, error) {
 	logger := rc.GetLogger()
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := "users"
 	switch db_type {
@@ -189,7 +189,7 @@ func GetUserInfoByUserID(
 	user_id string) (*ApiTypes.UserInfo, error) {
 	// This function checks whether 'user_email' is used in the users table.
 	var query string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 	table_name := "users"
@@ -295,7 +295,7 @@ func UpsertUser(
 	rc ApiTypes.RequestContext,
 	user_info *ApiTypes.UserInfo) error {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var insert_stmt string
 	db_type := ApiTypes.DBType
 	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
@@ -463,7 +463,7 @@ func UpsertUser(
 func MarkUserVerified(
 	rc ApiTypes.RequestContext,
 	user_name string) error {
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	db_type := ApiTypes.DBType
 	// table_name := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
@@ -496,7 +496,7 @@ func MarkUserVerified(
 func UpdatePasswordByEmail(
 	rc ApiTypes.RequestContext,
 	email string, password string) error {
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	logger := rc.GetLogger()
 	db_type := ApiTypes.DBType
@@ -529,7 +529,7 @@ func UpdateAuthTokenByEmail(
 	rc ApiTypes.RequestContext,
 	email string,
 	auth_token string) error {
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	logger := rc.GetLogger()
 	db_type := ApiTypes.DBType

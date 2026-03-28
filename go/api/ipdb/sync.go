@@ -116,7 +116,7 @@ func Sync(logger ApiTypes.JimoLogger) error {
 
 	fileSize, err := download(svc.filePath)
 
-	db := ApiTypes.ProjectDBHandle
+	db := ApiTypes.SharedDBHandle
 	if db != nil {
 		status := "success"
 		errMsg := ""

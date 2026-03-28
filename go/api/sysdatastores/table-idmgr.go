@@ -63,7 +63,7 @@ func CreateIDMgrTable(
 
 func AddOneID(rc ApiTypes.RequestContext, record IDMgrDef) error {
 	var stmt string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.GetIDMgrTableName()
 
@@ -108,7 +108,7 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 		return fmt.Errorf("%s", error_msg)
 	}
 
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	switch db_type {
 	case ApiTypes.MysqlName:
 		stmt = fmt.Sprintf(`INSERT INTO %s (%s) VALUES (?, ?, ?, ?)
@@ -139,7 +139,7 @@ func UpsertActivityLogIDDef(rc ApiTypes.RequestContext) error {
 func NextIDBlock(id_name string, inc_size int) (int64, error) {
 	// This function retrieves a block of IDs and updates the record.
 	// Upon success, it returns the start log ID of the ID block.
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.GetIDMgrTableName()
 	var query string

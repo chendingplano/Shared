@@ -800,22 +800,21 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	config.UserName = os.Getenv("PG_USER_NAME")
 	config.Password = os.Getenv("PG_PASSWORD")
-	config.ProjectDBName = os.Getenv("PG_DB_NAME")
-	config.MigrationDBName = os.Getenv("PG_DB_NAME_MIGRATION")
 	config.AutotesterDBName = os.Getenv("PG_DB_NAME_AUTOTESTER")
 
-	// There are three DB Names:
-	// 1) PROJECT_PG_DB_NAME: the main project database (used by application)
-	// 2) PG_DB_NAME_SHARED: the shared database (used for migrations, shared tables)
-	// 3) PG_DB_NAME_AUTOTESTER: the database used by autotester (can be same as project DB or different)
-
-	// Step 1: Create Project DB
-	logger.Info("createPGDB", "dbname", config.ProjectDBName)
+	// PG_DB_NAME defines the project DB. Shared tables live in the same DB.
+	// PG_DB_NAME_AUTOTESTER defines the autotester DB.
+	config.ProjectDBName = os.Getenv("PG_DB_NAME")
 	if config.ProjectDBName == "" {
-		return fmt.Errorf("(MID_26031035) missing env variable PG_DB_NAME (MID_26022607)")
+		return fmt.Errorf("(MID_26031035) missing env variable: PG_DB_NAME")
 	}
+	config.SharedDBName = config.ProjectDBName
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
+	// Step 1: Create project DB connection.
+	// search_path=project,shared,public: project tables resolve first, shared tables are also accessible.
+	logger.Info("createPGDB", "dbname", config.ProjectDBName)
+
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=project,shared,public'",
 		host, port, config.UserName, config.Password, config.ProjectDBName)
 
 	// SECURITY: Don't log credentials
@@ -839,44 +838,35 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	logger.Info("PostgreSQL created", "dbname", config.ProjectDBName, "user", config.UserName)
 
-	// Step 2: Create Migration DB
-	if config.MigrationDBName == "" {
-		return fmt.Errorf("(MID_26031037) missing env variable PG_DB_NAME_MIGRATION")
+	// Ensure schemas exist (idempotent).
+	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS project"); err != nil {
+		return fmt.Errorf("(MID_26031045) failed to create 'project' schema: %w", err)
+	}
+	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS shared"); err != nil {
+		return fmt.Errorf("(MID_26031046) failed to create 'shared' schema: %w", err)
 	}
 
-	if config.ProjectDBName == config.MigrationDBName {
-		err := fmt.Errorf("(MID_26031038) project db name and migration db name cannot be the same (SHD_DBS_149)")
-		return err
-	}
+	// Step 2: SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
+	config.SharedDBHandle = config.ProjectDBHandle
+	config.ProjectMigrationDBHandle = config.ProjectDBHandle
 
-	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-		host, port, config.UserName, config.Password, config.MigrationDBName)
+	// SharedMigrationDBHandle uses a separate connection scoped to the 'shared' schema,
+	// so that goose migrations for shared/ tables create objects in the right schema.
+	sharedMigConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=shared,public'",
+		host, port, config.UserName, config.Password, config.ProjectDBName)
 
-	config.MigrationDBHandle, err = sql.Open("postgres", connStr)
+	config.SharedMigrationDBHandle, err = sql.Open("postgres", sharedMigConnStr)
 	if err != nil {
-		logger.Error("Failed to connect to migration PG (SHD_DBS_050)", "error", err)
-		return err
+		return fmt.Errorf("(MID_26031043) failed to open shared-migration PostgreSQL connection: %w", err)
 	}
-
-	// Test the connection
-	if err = config.MigrationDBHandle.Ping(); err != nil {
-		return fmt.Errorf("(MID_26031039) failed connecting PG for migration (SHD_DBS_055), error: %w", err)
+	if err = config.SharedMigrationDBHandle.Ping(); err != nil {
+		return fmt.Errorf("(MID_26031044) failed pinging PostgreSQL for shared-migration DB: %w", err)
 	}
-
-	// SECURITY: Don't log credentials
-	logger.Info("Connect to migration PG",
-		"host", host,
-		"port", port,
-		"username", config.UserName,
-		"dbname", config.MigrationDBName)
+	logger.Info("PostgreSQL shared-migration connection created", "dbname", config.ProjectDBName, "search_path", "shared")
 
 	// Step 3: Create Autotester DB
 	if config.AutotesterDBName == "" {
 		return fmt.Errorf("(MID_26031040) missing env variable PG_DB_NAME_AUTOTESTER")
-	}
-
-	if config.AutotesterDBName == config.MigrationDBName {
-		return fmt.Errorf("(MID_26031041) autotester db name and migration db name cannot be the same (SHD_DBS_169)")
 	}
 
 	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
@@ -997,10 +987,13 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 		if ApiTypes.ProjectDBHandle == nil {
 			return fmt.Errorf("(MID_26030904) project db is nil")
 		}
-
-		ApiTypes.MigrationDBHandle = config.PGConf.MigrationDBHandle
-		if ApiTypes.MigrationDBHandle == nil {
-			return fmt.Errorf("(MID_26030914) migration db is nil")
+		// SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
+		ApiTypes.SharedDBHandle = config.PGConf.ProjectDBHandle
+		ApiTypes.ProjectMigrationDBHandle = config.PGConf.ProjectDBHandle
+		// SharedMigrationDBHandle has its own connection scoped to the 'shared' schema.
+		ApiTypes.SharedMigrationDBHandle = config.PGConf.SharedMigrationDBHandle
+		if ApiTypes.SharedMigrationDBHandle == nil {
+			return fmt.Errorf("(MID_26030915) shared migration db is nil")
 		}
 
 		ApiTypes.AutotesterDBHandle = config.PGConf.AutotesterDBHandle
@@ -1013,11 +1006,10 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 		if ApiTypes.ProjectDBHandle == nil {
 			return fmt.Errorf("(MID_26030906) project db is nil")
 		}
-
-		ApiTypes.MigrationDBHandle = config.MySQLConf.MigrationDBHandle
-		if ApiTypes.MigrationDBHandle == nil {
-			return fmt.Errorf("(MID_26030906) migration db is nil")
-		}
+		// Backward-compat aliases all point to ProjectDBHandle
+		ApiTypes.SharedDBHandle = config.MySQLConf.ProjectDBHandle
+		ApiTypes.ProjectMigrationDBHandle = config.MySQLConf.ProjectDBHandle
+		ApiTypes.SharedMigrationDBHandle = config.MySQLConf.ProjectDBHandle
 
 		ApiTypes.AutotesterDBHandle = config.MySQLConf.AutotesterDBHandle
 		if ApiTypes.AutotesterDBHandle == nil {

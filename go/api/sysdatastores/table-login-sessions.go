@@ -97,7 +97,7 @@ func SaveSession(
 	need_update_user bool) error {
 	logger := rc.GetLogger()
 	var stmt string
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
 
@@ -166,7 +166,7 @@ func SaveSession(
 // DeleteUserSessions removes all sessions for a given user_id or user_email.
 // Use this for "logout from all devices" functionality.
 func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions
@@ -197,7 +197,7 @@ func DeleteUserSessions(rc ApiTypes.RequestContext, user_email string) error {
 }
 
 func DeleteSession(rc ApiTypes.RequestContext, session_id string) error {
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	db_type := ApiTypes.DBType
 	table_name := ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions

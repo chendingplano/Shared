@@ -10,7 +10,7 @@ import (
 
 func CreateSysTables(logger ApiTypes.JimoLogger) error {
 	// This function creates all the tables.
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	database_type := ApiTypes.DBType
 
 	CreateLoginSessionsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)

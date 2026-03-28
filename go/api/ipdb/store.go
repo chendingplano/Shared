@@ -20,7 +20,7 @@ const (
 // CreateTables creates all tables required by the ipdb service.
 // This is called from sysdatastores.CreateSysTables.
 func CreateTables(logger ApiTypes.JimoLogger) error {
-	db := ApiTypes.ProjectDBHandle
+	db := ApiTypes.SharedDBHandle
 	if err := createCacheTable(logger, db); err != nil {
 		return err
 	}

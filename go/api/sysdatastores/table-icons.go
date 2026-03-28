@@ -194,7 +194,7 @@ func InsertIcon(
 	rc ApiTypes.RequestContext,
 	icon *ApiTypes.IconDef) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var insert_stmt string
 	db_type := ApiTypes.DBType
 
@@ -270,7 +270,7 @@ func GetIconByID(
 	rc ApiTypes.RequestContext,
 	id string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var query string
 	db_type := ApiTypes.DBType
 
@@ -311,7 +311,7 @@ func GetIconByFileName(
 	category string,
 	fileName string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var query string
 	db_type := ApiTypes.DBType
 
@@ -352,7 +352,7 @@ func ListIcons(
 	rc ApiTypes.RequestContext,
 	req ApiTypes.IconListRequest) ([]*ApiTypes.IconDef, int, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 
 	switch db_type {
@@ -452,7 +452,7 @@ func UpdateIcon(
 	req ApiTypes.IconUpdateRequest,
 	updater string) (*ApiTypes.IconDef, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	db_type := ApiTypes.DBType
 
 	switch db_type {
@@ -542,7 +542,7 @@ func DeleteIcon(
 	rc ApiTypes.RequestContext,
 	id string) error {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var stmt string
 	db_type := ApiTypes.DBType
 
@@ -586,7 +586,7 @@ func DeleteIcon(
 func GetDistinctCategories(
 	rc ApiTypes.RequestContext) ([]string, error) {
 	logger := rc.GetLogger()
-	var db *sql.DB = ApiTypes.ProjectDBHandle
+	var db *sql.DB = ApiTypes.SharedDBHandle
 	var query string
 	db_type := ApiTypes.DBType
 
