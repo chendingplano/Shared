@@ -33,6 +33,7 @@ package goose
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -43,6 +44,7 @@ import (
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	gooselib "github.com/pressly/goose/v3"
+	goosedb "github.com/pressly/goose/v3/database"
 )
 
 // Migrator wraps a goose.Provider and integrates with the shared library's
@@ -52,41 +54,12 @@ type Migrator struct {
 	logger   ApiTypes.JimoLogger
 	db       *sql.DB
 	dialect  gooselib.Dialect
-	cfg      GooseConfig
+	cfg      ApiTypes.MigrationConfig
 }
 
 var ProjectMigrator *Migrator
 var SharedMigrator *Migrator
 var AutoTesterMigrator *Migrator
-
-// Config holds the configuration for the Migrator.
-type GooseConfig struct {
-	// MigrationsFS is the filesystem that contains the .sql migration files.
-	// Defaults to os.DirFS("migrations") when nil.
-	// Can also be fs.Sub(embedFS, "migrations") for an embedded filesystem.
-	MigrationsFS fs.FS
-
-	// MigrationsDir is the path to the migrations directory on disk.
-	// Defaults to the MIGRATION_DIR environment variable, or "migrations" if unset.
-	// Required when using CreateMigration or CreateAndApply; ignored otherwise.
-	// Must point to the same directory that MigrationsFS reads from.
-	// Example: "migrations" or "/app/migrations"
-	MigrationsDir string
-
-	// TableName is the goose version-tracking table name.
-	// Defaults to "goose_db_version" when empty.
-	TableName string
-
-	// Verbose enables verbose logging from the goose library itself.
-	// Defaults to true.
-	Verbose bool
-
-	// AllowOutOfOrder permits applying migrations whose version numbers are
-	// lower than the currently recorded database version. Useful when
-	// feature branches add migrations independently.
-	// Defaults to true.
-	AllowOutOfOrder bool
-}
 
 // dialectFor maps the shared library's DB type constants to goose Dialect values.
 func dialectFor(dbType string) (gooselib.Dialect, error) {
@@ -100,39 +73,77 @@ func dialectFor(dbType string) (gooselib.Dialect, error) {
 	}
 }
 
-// applyDefaults applies default values to the Config.
-func applyDefaults(migrate_cfg ApiTypes.MigrationConfig) GooseConfig {
-	var goose_cfg GooseConfig
+type gooseTableExistsChecker interface {
+	TableExists(ctx context.Context, db goosedb.DBTxConn) (bool, error)
+}
 
-	if migrate_cfg.MigrationsFS == "" {
-		goose_cfg.MigrationsFS = os.DirFS("migrations")
-	} else {
-		goose_cfg.MigrationsFS = os.DirFS(migrate_cfg.MigrationsFS)
+func ensureGooseVersionTable(
+	ctx context.Context,
+	db *sql.DB,
+	dialect gooselib.Dialect,
+	tableName string,
+) error {
+	if db == nil {
+		return fmt.Errorf("database connection is nil (MID_26033103)")
 	}
 
-	if migrate_cfg.MigrationsDir == "" {
-		goose_cfg.MigrationsDir = "migrations"
-	} else {
-		goose_cfg.MigrationsDir = migrate_cfg.MigrationsDir
+	store, err := goosedb.NewStore(goosedb.Dialect(dialect), tableName)
+	if err != nil {
+		return fmt.Errorf("failed to create goose store (MID_26033104): %w", err)
 	}
 
-	if migrate_cfg.TableName != "" {
-		goose_cfg.TableName = migrate_cfg.TableName
-	} else {
-		goose_cfg.TableName = "db_migrations"
+	checker, ok := store.(gooseTableExistsChecker)
+	if !ok {
+		return fmt.Errorf("goose store does not support table existence check (MID_26033105)")
 	}
 
+	exists, err := checker.TableExists(ctx, db)
+	if err != nil {
+		return fmt.Errorf("failed to check goose version table existence (MID_26033106): %w", err)
+	}
+
+	if !exists {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to begin goose table init tx (MID_26033107): %w", err)
+		}
+		defer tx.Rollback()
+
+		if err := store.CreateVersionTable(ctx, tx); err != nil {
+			return fmt.Errorf("failed to create goose version table (MID_26033108): %w", err)
+		}
+		if err := store.Insert(ctx, tx, goosedb.InsertRequest{Version: 0}); err != nil {
+			return fmt.Errorf("failed to seed goose version table (MID_26033109): %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit goose table init tx (MID_26033110): %w", err)
+		}
+		return nil
+	}
+
+	// The table may exist from legacy/manual setup but be missing version 0.
+	if _, err := store.GetMigration(ctx, db, 0); err != nil {
+		if !errors.Is(err, goosedb.ErrVersionNotFound) {
+			return fmt.Errorf("failed to validate goose version table seed row (MID_26033111): %w", err)
+		}
+		if err := store.Insert(ctx, db, goosedb.InsertRequest{Version: 0}); err != nil {
+			return fmt.Errorf("failed to insert goose version seed row (MID_26033112): %w", err)
+		}
+	}
+
+	return nil
+}
+
+func applyDefaults(migrate_cfg *ApiTypes.MigrationConfig) {
 	// Verbose defaults to true
-	goose_cfg.Verbose = migrate_cfg.Verbose != "false"
+	migrate_cfg.Verbose = migrate_cfg.VerboseStr != "false"
 
 	// AllowOutOfOrder defaults to true
-	goose_cfg.AllowOutOfOrder = migrate_cfg.AllowOutOfOrder != "false"
-	return goose_cfg
+	migrate_cfg.AllowOutOfOrder = migrate_cfg.AllowOutOfOrderStr != "false"
 }
 
 func RunProjectMigrations(ctx context.Context,
 	logger ApiTypes.JimoLogger,
-	cfg ApiTypes.MigrationConfig,
 	db *sql.DB) error {
 	if ProjectMigrator != nil {
 		return fmt.Errorf("project migrator already initialized (MID_060221143034)")
@@ -142,17 +153,42 @@ func RunProjectMigrations(ctx context.Context,
 		return fmt.Errorf("database connection is not initialized (MID_060221143035)")
 	}
 
-	// Default project migration table, but preserve configured migration dirs when provided.
-	cfg.TableName = "project.project_db_migration"
-	if strings.TrimSpace(cfg.MigrationsFS) == "" {
-		cfg.MigrationsFS = "project_migrations"
-	}
-	if strings.TrimSpace(cfg.MigrationsDir) == "" {
-		cfg.MigrationsDir = "project_migrations"
+	var cfg ApiTypes.MigrationConfig
+
+	// Prefer MigrationsDir already set in CommonConfig (e.g. normalized to an
+	// absolute path by the caller via normalizeMigrationPaths). Fall back to the
+	// PROJECT_MIGRATION_DIR env var so existing deployments are unaffected.
+	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.MigrationsDir) != "" {
+		cfg.MigrationsDir = ApiTypes.CommonConfig.MigrationConfig.MigrationsDir
+		if ApiTypes.CommonConfig.MigrationConfig.MigrationsFS != nil {
+			cfg.MigrationsFS = ApiTypes.CommonConfig.MigrationConfig.MigrationsFS
+		} else {
+			cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
+		}
+	} else {
+		cfg.MigrationsDir = os.Getenv("PROJECT_MIGRATION_DIR")
+		if strings.TrimSpace(cfg.MigrationsDir) == "" {
+			logger.Warn("missing env var PROJECT_MIGRATION_DIR. Default to: project_migrations")
+			cfg.MigrationsDir = "project_migrations"
+		}
+		cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
 	}
 
+	// Prefer TableName already set in CommonConfig. Fall back to env var.
+	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.TableName) != "" {
+		cfg.TableName = ApiTypes.CommonConfig.MigrationConfig.TableName
+	} else {
+		cfg.TableName = os.Getenv("PG_MIGRATION_TNAME_PROJECT")
+		if cfg.TableName == "" {
+			logger.Warn("missing env var PG_MIGRATION_TNAME_PROJECT, default to 'project_db_migrations'")
+			cfg.TableName = "project_db_migrations"
+		}
+	}
+
+	logger.Info("==== tablename", "tablename", cfg.TableName)
+
 	var err error
-	ProjectMigrator, err = RunMigrations(ctx, logger, "project migrator", cfg, db)
+	ProjectMigrator, err = RunMigrations(ctx, "project_migration", logger, cfg, db)
 	if err != nil {
 		return fmt.Errorf("failed to run project migrations (MID_060221143003): %w", err)
 	}
@@ -161,7 +197,6 @@ func RunProjectMigrations(ctx context.Context,
 
 func RunSharedMigrations(ctx context.Context,
 	logger ApiTypes.JimoLogger,
-	cfg ApiTypes.MigrationConfig,
 	db *sql.DB) error {
 	if SharedMigrator != nil {
 		return fmt.Errorf("shared migrator already initialized (MID_060221143001)")
@@ -171,17 +206,35 @@ func RunSharedMigrations(ctx context.Context,
 		return fmt.Errorf("database connection is not initialized (MID_060221143002)")
 	}
 
-	// Default shared migration table, but preserve configured migration dirs when provided.
-	cfg.TableName = "shared.shared_db_migration"
-	if strings.TrimSpace(cfg.MigrationsFS) == "" {
-		cfg.MigrationsFS = "shared_migrations"
+	var cfg ApiTypes.MigrationConfig
+
+	// Prefer SharedMigrationsDir already set in CommonConfig. Fall back to the
+	// SHARED_MIGRATION_DIR env var so existing deployments are unaffected.
+	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.SharedMigrationsDir) != "" {
+		cfg.MigrationsDir = ApiTypes.CommonConfig.MigrationConfig.SharedMigrationsDir
+		cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
+	} else {
+		cfg.MigrationsDir = os.Getenv("SHARED_MIGRATION_DIR")
+		if strings.TrimSpace(cfg.MigrationsDir) == "" {
+			logger.Warn("missing env var SHARED_MIGRATION_DIR. Default to: shared_migrations")
+			cfg.MigrationsDir = "shared_migrations"
+		}
+		cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
 	}
-	if strings.TrimSpace(cfg.MigrationsDir) == "" {
-		cfg.MigrationsDir = "shared_migrations"
+
+	// Prefer SharedTableName already set in CommonConfig. Fall back to env var.
+	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.SharedTableName) != "" {
+		cfg.TableName = ApiTypes.CommonConfig.MigrationConfig.SharedTableName
+	} else {
+		cfg.TableName = os.Getenv("PG_MIGRATION_TNAME_SHARED")
+		if cfg.TableName == "" {
+			logger.Warn("missing PG_MIGRATION_TNAME_SHARED, default to 'shared_db_migrations'")
+			cfg.TableName = "shared_db_migrations"
+		}
 	}
 
 	var err error
-	SharedMigrator, err = RunMigrations(ctx, logger, "shared migrator", cfg, db)
+	SharedMigrator, err = RunMigrations(ctx, "shared_migration", logger, cfg, db)
 	if err != nil {
 		return fmt.Errorf("failed to run shared migrations (MID_060221143004): %w", err)
 	}
@@ -190,7 +243,6 @@ func RunSharedMigrations(ctx context.Context,
 
 func RunAutoTesterMigrations(ctx context.Context,
 	logger ApiTypes.JimoLogger,
-	cfg ApiTypes.MigrationConfig,
 	db *sql.DB) error {
 	if AutoTesterMigrator != nil {
 		return fmt.Errorf("autotester migrator already initialized (MID_060221143011)")
@@ -200,8 +252,23 @@ func RunAutoTesterMigrations(ctx context.Context,
 		return fmt.Errorf("autotester database connection is not initialized (MID_060221143012)")
 	}
 
+	var cfg ApiTypes.MigrationConfig
+
+	cfg.MigrationsDir = os.Getenv("AUTOTESTER_MIGRATION_Dir")
+	if strings.TrimSpace(cfg.MigrationsDir) == "" {
+		logger.Warn("missing env var AUTOTESTER_MIGRATION_DIR. Default to: autotester_migrations")
+		cfg.MigrationsDir = "autotester_migrations"
+	}
+	cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
+
+	cfg.TableName = os.Getenv("PG_MIGRATION_TNAME_AUTOTESTER")
+	if cfg.TableName == "" {
+		logger.Warn("missing PG_MIGRATION_TNAME_AUTOTESTER, default to 'autotester_db_migrations'")
+		cfg.TableName = "autotester_db_migrations"
+	}
+
 	var err error
-	AutoTesterMigrator, err = RunMigrations(ctx, logger, "autotester migrator", cfg, db)
+	AutoTesterMigrator, err = RunMigrations(ctx, "autotester", logger, cfg, db)
 	if err != nil {
 		return fmt.Errorf("failed to run autotester migrations (MID_060221143013): %w", err)
 	}
@@ -210,24 +277,24 @@ func RunAutoTesterMigrations(ctx context.Context,
 
 func RunMigrations(
 	ctx context.Context,
+	migrationName string,
 	logger ApiTypes.JimoLogger,
-	migrator_name string,
 	cfg ApiTypes.MigrationConfig,
 	db *sql.DB) (*Migrator, error) {
 	// MigrationsDir is the path on disk for creating new migration files.
 	// MigrationsFS is the fs.FS used by goose to read migration files.
 	// For os.MkdirAll, we use MigrationsDir directly.
-	migrationsPath := cfg.MigrationsDir
-	if migrationsPath == "" {
-		migrationsPath = "migrations"
+	if cfg.MigrationsDir == "" {
+		return nil, fmt.Errorf("(MID_26033101) missing migrationPath")
 	}
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(migrationsPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create migrations directory (MID_060221143005): %w, path:%s",
-			err, migrationsPath)
+	if err := os.MkdirAll(cfg.MigrationsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create migrations directory (MID_260221143005): %w, path:%s",
+			err, cfg.MigrationsDir)
 	}
 
+	logger.Info("==== tablename", "tablename", cfg.TableName)
 	migrator, err := NewWithDB(db, ApiTypes.DBType, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migrator (MID_060221143006): %w", err)
@@ -235,7 +302,7 @@ func RunMigrations(
 	if err := migrator.Up(ctx); err != nil {
 		return nil, fmt.Errorf("failed to apply migrations (MID_060221143007): %w", err)
 	}
-	logger.Info("Migrations applied successfully", "migrator", migrator_name)
+	logger.Info("Migrations applied successfully", "migrator", migrationName)
 	return migrator, nil
 }
 
@@ -249,10 +316,12 @@ func RunMigrations(
 // 'TableName' is the name of the table for tracking migration
 func NewWithDB(db *sql.DB,
 	dbType string,
-	migrate_cfg ApiTypes.MigrationConfig,
+	cfg ApiTypes.MigrationConfig,
 	logger ApiTypes.JimoLogger) (*Migrator, error) {
 
-	cfg := applyDefaults(migrate_cfg)
+	applyDefaults(&cfg)
+
+	logger.Info("==== tablename", "tablename", cfg.TableName)
 
 	if cfg.TableName == "" {
 		return nil, fmt.Errorf("missing tablename in migration config (SHD_20260221092501)")
@@ -261,6 +330,11 @@ func NewWithDB(db *sql.DB,
 	dialect, err := dialectFor(dbType)
 	if err != nil {
 		logger.Error("Invalid database type for goose migrator (SHD_GSE_083)", "db_type", dbType, "error", err)
+		return nil, err
+	}
+
+	if err := ensureGooseVersionTable(context.Background(), db, dialect, cfg.TableName); err != nil {
+		logger.Error("Failed to ensure goose version table", "table_name", cfg.TableName, "error", err)
 		return nil, err
 	}
 
@@ -336,7 +410,7 @@ func (m *Migrator) rebuildProvider() error {
 	return nil
 }
 
-func buildProviderOptions(goose_cfg GooseConfig) []gooselib.ProviderOption {
+func buildProviderOptions(goose_cfg ApiTypes.MigrationConfig) []gooselib.ProviderOption {
 	var opts []gooselib.ProviderOption
 	if goose_cfg.TableName != "" {
 		opts = append(opts, gooselib.WithTableName(goose_cfg.TableName))

@@ -18,8 +18,6 @@
 | 2 | dialectFor maps MysqlName to gooselib.DialectMySQL | `dialectFor(ApiTypes.MysqlName)` | ✅ PASS | — | 0 |
 | 3 | dialectFor rejects unsupported db type 'sqlite3' | `dialectFor("sqlite3")` | ✅ PASS | — | 0 |
 | 4 | dialectFor rejects empty-string db type | `dialectFor("")` | ✅ PASS | — | 0 |
-| 5 | applyDefaults sets MigrationsDir to 'migrations' when not specified | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
-| 6 | applyDefaults sets TableName to 'db_migrations' when not specified | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 7 | applyDefaults sets Verbose=true when Verbose field is empty | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 8 | applyDefaults sets AllowOutOfOrder=true when field is empty | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 9 | applyDefaults sets Verbose=false when Verbose='false' | `applyDefaults(ApiTypes.MigrationConfig{Verbose: "false"})` | ✅ PASS | — | 0 |

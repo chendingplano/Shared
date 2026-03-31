@@ -55,7 +55,6 @@ func LoadTOMLConfig(
 		"testers filename", testerPath,
 		"db_type", AutotesterConfig.DBType,
 		"tester_db_name", AutotesterConfig.DUTDBName,
-		"tester_migration_dbname", AutotesterConfig.MigrationConfig.DBName,
 		"tester_migrationDir", AutotesterConfig.MigrationConfig.MigrationsDir)
 
 	return nil
@@ -156,7 +155,6 @@ func LoadTOMLPackages(
 	if err != nil {
 		return fmt.Errorf("(MID_26030303) load tester config error:%w", err)
 	}
-	logger.Info("MigrationDBName", "dbname", AutotesterConfig.MigrationConfig.DBName)
 
 	dbType := ApiTypes.DBType
 
@@ -203,32 +201,29 @@ func LoadTOMLPackages(
 
 	logger.Info("PostgreSQL tester db created ", "dbname", dbName, "user", username)
 	logger.Info("Tester Info",
-		"dbname", AutotesterConfig.MigrationConfig.DBName,
 		"tablename", AutotesterConfig.MigrationConfig.TableName)
 
-	migrationDBName := AutotesterConfig.MigrationConfig.DBName
-	if migrationDBName == "" {
-		return fmt.Errorf("(MID_26030311) missing tester migration db_name")
-	}
-
 	// Step 2: Create the DB Handle for tester migrations
+	dbname := os.Getenv("PG_DB_AUTOTESTER")
+	if dbname == "" {
+		logger.Warn("missing env variable PG_DB_AUTOTESTER. Default to 'autotester'")
+		dbname = "autotester"
+	}
 	connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s",
-		host, port, username, password, migrationDBName)
+		host, port, username, password, dbname)
 
 	AutotesterConfig.MigrationDBHandle, err = sql.Open("postgres", connStr)
 	if err != nil {
-		return fmt.Errorf("(MID_26030309) Failed to connect to testger migration PG, error:%w, dbname:%s",
-			err, migrationDBName)
+		return fmt.Errorf("(MID_26030309) Failed to connect to testger migration PG, error:%w", err)
 	}
 
 	// Test the connection
 	if err = AutotesterConfig.MigrationDBHandle.Ping(); err != nil {
 		// SECURITY: Don't log connection string or credentials
-		return fmt.Errorf("(MID_26030310) failed connecting migration DB, error: %w, dbname:%s",
-			err, migrationDBName)
+		return fmt.Errorf("(MID_26030310) failed connecting migration DB, error: %w", err)
 	}
 
-	logger.Info("PostgreSQL tester migration db created ", "dbname", migrationDBName, "user", username)
+	logger.Info("PostgreSQL tester migration db created ", "user", username)
 
 	return nil
 }

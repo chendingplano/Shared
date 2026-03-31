@@ -229,26 +229,30 @@ func buildMigrationFileContent(upSQL, downSQL string) string {
 }
 
 // buildMigrator creates a new migrator with the given configuration.
-func (t *MigrationTester) buildMigrator(allowOutOfOrder bool) *sharedgoose.Migrator {
-	migrateCfg := ApiTypes.MigrationConfig{
-		MigrationsFS:  "",
-		MigrationsDir: autotester.AutotesterConfig.MigrationConfig.MigrationsDir,
-		TableName:     autotester.AutotesterConfig.MigrationConfig.TableName,
-		Verbose:       "false",
-		AllowOutOfOrder: func() string {
-			if allowOutOfOrder {
-				return "true"
-			}
-			return "false"
-		}(),
-	}
+func (t *MigrationTester) buildMigrator(_ bool) *sharedgoose.Migrator {
+	/*
+		migrateCfg := ApiTypes.MigrationConfig{
+			MigrationsFS:  "",
+			MigrationsDir: autotester.AutotesterConfig.MigrationConfig.MigrationsDir,
+			TableName:     autotester.AutotesterConfig.MigrationConfig.TableName,
+			Verbose:       true,
+			AllowOutOfOrder: func() string {
+				if allowOutOfOrder {
+					return true
+				}
+				return false
+			}(),
+		}
 
-	logger := &nopLogger{}
-	migrator, err := sharedgoose.NewWithDB(autotester.AutotesterConfig.MigrationDBHandle, autotester.AutotesterConfig.DBType, migrateCfg, logger)
-	if err != nil {
-		return nil
-	}
-	return migrator
+		logger := &nopLogger{}
+		migrator, err := sharedgoose.NewWithDB(autotester.AutotesterConfig.MigrationDBHandle, autotester.AutotesterConfig.DBType, migrateCfg, logger)
+		if err != nil {
+			return nil
+		}
+		return migrator
+	*/
+	t.logger.Error("Not implemented yet")
+	return nil
 }
 
 // nopLogger is a no-op logger for migration operations.

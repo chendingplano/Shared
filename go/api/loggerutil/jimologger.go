@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Marlliton/slogpretty"
@@ -42,7 +45,38 @@ var (
 
 	devOnce  sync.Once
 	jsonOnce sync.Once
+
+	stdioOutputEnabled atomic.Bool
 )
+
+func init() {
+	stdioOutputEnabled.Store(readStdioFlagFromEnv())
+}
+
+func readStdioFlagFromEnv() bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("JIMO_LOG_STDIO")))
+	switch raw {
+	case "", "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+// SetStdioOutputEnabled toggles whether JimoLogger writes to stdio handlers.
+// It returns the previous setting.
+func SetStdioOutputEnabled(enabled bool) bool {
+	prev := stdioOutputEnabled.Load()
+	stdioOutputEnabled.Store(enabled)
+	return prev
+}
+
+// IsStdioOutputEnabled reports whether JimoLogger currently writes to stdio handlers.
+func IsStdioOutputEnabled() bool {
+	return stdioOutputEnabled.Load()
+}
 
 type JimoLoggerImpl struct {
 	ctx         context.Context
@@ -104,58 +138,70 @@ func newDevLogger(consoleHandler slog.Handler) *slog.Logger {
 	ApiUtils.InitFileLogging("SHD_JLG_118")
 	fileWriter := ApiUtils.FileWriter
 
-	if fileWriter == nil {
+	handlers := make([]slog.Handler, 0, 2)
+	if consoleHandler != nil {
+		handlers = append(handlers, consoleHandler)
+	}
+
+	if fileWriter != nil {
+		// file -> text, no color
+		slog.Info("newDevLogger with file writer (SHD_JLG_129)")
+		fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{
+			Level:     slog.LevelDebug,
+			AddSource: false,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.TimeKey {
+					return slog.String("time", a.Value.Time().Format("2006-01-02 15:04:05"))
+				}
+				return a
+			},
+		})
+		handlers = append(handlers, fileHandler)
+	} else {
 		slog.Info("newDevLogger with no file writer (SHD_JLG_124)")
-		return slog.New(consoleHandler)
 	}
 
-	// file → text, no color
-	slog.Info("newDevLogger with file writer (SHD_JLG_129)")
-	fileHandler := slog.NewTextHandler(fileWriter, &slog.HandlerOptions{
-		Level:     slog.LevelDebug,
-		AddSource: false,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.TimeKey {
-				return slog.String("time", a.Value.Time().Format("2006-01-02 15:04:05"))
-			}
-			return a
-		},
-	})
-
-	handler := MultiHandler{
-		handlers: []slog.Handler{
-			consoleHandler,
-			fileHandler,
-		},
+	if len(handlers) == 0 {
+		return slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if len(handlers) == 1 {
+		return slog.New(handlers[0])
 	}
 
-	return slog.New(handler)
+	return slog.New(MultiHandler{handlers: handlers})
 }
 
 func newJSONLogger(consoleHandler slog.Handler) *slog.Logger {
 	ApiUtils.InitFileLogging("SHD_JLG_141")
 	fileWriter := ApiUtils.FileWriter
 
-	if fileWriter == nil {
-		return slog.New(consoleHandler)
+	handlers := make([]slog.Handler, 0, 2)
+	if consoleHandler != nil {
+		handlers = append(handlers, consoleHandler)
 	}
 
-	fileHandler := slog.NewJSONHandler(fileWriter, &slog.HandlerOptions{
-		Level:     slog.LevelInfo,
-		AddSource: true,
-	})
-
-	handler := MultiHandler{
-		handlers: []slog.Handler{
-			consoleHandler,
-			fileHandler,
-		},
+	if fileWriter != nil {
+		fileHandler := slog.NewJSONHandler(fileWriter, &slog.HandlerOptions{
+			Level:     slog.LevelInfo,
+			AddSource: true,
+		})
+		handlers = append(handlers, fileHandler)
 	}
 
-	return slog.New(handler)
+	if len(handlers) == 0 {
+		return slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if len(handlers) == 1 {
+		return slog.New(handlers[0])
+	}
+	return slog.New(MultiHandler{handlers: handlers})
 }
 
 func getConsoleHandler(handlerType LogFormat, loc string) slog.Handler {
+	if !IsStdioOutputEnabled() {
+		return nil
+	}
+
 	switch handlerType {
 	case LogHandlerTypeDefault:
 		// Default: use slogpretty

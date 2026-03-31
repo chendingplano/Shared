@@ -126,7 +126,6 @@ Configure the databases in the project's `mise.local.toml`:
 ```toml
 # Production databases (each with their own migration track)
 PG_DB_NAME = "<project_db>"           # Project DB
-PG_DB_NAME_SHARED = "<shared_db>"     # Shared DB
 PG_DB_NAME_AUTOTESTER = "<autotester_db>"  # AutoTester DB (test results)
 
 # Migration tracking DB (for goose version tracking in production)
@@ -797,7 +796,6 @@ PG_PASSWORD = "<password>"
 
 # Production databases (each with their own migration track)
 PG_DB_NAME = "<project_db>"              # Project DB - application-specific tables
-PG_DB_NAME_SHARED = "<shared_db>"        # Shared DB - shared library tables
 PG_DB_NAME_AUTOTESTER = "<autotester_db>" # AutoTester DB - test results storage
 
 # Migration tracking DB (for goose version tracking in production)

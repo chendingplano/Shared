@@ -2,13 +2,13 @@
 
 **Project:** shared  
 **Package:** `github.com/chendingplano/shared/go/api/goose`  
-**Generated:** 2026-03-24 12:12:24 UTC  
+**Generated:** 2026-04-01 12:51:31 UTC  
 
 ## Summary
 
 | Total | Pass | Fail | Pass Rate |
 |------:|-----:|-----:|----------:|
-| 57 | 57 | 0 | 100.0% |
+| 41 | 41 | 0 | 100.0% |
 
 ## Test Cases
 
@@ -18,14 +18,10 @@
 | 2 | dialectFor maps MysqlName to gooselib.DialectMySQL | `dialectFor(ApiTypes.MysqlName)` | ✅ PASS | — | 0 |
 | 3 | dialectFor rejects unsupported db type 'sqlite3' | `dialectFor("sqlite3")` | ✅ PASS | — | 0 |
 | 4 | dialectFor rejects empty-string db type | `dialectFor("")` | ✅ PASS | — | 0 |
-| 5 | applyDefaults sets MigrationsDir to 'migrations' when not specified | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
-| 6 | applyDefaults sets TableName to 'db_migrations' when not specified | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 7 | applyDefaults sets Verbose=true when Verbose field is empty | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 8 | applyDefaults sets AllowOutOfOrder=true when field is empty | `applyDefaults(ApiTypes.MigrationConfig{})` | ✅ PASS | — | 0 |
 | 9 | applyDefaults sets Verbose=false when Verbose='false' | `applyDefaults(ApiTypes.MigrationConfig{Verbose: "false"})` | ✅ PASS | — | 0 |
 | 10 | applyDefaults sets AllowOutOfOrder=false when AllowOutOfOrder='false' | `applyDefaults(ApiTypes.MigrationConfig{AllowOutOfOrder: "false"})` | ✅ PASS | — | 0 |
-| 11 | applyDefaults preserves custom TableName | `applyDefaults(ApiTypes.MigrationConfig{TableName: "my_migrations"})` | ✅ PASS | — | 0 |
-| 12 | applyDefaults preserves custom MigrationsDir | `applyDefaults(ApiTypes.MigrationConfig{MigrationsDir: "db/migrations"})` | ✅ PASS | — | 0 |
 | 13 | hasMigrationFiles returns false for nil FS without error | `hasMigrationFiles(nil)` | ✅ PASS | — | 0 |
 | 14 | hasMigrationFiles returns false for empty directory | `hasMigrationFiles(os.DirFS(emptyDir))` | ✅ PASS | — | 0 |
 | 15 | hasMigrationFiles returns true when a .sql file is present | `hasMigrationFiles(os.DirFS(dirWithSQL))` | ✅ PASS | — | 0 |
@@ -46,8 +42,6 @@
 | 30 | CreateMigration returns error when upSQL is empty or whitespace | `m.CreateMigration(desc, "  ", downSQL)` | ✅ PASS | — | 0 |
 | 31 | CreateMigration writes a timestamped .sql file with correct goose annotations | `m.CreateMigration("Add Users Table", createSQL, dropSQL)` | ✅ PASS | — | 0 |
 | 32 | CreateMigration file has no Down section when downSQL is empty | `m.CreateMigration(desc, upSQL, "")` | ✅ PASS | — | 0 |
-| 33 | NewWithDB returns error for unsupported db type | `NewWithDB(nil, "badtype", cfg, logger)` | ✅ PASS | — | 0 |
-| 34 | NewWithDB with empty migrations directory returns migrator with nil provider | `NewWithDB(&sql.DB{}, PgName, cfg{emptyDir}, logger)` | ✅ PASS | — | 0 |
 | 35 | rebuildProvider keeps provider nil when no migration files exist | `m.rebuildProvider() with empty MigrationsFS` | ✅ PASS | — | 0 |
 | 36 | CreateAndApply succeeds when MigrationsFS dir is empty (nil provider path) | `m.CreateAndApply(ctx, desc, upSQL, "")` | ✅ PASS | — | 0 |
 | 37 | CreateAndApply returns filename even when provider rebuild fails (nil DB) | `m.CreateAndApply(ctx, desc, upSQL, "") — nil DB, MigrationsFS = writeDir` | ✅ PASS | — | 0 |
@@ -61,15 +55,6 @@
 | 45 | HasPending returns (false, nil) when provider is nil | `m.HasPending(ctx) with nil provider` | ✅ PASS | — | 0 |
 | 46 | ListSources returns nil when provider is nil | `m.ListSources() with nil provider` | ✅ PASS | — | 0 |
 | 47 | RunMigrations returns error when MigrationsDir points to an existing file | `RunMigrations with MigrationsDir = path-to-a-regular-file` | ✅ PASS | — | 0 |
-| 48 | RunMigrations succeeds for empty migrations directory with valid DBType | `RunMigrations(ctx, logger, name, cfg{emptyDir}, db)` | ✅ PASS | — | 0 |
-| 49 | RunProjectMigrations returns error when DB is nil | `RunProjectMigrations(ctx, logger, cfg, nil)` | ✅ PASS | — | 0 |
-| 50 | RunSharedMigrations returns error when DB is nil | `RunSharedMigrations(ctx, logger, cfg, nil)` | ✅ PASS | — | 0 |
-| 51 | RunAutoTesterMigrations returns error when DB is nil | `RunAutoTesterMigrations(ctx, logger, cfg, nil)` | ✅ PASS | — | 0 |
-| 52 | RunProjectMigrations initialises ProjectMigrator successfully on first call | `RunProjectMigrations(ctx, logger, cfg, &sql.DB{})` | ✅ PASS | — | 0 |
-| 53 | RunProjectMigrations returns 'already initialized' error on second call | `RunProjectMigrations(ctx, logger, cfg, &sql.DB{}) — second call` | ✅ PASS | — | 0 |
-| 54 | RunSharedMigrations initialises SharedMigrator successfully on first call | `RunSharedMigrations(ctx, logger, cfg, &sql.DB{})` | ✅ PASS | — | 0 |
-| 55 | RunSharedMigrations returns 'already initialized' error on second call | `RunSharedMigrations(ctx, logger, cfg, &sql.DB{}) — second call` | ✅ PASS | — | 0 |
-| 56 | RunAutoTesterMigrations initialises AutoTesterMigrator successfully on first call | `RunAutoTesterMigrations(ctx, logger, cfg, &sql.DB{})` | ✅ PASS | — | 0 |
-| 57 | RunAutoTesterMigrations returns 'already initialized' error on second call | `RunAutoTesterMigrations(ctx, logger, cfg, &sql.DB{}) — second call` | ✅ PASS | — | 0 |
 
 ---
+*Generated by `goose_pg_test.go` — testname: `goose_pg`*

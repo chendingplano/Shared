@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -518,32 +519,19 @@ type RequestContext interface {
 
 // Config holds the configuration for the Migrator.
 type MigrationConfig struct {
-	// MigrationsFS is the filesystem that contains the .sql migration files.
-	// Defaults to os.DirFS("migrations") when nil.
-	// Can also be fs.Sub(embedFS, "migrations") for an embedded filesystem.
-	MigrationsFS string `json:"migrations_fs" mapstructure:"migrations_fs"`
+	MigrationsFS  fs.FS
+	MigrationsDir string
+	TableName     string
 
-	// MigrationsDir is the path to the migrations directory on disk.
-	// Defaults to the MIGRATION_DIR environment variable, or "migrations" if unset.
-	// Required when using CreateMigration or CreateAndApply; ignored otherwise.
-	// Must point to the same directory that MigrationsFS reads from.
-	// Example: "migrations" or "/app/migrations"
-	MigrationsDir string `json:"migrations_dir" mapstructure:"migrations_dir"`
+	SharedMigrationsFS  string
+	SharedMigrationsDir string
+	SharedTableName     string
 
-	// TableName is the goose version-tracking table name.
-	// Defaults to "goose_db_version" when empty.
-	DBName    string `json:"dbname"`
-	TableName string `json:"tablename" mapstructure:"tablename"`
+	Verbose         bool
+	AllowOutOfOrder bool
 
-	// Verbose enables verbose logging from the goose library itself.
-	// Defaults to true.
-	Verbose string `json:"verbose" mapstructure:"verbose"`
-
-	// AllowOutOfOrder permits applying migrations whose version numbers are
-	// lower than the currently recorded database version. Useful when
-	// feature branches add migrations independently.
-	// Defaults to true.
-	AllowOutOfOrder string `json:"allow_outof_order" mapstructure:"allow_outof_order"`
+	VerboseStr         string `json:"verbose" mapstructure:"verbose"`
+	AllowOutOfOrderStr string `json:"allow_outof_order" mapstructure:"allow_outof_order"`
 }
 
 // TesterDefinition holds the metadata for a tester as declared in a [[testers]]

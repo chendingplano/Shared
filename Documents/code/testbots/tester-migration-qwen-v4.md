@@ -1131,7 +1131,6 @@ PG_PASSWORD = "<password>"
 PG_DB_NAME = "<project_db>"
 
 # Shared DB - shared library tables (common across all projects)
-PG_DB_NAME_SHARED = "<shared_db>"
 
 # Migration DB (Project) - goose version tracking for Project DB migrations
 # CRITICAL: MigrationTester MUST NEVER access this

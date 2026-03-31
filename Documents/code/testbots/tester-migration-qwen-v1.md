@@ -560,7 +560,6 @@ func verifyResult(tc TestCase, result TestResult) TestResult {
 PG_USER_NAME = "admin"
 PG_PASSWORD = "<password>"
 PG_DB_NAME = "migration_test_project"
-PG_DB_NAME_SHARED = "migration_test_shared"
 PG_DB_NAME_AUTOTESTER = "migration_test_autotester"
 PG_HOST = "127.0.0.1"
 PG_PORT = "5432"

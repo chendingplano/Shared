@@ -164,7 +164,6 @@ PG_PASSWORD = "<password>"
 
 # Production databases
 PG_DB_NAME = "<project_db>"                    # Project DB
-PG_DB_NAME_SHARED = "<shared_db>"              # Shared DB
 
 # Production Migration DBs (NEVER accessed by MigrationTester)
 PG_DB_NAME_MIGRATIONS_PROJECT = "<migrations_project_db>"  # Project migration tracking
@@ -857,7 +856,6 @@ PG_PASSWORD = "<password>"
 PG_DB_NAME = "<project_db>"
 
 # Shared DB - shared library tables (common across all projects)
-PG_DB_NAME_SHARED = "<shared_db>"
 
 # Migration DB (Project) - goose version tracking for Project DB migrations
 # CRITICAL: MigrationTester MUST NEVER access this

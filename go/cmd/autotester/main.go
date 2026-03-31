@@ -103,7 +103,7 @@ func main() {
 
 	// Step 4: Run auto-test migrations
 	logger.Info("Step 4 Run Migrations")
-	if err := runAutoTestMigrations(ctx, logger, autotester.AutotesterConfig.MigrationConfig); err != nil {
+	if err := runAutoTestMigrations(ctx, logger); err != nil {
 		logger.Error("Failed to run auto-test migrations", "error", err)
 		os.Exit(2)
 	}
@@ -210,8 +210,7 @@ func isProductionDB() bool {
 // runAutoTestMigrations runs goose migrations for auto-test tables.
 func runAutoTestMigrations(
 	ctx context.Context,
-	logger ApiTypes.JimoLogger,
-	migrateCfg ApiTypes.MigrationConfig) error {
+	logger ApiTypes.JimoLogger) error {
 	var projectDB *sql.DB = ApiTypes.ProjectDBHandle
 	var migrateDB *sql.DB = ApiTypes.SharedMigrationDBHandle
 	var autotesterDB *sql.DB = ApiTypes.AutotesterDBHandle
@@ -226,17 +225,17 @@ func runAutoTestMigrations(
 	}
 
 	logger.Info("Running project migrations")
-	if err := goose.RunProjectMigrations(ctx, logger, migrateCfg, projectDB); err != nil {
+	if err := goose.RunProjectMigrations(ctx, logger, projectDB); err != nil {
 		return fmt.Errorf("failed to run project migrator: %w", err)
 	}
 
 	logger.Info("Running shared migrations")
-	if err := goose.RunSharedMigrations(ctx, logger, migrateCfg, migrateDB); err != nil {
+	if err := goose.RunSharedMigrations(ctx, logger, migrateDB); err != nil {
 		return fmt.Errorf("failed to run shared migrator: %w", err)
 	}
 
 	logger.Info("Running autotester migrations")
-	if err := goose.RunAutoTesterMigrations(ctx, logger, migrateCfg, autotesterDB); err != nil {
+	if err := goose.RunAutoTesterMigrations(ctx, logger, autotesterDB); err != nil {
 		return fmt.Errorf("failed to run auto-tester migrator: %w", err)
 	}
 

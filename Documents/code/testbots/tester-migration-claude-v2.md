@@ -784,7 +784,6 @@ PG_PORT     = "5432"
 
 # Application databases (production-equivalent; never used by the tester directly)
 PG_DB_NAME        = "<project_db_name>"
-PG_DB_NAME_SHARED = "<shared_db_name>"
 
 # AutoTester DB — test result storage (framework-managed)
 PG_DB_NAME_AUTOTESTER = "<project>_autotester"

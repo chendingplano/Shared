@@ -13,6 +13,7 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -657,7 +658,7 @@ func LoadLibConfig(loc string) {
 	})
 }
 
-func GetSafeString(mapObj map[string] any, key string) (string, bool) {
+func GetSafeString(mapObj map[string]any, key string) (string, bool) {
 	if mapObj == nil {
 		return "", false
 	}
@@ -679,7 +680,7 @@ func GetSafeString(mapObj map[string] any, key string) (string, bool) {
 	}
 }
 
-func GetSafeSubObj(mapObj map[string] any, key string) (map[string] any, bool) {
+func GetSafeSubObj(mapObj map[string]any, key string) (map[string]any, bool) {
 	if mapObj == nil {
 		return nil, false
 	}
@@ -690,11 +691,11 @@ func GetSafeSubObj(mapObj map[string] any, key string) (map[string] any, bool) {
 	}
 
 	switch v := val.(type) {
-	case map[string] any:
+	case map[string]any:
 		return v, true
 
 	case map[string]string:
-		result := make(map[string] any)
+		result := make(map[string]any)
 		for k, c := range v {
 			result[k] = c
 		}
@@ -756,25 +757,17 @@ func ReadMigrationConfig(filename string, logger ApiTypes.JimoLogger) (*ApiTypes
 	return config, nil
 }
 
-// applyDefaults applies default values to the Config.
 func ApplyDefaults(migrate_cfg *ApiTypes.MigrationConfig) {
-	if migrate_cfg.MigrationsFS == "" {
-		migrate_cfg.MigrationsFS = "migrations"
-	}
-
-	if migrate_cfg.MigrationsDir == "" {
-		migrate_cfg.MigrationsDir = "migrations"
-	}
-
 	// Verbose defaults to true
-	if migrate_cfg.Verbose != "false" {
-		migrate_cfg.Verbose = "true"
+	migrate_cfg.Verbose = false
+	migrate_cfg.Verbose = false
+	if migrate_cfg.VerboseStr != "false" {
+		migrate_cfg.Verbose = true
 	}
 
-	// AllowOutOfOrder defaults to true
-	if migrate_cfg.AllowOutOfOrder != "false" {
+	if migrate_cfg.AllowOutOfOrderStr != "false" {
+		migrate_cfg.AllowOutOfOrder = true
 	}
-	migrate_cfg.AllowOutOfOrder = "true"
 }
 
 // CreatePGDB does the following:
@@ -805,16 +798,24 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 	// PG_DB_NAME defines the project DB. Shared tables live in the same DB.
 	// PG_DB_NAME_AUTOTESTER defines the autotester DB.
 	config.ProjectDBName = os.Getenv("PG_DB_NAME")
+	schemaNamesRaw := os.Getenv("PG_SCHEMA_NAMES")
+	if schemaNamesRaw == "" {
+		return fmt.Errorf("(MID_26033001) missing env variable: PG_SCHEMA_NAMES")
+	}
+	schemaNames, err := parsePGSchemaNames(schemaNamesRaw)
+	if err != nil {
+		return err
+	}
+
 	if config.ProjectDBName == "" {
 		return fmt.Errorf("(MID_26031035) missing env variable: PG_DB_NAME")
 	}
 	config.SharedDBName = config.ProjectDBName
 
-	// Step 1: Create project DB connection.
-	// search_path=project,shared,public: project tables resolve first, shared tables are also accessible.
+	// Step 1: Create ProjectDBHandle scoped to the 'public' schema.
 	logger.Info("createPGDB", "dbname", config.ProjectDBName)
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=project,shared,public'",
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=public'",
 		host, port, config.UserName, config.Password, config.ProjectDBName)
 
 	// SECURITY: Don't log credentials
@@ -838,31 +839,31 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	logger.Info("PostgreSQL created", "dbname", config.ProjectDBName, "user", config.UserName)
 
-	// Ensure schemas exist (idempotent).
-	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS project"); err != nil {
-		return fmt.Errorf("(MID_26031045) failed to create 'project' schema: %w", err)
-	}
-	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS shared"); err != nil {
-		return fmt.Errorf("(MID_26031046) failed to create 'shared' schema: %w", err)
+	// Ensure schemas from PG_SCHEMA_NAMES exist (idempotent).
+	// Uses ProjectDBHandle — CREATE SCHEMA does not depend on search_path.
+	for _, schemaName := range schemaNames {
+		stmt := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName))
+		if _, err = config.ProjectDBHandle.Exec(stmt); err != nil {
+			return fmt.Errorf("(MID_26031045) failed to create schema %q: %w", schemaName, err)
+		}
 	}
 
-	// Step 2: SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
-	config.SharedDBHandle = config.ProjectDBHandle
-	config.ProjectMigrationDBHandle = config.ProjectDBHandle
-
-	// SharedMigrationDBHandle uses a separate connection scoped to the 'shared' schema,
-	// so that goose migrations for shared/ tables create objects in the right schema.
-	sharedMigConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=shared,public'",
+	// Step 2: Create SharedDBHandle with its own connection scoped to the 'shared' schema.
+	// Project tables live in 'public'; shared-library tables live in 'shared'.
+	sharedConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable dbname=%s options='-c search_path=shared'",
 		host, port, config.UserName, config.Password, config.ProjectDBName)
 
-	config.SharedMigrationDBHandle, err = sql.Open("postgres", sharedMigConnStr)
+	config.SharedDBHandle, err = sql.Open("postgres", sharedConnStr)
 	if err != nil {
-		return fmt.Errorf("(MID_26031043) failed to open shared-migration PostgreSQL connection: %w", err)
+		return fmt.Errorf("(MID_26031046) failed to open shared PG connection: %w", err)
 	}
-	if err = config.SharedMigrationDBHandle.Ping(); err != nil {
-		return fmt.Errorf("(MID_26031044) failed pinging PostgreSQL for shared-migration DB: %w", err)
+	if err = config.SharedDBHandle.Ping(); err != nil {
+		return fmt.Errorf("(MID_26031047) failed connecting PostgreSQL for shared DB (SHD_DBS_056), error: %w", err)
 	}
-	logger.Info("PostgreSQL shared-migration connection created", "dbname", config.ProjectDBName, "search_path", "shared")
+	logger.Info("PostgreSQL shared connection created", "dbname", config.ProjectDBName, "search_path", "shared")
+
+	config.ProjectMigrationDBHandle = config.ProjectDBHandle
+	config.SharedMigrationDBHandle = config.SharedDBHandle
 
 	// Step 3: Create Autotester DB
 	if config.AutotesterDBName == "" {
@@ -887,6 +888,28 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 		"dbname", config.AutotesterDBName)
 
 	return nil
+}
+
+var pgSchemaNameRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func parsePGSchemaNames(schemaNamesRaw string) ([]string, error) {
+	parts := strings.Split(schemaNamesRaw, ",")
+	schemaNames := make([]string, 0, len(parts))
+	for _, part := range parts {
+		schemaName := strings.TrimSpace(part)
+		if schemaName == "" {
+			continue
+		}
+		if !pgSchemaNameRegex.MatchString(schemaName) {
+			return nil, fmt.Errorf("(MID_26040101) invalid schema name in PG_SCHEMA_NAMES: %q", schemaName)
+		}
+		schemaNames = append(schemaNames, schemaName)
+	}
+
+	if len(schemaNames) == 0 {
+		return nil, fmt.Errorf("(MID_26040102) PG_SCHEMA_NAMES does not contain any valid schema name")
+	}
+	return schemaNames, nil
 }
 
 func CreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DatabaseConfig) error {
@@ -987,10 +1010,10 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 		if ApiTypes.ProjectDBHandle == nil {
 			return fmt.Errorf("(MID_26030904) project db is nil")
 		}
-		// SharedDBHandle and ProjectMigrationDBHandle are aliases for the project DB.
-		ApiTypes.SharedDBHandle = config.PGConf.ProjectDBHandle
+		// ProjectMigrationDBHandle targets 'public'; SharedDBHandle and
+		// SharedMigrationDBHandle have their own connections scoped to 'shared'.
 		ApiTypes.ProjectMigrationDBHandle = config.PGConf.ProjectDBHandle
-		// SharedMigrationDBHandle has its own connection scoped to the 'shared' schema.
+		ApiTypes.SharedDBHandle = config.PGConf.SharedDBHandle
 		ApiTypes.SharedMigrationDBHandle = config.PGConf.SharedMigrationDBHandle
 		if ApiTypes.SharedMigrationDBHandle == nil {
 			return fmt.Errorf("(MID_26030915) shared migration db is nil")

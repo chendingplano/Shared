@@ -1,0 +1,1 @@
+/Users/cding/Workspace/KnowledgeStore/DevDocuments/goose.md
