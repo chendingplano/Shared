@@ -13,7 +13,6 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -798,14 +797,14 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 	// PG_DB_NAME defines the project DB. Shared tables live in the same DB.
 	// PG_DB_NAME_AUTOTESTER defines the autotester DB.
 	config.ProjectDBName = os.Getenv("PG_DB_NAME")
-	schemaNamesRaw := os.Getenv("PG_SCHEMA_NAMES")
-	if schemaNamesRaw == "" {
-		return fmt.Errorf("(MID_26033001) missing env variable: PG_SCHEMA_NAMES")
-	}
-	schemaNames, err := parsePGSchemaNames(schemaNamesRaw)
-	if err != nil {
-		return err
-	}
+	// schemaNamesRaw := os.Getenv("PG_SCHEMA_NAMES")
+	// if schemaNamesRaw == "" {
+	// 	return fmt.Errorf("(MID_26033001) missing env variable: PG_SCHEMA_NAMES")
+	// }
+	// schemaNames, err := parsePGSchemaNames(schemaNamesRaw)
+	// if err != nil {
+	// 	return err
+	// }
 
 	if config.ProjectDBName == "" {
 		return fmt.Errorf("(MID_26031035) missing env variable: PG_DB_NAME")
@@ -841,12 +840,12 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	// Ensure schemas from PG_SCHEMA_NAMES exist (idempotent).
 	// Uses ProjectDBHandle — CREATE SCHEMA does not depend on search_path.
-	for _, schemaName := range schemaNames {
-		stmt := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName))
-		if _, err = config.ProjectDBHandle.Exec(stmt); err != nil {
-			return fmt.Errorf("(MID_26031045) failed to create schema %q: %w", schemaName, err)
-		}
-	}
+	// for _, schemaName := range schemaNames {
+	// 	stmt := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName))
+	// 	if _, err = config.ProjectDBHandle.Exec(stmt); err != nil {
+	// 		return fmt.Errorf("(MID_26031045) failed to create schema %q: %w", schemaName, err)
+	// 	}
+	// }
 
 	// Step 2: Create SharedDBHandle with its own connection scoped to the 'shared' schema.
 	// Project tables live in 'public'; shared-library tables live in 'shared'.
@@ -890,6 +889,7 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 	return nil
 }
 
+/*
 var pgSchemaNameRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func parsePGSchemaNames(schemaNamesRaw string) ([]string, error) {
@@ -911,6 +911,7 @@ func parsePGSchemaNames(schemaNamesRaw string) ([]string, error) {
 	}
 	return schemaNames, nil
 }
+*/
 
 func CreateMySqlDB(logger ApiTypes.JimoLogger, config ApiTypes.DatabaseConfig) error {
 	if !config.Create {
