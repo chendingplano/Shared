@@ -838,14 +838,11 @@ func CreatePGDB(logger ApiTypes.JimoLogger, config *ApiTypes.DatabaseConfig) err
 
 	logger.Info("PostgreSQL created", "dbname", config.ProjectDBName, "user", config.UserName)
 
-	// Ensure schemas from PG_SCHEMA_NAMES exist (idempotent).
+	// Ensure the 'shared' schema exists (idempotent).
 	// Uses ProjectDBHandle — CREATE SCHEMA does not depend on search_path.
-	// for _, schemaName := range schemaNames {
-	// 	stmt := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName))
-	// 	if _, err = config.ProjectDBHandle.Exec(stmt); err != nil {
-	// 		return fmt.Errorf("(MID_26031045) failed to create schema %q: %w", schemaName, err)
-	// 	}
-	// }
+	if _, err = config.ProjectDBHandle.Exec("CREATE SCHEMA IF NOT EXISTS shared"); err != nil {
+		return fmt.Errorf("(MID_26031045) failed to create 'shared' schema: %w", err)
+	}
 
 	// Step 2: Create SharedDBHandle with its own connection scoped to the 'shared' schema.
 	// Project tables live in 'public'; shared-library tables live in 'shared'.
