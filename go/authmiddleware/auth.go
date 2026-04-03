@@ -81,6 +81,20 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			})
 		}
 
+		// Block unverified users except for verification/logout endpoints
+		if !user_info.Verified && !isVerificationExemptPath(path) {
+			logger.Warn("unverified user blocked",
+				"email", user_info.Email,
+				"path", path)
+			if IsHTMLRequest(c) {
+				return c.Redirect(http.StatusFound, "/verification")
+			}
+			return c.JSON(http.StatusForbidden, map[string]any{
+				"error": "Email verification required",
+				"code":  "EMAIL_NOT_VERIFIED",
+			})
+		}
+
 		// Attach UserContextKey to context
 		user_name := user_info.UserName
 		ctx = context.WithValue(c.Request().Context(), ApiTypes.UserContextKey, user_name)
@@ -88,6 +102,15 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		logger.Info("User authenticated, proceed", "path", path)
 		return next(c)
 	}
+}
+
+// isVerificationExemptPath returns true for paths that unverified users must
+// be able to access (verification flow, logout, auth status checks).
+func isVerificationExemptPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/auth/verification") ||
+		strings.HasPrefix(path, "/api/v1/auth/logout") ||
+		strings.HasPrefix(path, "/api/v1/auth/me") ||
+		path == "/verification"
 }
 
 // isStaticAsset returns true if the path likely refers to a public static asset.

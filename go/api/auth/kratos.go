@@ -535,6 +535,21 @@ func HandleEmailLoginKratosBase(
 		CallerLoc:    "SHD_0211103011",
 	})
 
+	// Check email verification status
+	verified := isIdentityEmailVerified(identity)
+	if !verified {
+		logger.Warn("login succeeded but email not verified",
+			"email", email,
+			"identity_id", identity.Id)
+		return http.StatusForbidden, map[string]interface{}{
+			"status":   "error",
+			"verified": false,
+			"error":    "Email verification required",
+			"code":     "EMAIL_NOT_VERIFIED",
+			"LOC":      "SHD_0403120200",
+		}
+	}
+
 	// Determine redirect URL (use existing GetRedirectURL from auth-util.go)
 	// Note: isOwner handling would need to be added to GetRedirectURL if needed
 	redirectURL := GetRedirectURL(rc, email, isAdmin, false)
@@ -543,6 +558,7 @@ func HandleEmailLoginKratosBase(
 	return http.StatusOK, map[string]interface{}{
 		"status":       "ok",
 		"redirect_url": redirectURL,
+		"verified":     true,
 		"LOC":          "SHD_0207144105",
 		"session": map[string]interface{}{
 			"id":               session.Id,
@@ -595,12 +611,28 @@ func HandleAuthMeKratos(c echo.Context) error {
 
 	identity := session.Identity
 	info := extractIdentityInfo(identity)
+	verified := isIdentityEmailVerified(identity)
+
+	// Block unverified users — they must complete email verification first
+	if !verified {
+		logger.Warn("unverified user blocked at /auth/me",
+			"email", info.Email,
+			"identity_id", identity.Id)
+		return c.JSON(http.StatusForbidden, map[string]interface{}{
+			"authenticated": true,
+			"verified":      false,
+			"error":         "Email verification required",
+			"code":          "EMAIL_NOT_VERIFIED",
+			"LOC":           "SHD_0403120100",
+		})
+	}
 
 	baseURL := os.Getenv("APP_BASE_URL")
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"base_url": baseURL,
 		"LOC":      "SHD_0207143201",
+		"verified": true,
 		"session": map[string]interface{}{
 			"id":               session.Id,
 			"active":           session.Active,
@@ -744,6 +776,21 @@ type identityInfo struct {
 	IsAdmin   bool
 	IsOwner   bool
 	Avatar    string
+}
+
+// isIdentityEmailVerified checks the Kratos identity's VerifiableAddresses
+// to determine if the user's email has been verified.
+// Returns true only if at least one verifiable address is marked as verified.
+func isIdentityEmailVerified(identity *ory.Identity) bool {
+	if identity == nil {
+		return false
+	}
+	for _, addr := range identity.VerifiableAddresses {
+		if addr.Verified {
+			return true
+		}
+	}
+	return false
 }
 
 // extractIdentityInfo extracts common user fields from a Kratos identity's
@@ -1369,13 +1416,14 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 		IsOwner:    info.IsOwner,
 		Avatar:     info.Avatar,
 		UserStatus: userStatus,
-		Verified:   true, // Kratos sessions imply verified
+		Verified:   isIdentityEmailVerified(identity),
 		AuthType:   "kratos",
 	}
 
 	logger.Debug("Kratos session valid",
 		"email", info.Email,
 		"identity_id", identity.Id,
+		"verified", userInfo.Verified,
 		"is_admin", info.IsAdmin,
 		"is_owner", info.IsOwner)
 
@@ -1440,13 +1488,14 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		IsOwner:    info.IsOwner,
 		Avatar:     info.Avatar,
 		UserStatus: userStatus,
-		Verified:   true,
+		Verified:   isIdentityEmailVerified(identity),
 		AuthType:   "kratos",
 	}
 
 	logger.Debug("Kratos session valid (RC)",
 		"email", info.Email,
 		"identity_id", identity.Id,
+		"verified", userInfo.Verified,
 		"is_admin", info.IsAdmin,
 		"is_owner", info.IsOwner)
 
@@ -2617,11 +2666,28 @@ func getKratosAdminURL() string {
 	return strings.TrimSpace(os.Getenv("KRATOS_ADMIN_URL"))
 }
 
+// isRawIdentityEmailVerified checks the verifiable_addresses array in a raw
+// Kratos identity JSON map to determine if the user's email has been verified.
+func isRawIdentityEmailVerified(identity map[string]interface{}) bool {
+	addrs, ok := identity["verifiable_addresses"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, a := range addrs {
+		if addr, ok := a.(map[string]interface{}); ok {
+			if verified, ok := addr["verified"].(bool); ok && verified {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // KratosIdentityToUserInfo converts a raw Kratos identity JSON map to ApiTypes.UserInfo.
 func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInfo {
 	userInfo := &ApiTypes.UserInfo{
 		AuthType: "kratos",
-		Verified: true,
+		Verified: isRawIdentityEmailVerified(identity),
 	}
 
 	if id, ok := identity["id"].(string); ok {
