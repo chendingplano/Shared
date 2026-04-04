@@ -613,6 +613,23 @@ func HandleAuthMeKratos(c echo.Context) error {
 	info := extractIdentityInfo(identity)
 	verified := isIdentityEmailVerified(identity)
 
+	// If the user logged in via OIDC (e.g. Google) and their email isn't marked
+	// verified in Kratos, auto-verify it. The OIDC provider already verified the
+	// email as part of the OAuth flow.
+	if !verified && isSessionAuthenticatedViaOIDC(session) {
+		logger.Info("OIDC user with unverified email, auto-verifying",
+			"email", info.Email,
+			"identity_id", identity.Id)
+		if err := kratosAdminVerifyEmail(logger, identity.Id, info.Email); err != nil {
+			logger.Error("Failed to auto-verify OIDC user email",
+				"email", info.Email,
+				"identity_id", identity.Id,
+				"error", err)
+		} else {
+			verified = true
+		}
+	}
+
 	// Block unverified users — they must complete email verification first
 	if !verified {
 		logger.Warn("unverified user blocked at /auth/me",
@@ -791,6 +808,94 @@ func isIdentityEmailVerified(identity *ory.Identity) bool {
 		}
 	}
 	return false
+}
+
+// isSessionAuthenticatedViaOIDC checks whether the session was authenticated
+// using an OIDC provider (e.g. Google). OIDC providers verify the email as part
+// of the OAuth flow, so we can trust the email is valid.
+func isSessionAuthenticatedViaOIDC(session *ory.Session) bool {
+	if session == nil {
+		return false
+	}
+	for _, am := range session.GetAuthenticationMethods() {
+		if am.Method != nil && *am.Method == "oidc" {
+			return true
+		}
+	}
+	return false
+}
+
+// kratosAdminVerifyEmail marks an identity's email as verified via the Kratos
+// Admin API. This uses the GET-then-PUT pattern: fetch the identity, set the
+// verifiable address to verified, and PUT it back.
+func kratosAdminVerifyEmail(logger ApiTypes.JimoLogger, identityID string, email string) error {
+	adminURL := getKratosAdminURL()
+	if adminURL == "" {
+		return fmt.Errorf("KRATOS_ADMIN_URL not set (SHD_0404225800)")
+	}
+
+	current, err := kratosGetRawIdentity(identityID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch identity for email verification (SHD_0404225801): %w", err)
+	}
+
+	// Update verifiable_addresses to mark the email as verified
+	now := time.Now().UTC().Format(time.RFC3339)
+	verifiableAddresses := []map[string]any{
+		{
+			"via":         "email",
+			"value":       email,
+			"verified":    true,
+			"verified_at": now,
+			"status":      "completed",
+		},
+	}
+
+	updateBody := map[string]any{
+		"schema_id":            current["schema_id"],
+		"traits":               current["traits"],
+		"state":                "active",
+		"verifiable_addresses": verifiableAddresses,
+	}
+	if mp, ok := current["metadata_public"]; ok && mp != nil {
+		updateBody["metadata_public"] = mp
+	}
+	if ma, ok := current["metadata_admin"]; ok && ma != nil {
+		updateBody["metadata_admin"] = ma
+	}
+
+	updateJSON, err := json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal verify update (SHD_0404225802): %w", err)
+	}
+
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	putReq, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID),
+		bytes.NewReader(updateJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create verify request (SHD_0404225803): %w", err)
+	}
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("Accept", "application/json")
+
+	putResp, err := httpClient.Do(putReq)
+	if err != nil {
+		return fmt.Errorf("failed to send verify request (SHD_0404225804): %w", err)
+	}
+	defer putResp.Body.Close()
+
+	if putResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(putResp.Body)
+		return fmt.Errorf("kratos admin API error (SHD_0404225805): status %d, body: %s",
+			putResp.StatusCode, string(body))
+	}
+
+	logger.Info("Auto-verified email via OIDC login",
+		"identity_id", identityID,
+		"email", email)
+	return nil
 }
 
 // extractIdentityInfo extracts common user fields from a Kratos identity's
