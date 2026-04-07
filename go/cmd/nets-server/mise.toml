@@ -1,0 +1,24 @@
+[tasks.nets-server-run]
+description = "Run nets-server with default settings"
+run = "go run ."
+
+[tasks.nets-server-run-public]
+description = "Run nets-server on 0.0.0.0 with standard ports"
+run = "go run . --host 0.0.0.0 --port 4222 --http-port 8222"
+
+[tasks.nets-server-run-token]
+description = "Run nets-server using NATS_TOKEN from environment"
+run = "go run . --token ${NATS_TOKEN}"
+
+[tasks.nets-server-run-userpass]
+description = "Run nets-server using NATS_USER/NATS_PASS from environment"
+run = "go run . --user ${NATS_USER} --pass ${NATS_PASS}"
+
+[tasks.nets-server-build]
+description = "Build nets-server binary in this directory"
+run = "go build -o ./nets-server ."
+
+[tasks.nets-server-test]
+description = "Run unit tests for nets-server"
+run = "go test ."
+
