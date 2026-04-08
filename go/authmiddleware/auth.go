@@ -49,6 +49,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		origin := c.Request().Header.Get("Origin")
 		referer := c.Request().Header.Get("Referer")
 		authorization := c.Request().Header.Get("Authorization")
+		cookieHeader := c.Request().Header.Get("Cookie")
 		clientIP := c.RealIP()
 		method := c.Request().Method
 		
@@ -58,6 +59,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			"user_agent", userAgent,
 			"origin", origin,
 			"referer", referer,
+			"has_cookie_header", cookieHeader != "",
 			"has_auth_header", authorization != "",
 			"client_ip", clientIP)
 		user_info, err := IsAuthenticated(rc)

@@ -21,6 +21,7 @@ Thumbs.db
 !.env.example
 !.env.test
 mise.local.toml
+nets-server
 
 # Vite
 vite.config.js.timestamp-*

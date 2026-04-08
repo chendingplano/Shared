@@ -613,6 +613,23 @@ func HandleAuthMeKratos(c echo.Context) error {
 	info := extractIdentityInfo(identity)
 	verified := isIdentityEmailVerified(identity)
 
+	// If the user logged in via OIDC (e.g. Google) and their email isn't marked
+	// verified in Kratos, auto-verify it. The OIDC provider already verified the
+	// email as part of the OAuth flow.
+	if !verified && isSessionAuthenticatedViaOIDC(session) {
+		logger.Info("OIDC user with unverified email, auto-verifying",
+			"email", info.Email,
+			"identity_id", identity.Id)
+		if err := kratosAdminVerifyEmail(logger, identity.Id, info.Email); err != nil {
+			logger.Error("Failed to auto-verify OIDC user email",
+				"email", info.Email,
+				"identity_id", identity.Id,
+				"error", err)
+		} else {
+			verified = true
+		}
+	}
+
 	// Block unverified users — they must complete email verification first
 	if !verified {
 		logger.Warn("unverified user blocked at /auth/me",
@@ -791,6 +808,94 @@ func isIdentityEmailVerified(identity *ory.Identity) bool {
 		}
 	}
 	return false
+}
+
+// isSessionAuthenticatedViaOIDC checks whether the session was authenticated
+// using an OIDC provider (e.g. Google). OIDC providers verify the email as part
+// of the OAuth flow, so we can trust the email is valid.
+func isSessionAuthenticatedViaOIDC(session *ory.Session) bool {
+	if session == nil {
+		return false
+	}
+	for _, am := range session.GetAuthenticationMethods() {
+		if am.Method != nil && *am.Method == "oidc" {
+			return true
+		}
+	}
+	return false
+}
+
+// kratosAdminVerifyEmail marks an identity's email as verified via the Kratos
+// Admin API. This uses the GET-then-PUT pattern: fetch the identity, set the
+// verifiable address to verified, and PUT it back.
+func kratosAdminVerifyEmail(logger ApiTypes.JimoLogger, identityID string, email string) error {
+	adminURL := getKratosAdminURL()
+	if adminURL == "" {
+		return fmt.Errorf("KRATOS_ADMIN_URL not set (SHD_0404225800)")
+	}
+
+	current, err := kratosGetRawIdentity(identityID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch identity for email verification (SHD_0404225801): %w", err)
+	}
+
+	// Update verifiable_addresses to mark the email as verified
+	now := time.Now().UTC().Format(time.RFC3339)
+	verifiableAddresses := []map[string]any{
+		{
+			"via":         "email",
+			"value":       email,
+			"verified":    true,
+			"verified_at": now,
+			"status":      "completed",
+		},
+	}
+
+	updateBody := map[string]any{
+		"schema_id":            current["schema_id"],
+		"traits":               current["traits"],
+		"state":                "active",
+		"verifiable_addresses": verifiableAddresses,
+	}
+	if mp, ok := current["metadata_public"]; ok && mp != nil {
+		updateBody["metadata_public"] = mp
+	}
+	if ma, ok := current["metadata_admin"]; ok && ma != nil {
+		updateBody["metadata_admin"] = ma
+	}
+
+	updateJSON, err := json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal verify update (SHD_0404225802): %w", err)
+	}
+
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	putReq, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID),
+		bytes.NewReader(updateJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create verify request (SHD_0404225803): %w", err)
+	}
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("Accept", "application/json")
+
+	putResp, err := httpClient.Do(putReq)
+	if err != nil {
+		return fmt.Errorf("failed to send verify request (SHD_0404225804): %w", err)
+	}
+	defer putResp.Body.Close()
+
+	if putResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(putResp.Body)
+		return fmt.Errorf("kratos admin API error (SHD_0404225805): status %d, body: %s",
+			putResp.StatusCode, string(body))
+	}
+
+	logger.Info("Auto-verified email via OIDC login",
+		"identity_id", identityID,
+		"email", email)
+	return nil
 }
 
 // extractIdentityInfo extracts common user fields from a Kratos identity's
@@ -1447,31 +1552,67 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 
 	cookies := req.Header.Get("Cookie")
 	sessionToken := req.Header.Get("X-Session-Token")
+	ctx := context.Background()
 
-	// Check for session_token cookie if no X-Session-Token header
+	// Attempt 1: validate via browser cookies only.
+	// Do not send X-Session-Token in this request because Kratos prioritizes it
+	// over cookies; a stale token would otherwise cause a false 401.
+	if cookies != "" {
+		cookieReq := kratosClient.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
+		session, _, err := cookieReq.Execute()
+		if err == nil {
+			return buildUserInfoFromKratosSession(logger, session)
+		}
+		logger.Debug("Kratos cookie-based session validation failed (RC), falling back to session token", "error", err)
+	}
+
+	// Attempt 2: validate via session token (header, then cookie fallback).
 	if sessionToken == "" {
 		if cookie, err := req.Cookie("session_token"); err == nil && cookie.Value != "" {
 			sessionToken = cookie.Value
 		}
 	}
-
-	ctx := context.Background()
-	toSessionReq := kratosClient.client.FrontendAPI.ToSession(ctx)
-	if cookies != "" {
-		toSessionReq = toSessionReq.Cookie(cookies)
-	}
-	if sessionToken != "" {
-		toSessionReq = toSessionReq.XSessionToken(sessionToken)
+	if sessionToken == "" {
+		logger.Info("Kratos session validation failed (RC): no credentials provided")
+		return nil, fmt.Errorf("no valid session found")
 	}
 
-	session, _, err := toSessionReq.Execute()
+	tokenReq := kratosClient.client.FrontendAPI.ToSession(ctx).XSessionToken(sessionToken)
+	session, resp, err := tokenReq.Execute()
 	if err != nil {
-		logger.Info("Kratos session validation failed (RC)", "error", err)
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			// Stale token should be removed to avoid poisoning later requests.
+			rc.DeleteCookie("session_token")
+			logger.Warn("stale session_token detected and cleared (RC)", "error", err)
+		}
+		logger.Info("Kratos session token validation failed (RC)", "error", err)
 		return nil, err
 	}
 
+	return buildUserInfoFromKratosSession(logger, session)
+}
+
+func buildUserInfoFromKratosSession(logger ApiTypes.JimoLogger, session *ory.Session) (*ApiTypes.UserInfo, error) {
 	identity := session.Identity
 	info := extractIdentityInfo(identity)
+	verified := isIdentityEmailVerified(identity)
+
+	// Keep middleware/session checks consistent with /auth/me behavior:
+	// OIDC providers (e.g. Google) already verify email, so we auto-verify
+	// the Kratos identity if needed.
+	if !verified && isSessionAuthenticatedViaOIDC(session) {
+		logger.Info("OIDC user with unverified email in session auth path, auto-verifying",
+			"email", info.Email,
+			"identity_id", identity.Id)
+		if err := kratosAdminVerifyEmail(logger, identity.Id, info.Email); err != nil {
+			logger.Error("Failed to auto-verify OIDC user email in session auth path",
+				"email", info.Email,
+				"identity_id", identity.Id,
+				"error", err)
+		} else {
+			verified = true
+		}
+	}
 
 	userStatus := "active"
 	if identity.State != nil {
@@ -1488,7 +1629,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		IsOwner:    info.IsOwner,
 		Avatar:     info.Avatar,
 		UserStatus: userStatus,
-		Verified:   isIdentityEmailVerified(identity),
+		Verified:   verified,
 		AuthType:   "kratos",
 	}
 

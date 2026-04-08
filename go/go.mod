@@ -25,7 +25,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
-require github.com/DATA-DOG/go-sqlmock v1.5.2
+require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/nats-io/nats-server/v2 v2.12.6
+)
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op // indirect
@@ -33,7 +36,6 @@ require (
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/minio/highwayhash v1.0.4-0.20251030100505-070ab1a87a76 // indirect
 	github.com/nats-io/jwt/v2 v2.8.1 // indirect
-	github.com/nats-io/nats-server/v2 v2.12.6 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	golang.org/x/time v0.15.0 // indirect
