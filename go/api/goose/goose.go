@@ -180,8 +180,8 @@ func RunProjectMigrations(ctx context.Context,
 	} else {
 		cfg.TableName = os.Getenv("PG_MIGRATION_TNAME_PROJECT")
 		if cfg.TableName == "" {
-			logger.Warn("missing env var PG_MIGRATION_TNAME_PROJECT, default to 'project_db_migrations'")
-			cfg.TableName = "project_db_migrations"
+			logger.Warn("missing env var PG_MIGRATION_TNAME_PROJECT, default to 'project_db_migration'")
+			cfg.TableName = "project_db_migration"
 		}
 	}
 
@@ -228,8 +228,8 @@ func RunSharedMigrations(ctx context.Context,
 	} else {
 		cfg.TableName = os.Getenv("PG_MIGRATION_TNAME_SHARED")
 		if cfg.TableName == "" {
-			logger.Warn("missing PG_MIGRATION_TNAME_SHARED, default to 'shared_db_migrations'")
-			cfg.TableName = "shared_db_migrations"
+			logger.Warn("missing PG_MIGRATION_TNAME_SHARED, default to 'shared_db_migration'")
+			cfg.TableName = "shared_db_migration"
 		}
 	}
 

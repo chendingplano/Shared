@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Automated daily backup script
+# This script creates a tar archive with the current date, uploads it to remote machine, and cleans up
+
+# Generate filename with current date (format: YYYYMMDD)
+DATE=$(date +%Y%m%d)
+TAR_FILE="shared_${DATE}.tar.gz"
+
+# Step 1: Create tar archive
+echo "Creating backup archive: $TAR_FILE"
+tar --exclude-from=shared/tar_excludes.txt -czvf "$TAR_FILE" shared
+
+# Check if tar was successful
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to create tar archive"
+    exit 1
+fi
+
+# Step 2: Upload to remote machine
+echo "Uploading $TAR_FILE to remote machine..."
+scp -P 8822 "$TAR_FILE" cding@192.168.29.96:~/Backups/.
+
+# Check if scp was successful
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to upload to remote machine"
+    echo "Local tar file preserved: $TAR_FILE"
+    exit 1
+fi
+
+# Step 3: Remove local tar file
+echo "Removing local tar file..."
+rm "$TAR_FILE"
+
+echo "Backup completed successfully!"
