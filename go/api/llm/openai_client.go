@@ -114,51 +114,7 @@ func resolveScopedTimeout(specificKey, sharedKey string, allowSharedFallback boo
 }
 
 func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInput) (map[string]any, error) {
-	model := strings.TrimSpace(in.ModelName)
-	if model == "" {
-		model = strings.TrimSpace(c.ModelName)
-	}
-	if model == "" {
-		return nil, errors.New("model name is empty")
-	}
-
-	prompt := strings.TrimSpace(in.PromptText)
-	if prompt == "" {
-		return nil, errors.New("prompt text is empty")
-	}
-
-	body := map[string]any{
-		"model":           model,
-		"messages":        buildMessages(prompt, in.InputText),
-		"temperature":     0,
-		"response_format": map[string]string{"type": "json_object"},
-	}
-
-	bs, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	endpoint := buildChatCompletionsEndpoint(c.BaseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("openai request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	content, err := parseOpenAIContent(respBody)
+	content, err := c.extractTextWithFormat(ctx, in, true)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +127,64 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 		return nil, fmt.Errorf("llm response is not valid json: %w", err)
 	}
 	return parsed, nil
+}
+
+func (c *OpenAIJSONClient) ExtractText(ctx context.Context, in JSONExtractionInput) (string, error) {
+	return c.extractTextWithFormat(ctx, in, false)
+}
+
+func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExtractionInput, jsonResponse bool) (string, error) {
+	model := strings.TrimSpace(in.ModelName)
+	if model == "" {
+		model = strings.TrimSpace(c.ModelName)
+	}
+	if model == "" {
+		return "", errors.New("model name is empty")
+	}
+
+	prompt := strings.TrimSpace(in.PromptText)
+	if prompt == "" {
+		return "", errors.New("prompt text is empty")
+	}
+
+	body := map[string]any{
+		"model":       model,
+		"messages":    buildMessages(prompt, in.InputText),
+		"temperature": 0,
+	}
+	if jsonResponse {
+		body["response_format"] = map[string]string{"type": "json_object"}
+	}
+
+	bs, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := buildChatCompletionsEndpoint(c.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("openai request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	content, err := parseOpenAIContent(respBody)
+	if err != nil {
+		return "", err
+	}
+	return content, nil
 }
 
 func buildChatCompletionsEndpoint(baseURL string) string {

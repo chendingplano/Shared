@@ -80,6 +80,27 @@ type CommonConfigDef struct {
 
 var CommonConfig CommonConfigDef
 
+// LLMModelDef describes one logical model entry in `.models.toml`.
+//
+// Example:
+// [gpt-5-4-mini]
+// host = "cloud"
+// model_name = "gpt-5.4-mini"
+// api_key = "sk-..."
+// base_url = "https://api.openai.com"
+// timeout_sec = 100
+type LLMModelDef struct {
+	Host       string `toml:"host"`
+	ModelName  string `toml:"model_name"`
+	APIKey     string `toml:"api_key"`
+	BaseURL    string `toml:"base_url"`
+	TimeoutSec int    `toml:"timeout_sec"`
+}
+
+// LLMModelsFile maps logical model names to model configuration.
+// Key example: "gpt-5-4-mini".
+type LLMModelsFile map[string]LLMModelDef
+
 type LibConfigDef struct {
 	IDStartValue       int  `mapstructure:"id_start_value"`
 	IDIncValue         int  `mapstructure:"id_inc_value"`
