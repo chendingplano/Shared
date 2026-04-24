@@ -21,9 +21,12 @@ func NewRunnerByKind(kind string) (Runner, error) {
 		return DryRunRunner{}, nil
 	case "claude_code":
 		return ClaudeCodeRunner{}, nil
-	case "codex", "openclaw", "opencode":
-		return nil, fmt.Errorf("runner for %q not yet implemented; "+
-			"set AGENT_PLATFORM_FORCE_DRYRUN=true to exercise the pipeline", kind)
+	case "codex":
+		return CodexRunner{}, nil
+	case "openclaw":
+		return OpenClawRunner{}, nil
+	case "opencode":
+		return OpenCodeRunner{}, nil
 	default:
 		return nil, fmt.Errorf("unknown runtime kind %q", kind)
 	}
