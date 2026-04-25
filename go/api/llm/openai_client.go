@@ -124,7 +124,7 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 
 	parsed, err := parseLLMJSONMap(content)
 	if err != nil {
-		return nil, fmt.Errorf("llm response is not valid json: %w", err)
+		return nil, fmt.Errorf("llm response is not valid json: %w; response=%q", err, truncate(strings.TrimSpace(content), 512))
 	}
 	return parsed, nil
 }

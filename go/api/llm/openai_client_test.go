@@ -79,6 +79,34 @@ func TestExtractJSON_StripsMarkdownJSONFence(t *testing.T) {
 	}
 }
 
+func TestExtractJSON_InvalidJSONIncludesRawResponse(t *testing.T) {
+	const llmText = "not-json-response"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, llmText)))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "gemma4:26b",
+		HTTPClient: srv.Client(),
+	}
+
+	_, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	})
+	if err == nil {
+		t.Fatalf("expected ExtractJSON to fail on invalid JSON")
+	}
+	if !strings.Contains(err.Error(), `response="not-json-response"`) {
+		t.Fatalf("expected raw response in error, got: %v", err)
+	}
+}
+
 func TestBuildChatCompletionsEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
