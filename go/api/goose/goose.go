@@ -40,6 +40,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -55,6 +56,7 @@ type Migrator struct {
 	db       *sql.DB
 	dialect  gooselib.Dialect
 	cfg      ApiTypes.MigrationConfig
+	trace    *gooseVerboseLogger
 }
 
 var ProjectMigrator *Migrator
@@ -338,6 +340,9 @@ func NewWithDB(db *sql.DB,
 		return nil, err
 	}
 
+	traceLogger := newGooseVerboseLogger(logger)
+	gooselib.SetLogger(traceLogger)
+
 	opts := buildProviderOptions(cfg)
 	logger.Info("Initializing goose migrator",
 		"db_type", dbType,
@@ -383,6 +388,7 @@ func NewWithDB(db *sql.DB,
 		db:       db,
 		dialect:  dialect,
 		cfg:      cfg,
+		trace:    traceLogger,
 	}, nil
 }
 
@@ -559,7 +565,13 @@ func (m *Migrator) Up(ctx context.Context) error {
 
 	results, err := m.provider.Up(ctx)
 	if err != nil {
+		if m.trace != nil {
+			m.trace.FlushError(err)
+		}
 		return fmt.Errorf("migration up failed (MID_060221143015): %w", err)
+	}
+	if m.trace != nil {
+		m.trace.FlushSuccess()
 	}
 
 	for _, r := range results {
@@ -587,7 +599,13 @@ func (m *Migrator) UpByOne(ctx context.Context) error {
 
 	result, err := m.provider.UpByOne(ctx)
 	if err != nil {
+		if m.trace != nil {
+			m.trace.FlushError(err)
+		}
 		return fmt.Errorf("migration up-by-one failed (MID_060221143017): %w", err)
+	}
+	if m.trace != nil {
+		m.trace.FlushSuccess()
 	}
 
 	m.logger.Info("Migration applied (MID_060221143018)",
@@ -595,6 +613,88 @@ func (m *Migrator) UpByOne(ctx context.Context) error {
 		"duration_ms", result.Duration.Milliseconds(),
 	)
 	return nil
+}
+
+type gooseVerboseLogger struct {
+	logger  ApiTypes.JimoLogger
+	mu      sync.Mutex
+	pending string
+}
+
+func newGooseVerboseLogger(logger ApiTypes.JimoLogger) *gooseVerboseLogger {
+	return &gooseVerboseLogger{logger: logger}
+}
+
+func (g *gooseVerboseLogger) Fatalf(format string, v ...interface{}) {
+	g.Printf(format, v...)
+}
+
+func (g *gooseVerboseLogger) Printf(format string, v ...interface{}) {
+	message := strings.TrimSpace(fmt.Sprintf(format, v...))
+	if message == "" {
+		return
+	}
+	message = stripANSICodes(message)
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	switch {
+	case strings.Contains(message, "Begin transaction"):
+		g.flushLocked("success", "")
+		g.pending = "begin transaction"
+		g.logger.Info("goose begin transaction start", "component", "goose")
+	case strings.Contains(message, "Executing statement:"):
+		g.flushLocked("success", "")
+		statement := strings.TrimSpace(strings.TrimPrefix(message, "Executing statement:"))
+		g.pending = "statement: " + statement
+		g.logger.Info("goose sql statement start", "component", "goose", "sql", statement)
+	case strings.Contains(message, "Commit transaction"):
+		g.flushLocked("success", "")
+		g.pending = "commit transaction"
+		g.logger.Info("goose commit transaction start", "component", "goose")
+	case strings.Contains(message, "Rollback transaction"):
+		g.flushLocked("error", "rollback triggered")
+		g.pending = "rollback transaction"
+		g.logger.Warn("goose rollback transaction start", "component", "goose")
+	default:
+		g.logger.Info("goose", "component", "goose", "message", message)
+	}
+}
+
+func (g *gooseVerboseLogger) FlushSuccess() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.flushLocked("success", "")
+}
+
+func (g *gooseVerboseLogger) FlushError(err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	g.flushLocked("error", msg)
+}
+
+func (g *gooseVerboseLogger) flushLocked(status, errMsg string) {
+	if g.pending == "" {
+		return
+	}
+	switch status {
+	case "success":
+		g.logger.Info("goose step completed", "component", "goose", "step", g.pending)
+	case "error":
+		g.logger.Error("goose step failed", "component", "goose", "step", g.pending, "error", errMsg)
+	}
+	g.pending = ""
+}
+
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSICodes(s string) string {
+	return ansiPattern.ReplaceAllString(s, "")
 }
 
 // UpTo applies all pending migrations up to and including the specified version.
