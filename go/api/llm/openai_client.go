@@ -24,11 +24,12 @@ type JSONExtractionInput struct {
 }
 
 type OpenAIJSONClient struct {
-	BaseURL    string
-	APIKey     string
-	ModelName  string
-	HTTPClient *http.Client
-	logger     ApiTypes.JimoLogger
+	BaseURL      string
+	APIKey       string
+	ModelName    string
+	ThinkingType string
+	HTTPClient   *http.Client
+	logger       ApiTypes.JimoLogger
 }
 
 func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, error) {
@@ -152,6 +153,9 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		"messages":    buildMessages(prompt, in.InputText),
 		"temperature": 0,
 	}
+	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType != "" {
+		body["thinking"] = map[string]string{"type": thinkingType}
+	}
 	if jsonResponse {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
@@ -214,6 +218,15 @@ func buildMessages(prompt string, documentText string) []map[string]string {
 	return []map[string]string{
 		{"role": "system", "content": prompt},
 		{"role": "user", "content": documentText},
+	}
+}
+
+func normalizeThinkingType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "enabled", "disabled":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
 	}
 }
 

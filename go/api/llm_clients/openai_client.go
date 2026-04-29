@@ -24,11 +24,12 @@ type JSONExtractionInput struct {
 }
 
 type OpenAIJSONClient struct {
-	BaseURL    string
-	APIKey     string
-	ModelName  string
-	HTTPClient *http.Client
-	logger     ApiTypes.JimoLogger
+	BaseURL      string
+	APIKey       string
+	ModelName    string
+	ThinkingType string
+	HTTPClient   *http.Client
+	logger       ApiTypes.JimoLogger
 }
 
 func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, error) {
@@ -133,6 +134,9 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 		"temperature":     0,
 		"response_format": map[string]string{"type": "json_object"},
 	}
+	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType != "" {
+		body["thinking"] = map[string]string{"type": thinkingType}
+	}
 
 	bs, err := json.Marshal(body)
 	if err != nil {
@@ -171,6 +175,15 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 		return nil, fmt.Errorf("llm response is not valid json: %w", err)
 	}
 	return parsed, nil
+}
+
+func normalizeThinkingType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "enabled", "disabled":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
 }
 
 func buildChatCompletionsEndpoint(baseURL string) string {

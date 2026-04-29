@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,6 +106,79 @@ func TestExtractJSON_InvalidJSONIncludesRawResponse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `response="not-json-response"`) {
 		t.Fatalf("expected raw response in error, got: %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestExtractJSON_IncludesThinkingWhenConfigured(t *testing.T) {
+	const llmJSON = `{"status":"ok"}`
+
+	client := &OpenAIJSONClient{
+		BaseURL:      "https://api.deepseek.com",
+		APIKey:       "test-key",
+		ModelName:    "deepseek-v4-flash",
+		ThinkingType: "disabled",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			thinking, ok := body["thinking"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected thinking object in request body, got %T", body["thinking"])
+			}
+			if got := thinking["type"]; got != "disabled" {
+				t.Fatalf("thinking.type=%v, want disabled", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, llmJSON))),
+			}, nil
+		})},
+	}
+
+	if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	}); err != nil {
+		t.Fatalf("ExtractJSON error: %v", err)
+	}
+}
+
+func TestExtractJSON_OmitsThinkingWhenUnset(t *testing.T) {
+	const llmJSON = `{"status":"ok"}`
+
+	client := &OpenAIJSONClient{
+		BaseURL:   "https://api.deepseek.com",
+		APIKey:    "test-key",
+		ModelName: "deepseek-v4-flash",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			if _, ok := body["thinking"]; ok {
+				t.Fatalf("did not expect thinking field in request body")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, llmJSON))),
+			}, nil
+		})},
+	}
+
+	if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	}); err != nil {
+		t.Fatalf("ExtractJSON error: %v", err)
 	}
 }
 

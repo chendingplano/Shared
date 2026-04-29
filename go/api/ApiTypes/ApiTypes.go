@@ -90,11 +90,12 @@ var CommonConfig CommonConfigDef
 // base_url = "https://api.openai.com"
 // timeout_sec = 100
 type LLMModelDef struct {
-	Host       string `toml:"host"`
-	ModelName  string `toml:"model_name"`
-	APIKey     string `toml:"api_key"`
-	BaseURL    string `toml:"base_url"`
-	TimeoutSec int    `toml:"timeout_sec"`
+	Host         string `toml:"host"`
+	ModelName    string `toml:"model_name"`
+	APIKey       string `toml:"api_key"`
+	BaseURL      string `toml:"base_url"`
+	TimeoutSec   int    `toml:"timeout_sec"`
+	ThinkingType string `toml:"thinking_type"`
 }
 
 // LLMModelsFile maps logical model names to model configuration.
