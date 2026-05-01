@@ -35,7 +35,7 @@ type OpenAIJSONClient struct {
 func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, error) {
 	processor = strings.ToUpper(strings.TrimSpace(processor))
 	if processor == "" {
-		return nil, errors.New("processor is required")
+		return nil, errors.New("(MID_26050155) processor is required")
 	}
 
 	modelKey := processor + "_LLM_NAME"
@@ -48,19 +48,19 @@ func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, e
 
 	model, err := resolveScopedString(modelKey, "SHARED_LLM_NAME", useSharedFallback)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050170) failed resolveScopedString, error:%w", err)
 	}
 	apiKey, err := resolveScopedString(apiKeyKey, "SHARED_LLM_API_KEY", useSharedFallback)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050171) failed resolveScopedString, error:%w", err)
 	}
 	baseURL, err := resolveScopedString(baseURLKey, "SHARED_LLM_BASE_URL", useSharedFallback)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050172) failed resolveScopedString, error:%w", err)
 	}
 	timeoutSec, err := resolveScopedTimeout(timeoutKey, "SHARED_LLM_TIMEOUT_SEC", useSharedFallback, 100)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050173) failed resolveScopedString, error:%w", err)
 	}
 
 	logger := loggerutil.CreateDefaultLogger("MID_26041820")
@@ -81,11 +81,11 @@ func resolveScopedString(specificKey, sharedKey string, allowSharedFallback bool
 		return specific, nil
 	}
 	if !allowSharedFallback {
-		return "", fmt.Errorf("%s is required when processor-specific LLM name is set", specificKey)
+		return "", fmt.Errorf("(MID_26050149) %s is required when processor-specific LLM name is set", specificKey)
 	}
 	shared := strings.TrimSpace(os.Getenv(sharedKey))
 	if shared == "" {
-		return "", fmt.Errorf("%s is required", sharedKey)
+		return "", fmt.Errorf("(MID_26050150) %s is required", sharedKey)
 	}
 	return shared, nil
 }
@@ -95,12 +95,12 @@ func resolveScopedTimeout(specificKey, sharedKey string, allowSharedFallback boo
 	if specificRaw != "" {
 		n, err := parsePositiveInt(specificRaw)
 		if err != nil {
-			return 0, fmt.Errorf("invalid %s: %w", specificKey, err)
+			return 0, fmt.Errorf("(MID_26050151) invalid %s: %w", specificKey, err)
 		}
 		return n, nil
 	}
 	if !allowSharedFallback {
-		return 0, fmt.Errorf("%s is required when processor-specific LLM name is set", specificKey)
+		return 0, fmt.Errorf("(MID_26050152) %s is required when processor-specific LLM name is set", specificKey)
 	}
 
 	sharedRaw := strings.TrimSpace(os.Getenv(sharedKey))
@@ -109,7 +109,7 @@ func resolveScopedTimeout(specificKey, sharedKey string, allowSharedFallback boo
 	}
 	n, err := parsePositiveInt(sharedRaw)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", sharedKey, err)
+		return 0, fmt.Errorf("(MID_26050153) invalid %s: %w", sharedKey, err)
 	}
 	return n, nil
 }
@@ -117,7 +117,7 @@ func resolveScopedTimeout(specificKey, sharedKey string, allowSharedFallback boo
 func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInput) (map[string]any, error) {
 	content, err := c.extractTextWithFormat(ctx, in, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050174) failed resolveScopedString, error:%w", err)
 	}
 	if c.logger != nil {
 		c.logger.Info("llm raw response", "content", content)
@@ -125,7 +125,7 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 
 	parsed, err := parseLLMJSONMap(content)
 	if err != nil {
-		return nil, fmt.Errorf("llm response is not valid json: %w; response=%q", err, truncate(strings.TrimSpace(content), 4096))
+		return nil, fmt.Errorf("(MID_26050140) llm response is not valid json: %w; response=%q", err, truncate(strings.TrimSpace(content), 4096))
 	}
 	return parsed, nil
 }
@@ -140,12 +140,12 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		model = strings.TrimSpace(c.ModelName)
 	}
 	if model == "" {
-		return "", errors.New("model name is empty")
+		return "", errors.New("(MID_26050164) model name is empty")
 	}
 
 	prompt := strings.TrimSpace(in.PromptText)
 	if prompt == "" {
-		return "", errors.New("prompt text is empty")
+		return "", errors.New("(MID_26050156) prompt text is empty")
 	}
 
 	body := map[string]any{
@@ -162,31 +162,31 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	bs, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("(MID_26050175) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildChatCompletionsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("(MID_26050176) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("openai request failed: %w", err)
+		return "", fmt.Errorf("(MID_26050154) openai request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return "", fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	content, err := parseOpenAIContent(respBody)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
 	return content, nil
 }
@@ -239,10 +239,10 @@ func parseOpenAIContent(respBody []byte) (string, error) {
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return "", fmt.Errorf("decode llm response: %w", err)
+		return "", fmt.Errorf("(MID_26050142) decode llm response: %w", err)
 	}
 	if len(payload.Choices) == 0 {
-		return "", errors.New("llm response has no choices")
+		return "", errors.New("(MID_26050157) llm response has no choices")
 	}
 
 	switch content := payload.Choices[0].Message.Content.(type) {
@@ -258,11 +258,11 @@ func parseOpenAIContent(respBody []byte) (string, error) {
 		}
 		text := strings.TrimSpace(b.String())
 		if text == "" {
-			return "", errors.New("llm response content is empty")
+			return "", errors.New("(MID_26050158) llm response content is empty")
 		}
 		return text, nil
 	default:
-		return "", errors.New("unsupported llm content shape")
+		return "", errors.New("(MID_26050159) unsupported llm content shape")
 	}
 }
 
@@ -270,14 +270,14 @@ func parseLLMJSONMap(content string) (map[string]any, error) {
 	tryDecode := func(s string) (map[string]any, error) {
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(s), &parsed); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("(MID_26050178) failed resolveScopedString, error:%w", err)
 		}
 		return parsed, nil
 	}
 
 	raw := strings.TrimSpace(content)
 	if raw == "" {
-		return nil, errors.New("empty llm content")
+		return nil, errors.New("(MID_26050160) empty llm content")
 	}
 	if parsed, err := tryDecode(raw); err == nil {
 		return parsed, nil
@@ -304,7 +304,15 @@ func parseLLMJSONMap(content string) (map[string]any, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unable to parse llm json content")
+	// Last resort: the top-level JSON is malformed (e.g. an array whose outer
+	// object is never closed). Scan all complete {..} blocks and return the
+	// first one that contains nested map values — those are richer than leaf
+	// nodes and more likely to carry the data the caller needs.
+	if m, ok := scanForBestJSONObject(raw); ok {
+		return m, nil
+	}
+
+	return nil, fmt.Errorf("(MID_26050144) unable to parse llm json content")
 }
 
 func cleanMarkdownJSONFence(s string) string {
@@ -343,6 +351,14 @@ func extractFirstJSONObjectFromArray(s string) (string, bool) {
 	if start < 1 {
 		return "", false
 	}
+	obj, _, ok := extractBalancedObject(s, start)
+	return obj, ok
+}
+
+// extractBalancedObject returns the {..} block starting at position start in s,
+// tracking balanced braces and string literals. Returns the extracted text,
+// the end index (inclusive), and whether the block was properly terminated.
+func extractBalancedObject(s string, start int) (string, int, bool) {
 	depth := 0
 	inString := false
 	escaped := false
@@ -369,11 +385,63 @@ func extractFirstJSONObjectFromArray(s string) (string, bool) {
 		case '}':
 			depth--
 			if depth == 0 {
-				return strings.TrimSpace(s[start : i+1]), true
+				return strings.TrimSpace(s[start : i+1]), i, true
 			}
 		}
 	}
-	return "", false
+	return "", -1, false
+}
+
+// scanForBestJSONObject scans s for all complete {..} blocks. It returns the
+// first one that contains a value which is itself a map or an array whose
+// elements include at least one map — these "rich" objects are more useful
+// than leaf nodes (e.g. {"name":"x","confidence":0.9}). Falls back to the
+// first valid parseable map if no rich object is found.
+func scanForBestJSONObject(s string) (map[string]any, bool) {
+	var firstValid map[string]any
+	for i := 0; i < len(s); i++ {
+		if s[i] != '{' {
+			continue
+		}
+		obj, end, ok := extractBalancedObject(s, i)
+		if !ok {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(obj), &m); err != nil || len(m) == 0 {
+			i = end
+			continue
+		}
+		if firstValid == nil {
+			firstValid = m
+		}
+		if hasNestedCollections(m) {
+			return m, true
+		}
+		i = end
+	}
+	if firstValid != nil {
+		return firstValid, true
+	}
+	return nil, false
+}
+
+// hasNestedCollections reports whether m has at least one value that is a
+// map[string]any or a []any containing at least one map[string]any element.
+func hasNestedCollections(m map[string]any) bool {
+	for _, v := range m {
+		switch val := v.(type) {
+		case map[string]any:
+			return true
+		case []any:
+			for _, elem := range val {
+				if _, ok := elem.(map[string]any); ok {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func asString(v any) string {
@@ -398,10 +466,10 @@ func asString(v any) string {
 func parsePositiveInt(raw string) (int, error) {
 	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("(MID_26050179) failed resolveScopedString, error:%w", err)
 	}
 	if n < 1 {
-		return 0, fmt.Errorf("must be >= 1")
+		return 0, fmt.Errorf("(MID_26050145) must be >= 1")
 	}
 	return n, nil
 }
@@ -419,10 +487,10 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 		model = strings.TrimSpace(c.ModelName)
 	}
 	if model == "" {
-		return nil, errors.New("embedding model name is empty")
+		return nil, errors.New("(MID_26050161) embedding model name is empty")
 	}
 	if strings.TrimSpace(in.InputText) == "" {
-		return nil, errors.New("embedding input text is empty")
+		return nil, errors.New("(MID_26050162) embedding input text is empty")
 	}
 
 	body := map[string]any{
@@ -431,26 +499,26 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	}
 	bs, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildEmbeddingsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(MID_26050181) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("embedding request failed: %w", err)
+		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var payload struct {
@@ -459,10 +527,10 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return nil, fmt.Errorf("decode embedding response: %w", err)
+		return nil, fmt.Errorf("(MID_26050148) decode embedding response: %w", err)
 	}
 	if len(payload.Data) == 0 {
-		return nil, errors.New("embedding response has no data")
+		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
 	return payload.Data[0].Embedding, nil
 }

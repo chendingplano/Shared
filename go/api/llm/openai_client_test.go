@@ -109,6 +109,72 @@ func TestExtractJSON_InvalidJSONIncludesRawResponse(t *testing.T) {
 	}
 }
 
+// TestExtractJSON_MalformedNestedArray reproduces the error where the LLM
+// returns a top-level array whose outer object is never properly closed, but
+// the first element of an inner "categories" array is a valid {category_path}
+// object. scanForBestJSONObject should recover that object.
+func TestExtractJSON_MalformedNestedArray(t *testing.T) {
+	// Mirrors the exact malformed pattern from the production error log.
+	const llmJSON = `[
+{
+"categories": [
+{
+"category_path": [
+{"name": "A", "keywords": ["a1", "a2"], "confidence": 0.95},
+{"name": "B", "keywords": ["b1"], "confidence": 0.94},
+{"name": "C", "keywords": ["c1"], "confidence": 0.93}
+],
+"path_keywords": ["a1", "b1", "c1"],
+"path_confidence": 0.93
+},
+{
+"categories": [
+{
+"category_path": [
+{"name": "A", "keywords": ["a1"], "confidence": 0.95},
+{"name": "D", "keywords": ["d1"], "confidence": 0.94}
+],
+"path_keywords": ["a1", "d1"],
+"path_confidence": 0.94
+}
+]
+]
+]`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, llmJSON)))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "gpt-test",
+		HTTPClient: srv.Client(),
+	}
+
+	out, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	})
+	if err != nil {
+		t.Fatalf("ExtractJSON error: %v", err)
+	}
+	// The recovered object should have category_path with nested map elements.
+	cp, ok := out["category_path"].([]any)
+	if !ok || len(cp) == 0 {
+		t.Fatalf("expected category_path array, got %v", out)
+	}
+	first, ok := cp[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first category_path element to be a map, got %T", cp[0])
+	}
+	if first["name"] != "A" {
+		t.Fatalf("expected name=A, got %v", first["name"])
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
