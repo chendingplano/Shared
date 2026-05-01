@@ -125,7 +125,7 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 
 	parsed, err := parseLLMJSONMap(content)
 	if err != nil {
-		return nil, fmt.Errorf("llm response is not valid json: %w; response=%q", err, truncate(strings.TrimSpace(content), 512))
+		return nil, fmt.Errorf("llm response is not valid json: %w; response=%q", err, truncate(strings.TrimSpace(content), 4096))
 	}
 	return parsed, nil
 }
@@ -291,6 +291,13 @@ func parseLLMJSONMap(content string) (map[string]any, error) {
 		raw = cleaned
 	}
 
+	// LLM sometimes wraps the object in an array — extract the first element.
+	if firstObj, ok := extractFirstJSONObjectFromArray(raw); ok {
+		if parsed, err := tryDecode(firstObj); err == nil {
+			return parsed, nil
+		}
+	}
+
 	if extracted, ok := extractJSONObject(raw); ok {
 		if parsed, err := tryDecode(extracted); err == nil {
 			return parsed, nil
@@ -324,6 +331,51 @@ func extractJSONObject(s string) (string, bool) {
 	return strings.TrimSpace(s[start : end+1]), true
 }
 
+// extractFirstJSONObjectFromArray extracts the first JSON object from a
+// JSON array like [{"k":"v"},{...}]. Returns the object text without the
+// enclosing array brackets.
+func extractFirstJSONObjectFromArray(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "[") {
+		return "", false
+	}
+	start := strings.IndexByte(s, '{')
+	if start < 1 {
+		return "", false
+	}
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inString {
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(s[start : i+1]), true
+			}
+		}
+	}
+	return "", false
+}
+
 func asString(v any) string {
 	switch x := v.(type) {
 	case string:
@@ -352,4 +404,80 @@ func parsePositiveInt(raw string) (int, error) {
 		return 0, fmt.Errorf("must be >= 1")
 	}
 	return n, nil
+}
+
+// EmbedInput holds parameters for a single embedding call.
+type EmbedInput struct {
+	ModelName string
+	InputText string
+}
+
+// Embed calls the OpenAI embeddings API and returns the embedding vector.
+func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64, error) {
+	model := strings.TrimSpace(in.ModelName)
+	if model == "" {
+		model = strings.TrimSpace(c.ModelName)
+	}
+	if model == "" {
+		return nil, errors.New("embedding model name is empty")
+	}
+	if strings.TrimSpace(in.InputText) == "" {
+		return nil, errors.New("embedding input text is empty")
+	}
+
+	body := map[string]any{
+		"model": model,
+		"input": in.InputText,
+	}
+	bs, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := buildEmbeddingsEndpoint(c.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("embedding request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var payload struct {
+		Data []struct {
+			Embedding []float64 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &payload); err != nil {
+		return nil, fmt.Errorf("decode embedding response: %w", err)
+	}
+	if len(payload.Data) == 0 {
+		return nil, errors.New("embedding response has no data")
+	}
+	return payload.Data[0].Embedding, nil
+}
+
+func buildEmbeddingsEndpoint(baseURL string) string {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		base = "https://api.openai.com"
+	}
+	if !strings.Contains(base, "://") {
+		base = "http://" + base
+	}
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/embeddings"
+	}
+	return base + "/v1/embeddings"
 }
