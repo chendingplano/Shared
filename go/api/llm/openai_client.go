@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type JSONExtractionInput struct {
@@ -32,13 +31,13 @@ type OpenAIJSONClient struct {
 	logger       ApiTypes.JimoLogger
 }
 
-func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, error) {
+func NewOpenAIJSONClientFromProcessorEnv(processor string, logger ApiTypes.JimoLogger) (*OpenAIJSONClient, error) {
 	processor = strings.ToUpper(strings.TrimSpace(processor))
 	if processor == "" {
 		return nil, errors.New("(MID_26050155) processor is required")
 	}
 
-	modelKey := processor + "_LLM_NAME"
+	modelKey := processor + "_MODEL_NAME"
 	apiKeyKey := processor + "_LLM_API_KEY"
 	baseURLKey := processor + "_LLM_BASE_URL"
 	timeoutKey := processor + "_LLM_TIMEOUT_SEC"
@@ -46,15 +45,15 @@ func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, e
 	specificModel := strings.TrimSpace(os.Getenv(modelKey))
 	useSharedFallback := specificModel == ""
 
-	model, err := resolveScopedString(modelKey, "SHARED_LLM_NAME", useSharedFallback)
+	model, err := resolveScopedString(modelKey, "SHARED_MODEL_NAME", useSharedFallback, logger)
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050170) failed resolveScopedString, error:%w", err)
 	}
-	apiKey, err := resolveScopedString(apiKeyKey, "SHARED_LLM_API_KEY", useSharedFallback)
+	apiKey, err := resolveScopedString(apiKeyKey, "SHARED_LLM_API_KEY", useSharedFallback, logger)
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050171) failed resolveScopedString, error:%w", err)
 	}
-	baseURL, err := resolveScopedString(baseURLKey, "SHARED_LLM_BASE_URL", useSharedFallback)
+	baseURL, err := resolveScopedString(baseURLKey, "SHARED_LLM_BASE_URL", useSharedFallback, logger)
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050172) failed resolveScopedString, error:%w", err)
 	}
@@ -63,7 +62,6 @@ func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, e
 		return nil, fmt.Errorf("(MID_26050173) failed resolveScopedString, error:%w", err)
 	}
 
-	logger := loggerutil.CreateDefaultLogger("MID_26041820")
 	return &OpenAIJSONClient{
 		BaseURL:   baseURL,
 		APIKey:    apiKey,
@@ -75,11 +73,18 @@ func NewOpenAIJSONClientFromProcessorEnv(processor string) (*OpenAIJSONClient, e
 	}, nil
 }
 
-func resolveScopedString(specificKey, sharedKey string, allowSharedFallback bool) (string, error) {
+func resolveScopedString(
+	specificKey,
+	sharedKey string,
+	allowSharedFallback bool,
+	logger ApiTypes.JimoLogger) (string, error) {
 	specific := strings.TrimSpace(os.Getenv(specificKey))
 	if specific != "" {
 		return specific, nil
 	}
+
+	logger.Warn("env var not defined", "env var", specificKey)
+
 	if !allowSharedFallback {
 		return "", fmt.Errorf("(MID_26050149) %s is required when processor-specific LLM name is set", specificKey)
 	}
@@ -512,7 +517,7 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w", err)
+		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, in.ModelName)
 	}
 	defer resp.Body.Close()
 

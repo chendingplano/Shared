@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 func TestExtractJSON_PreservesAllFields(t *testing.T) {
@@ -272,16 +274,17 @@ func TestBuildChatCompletionsEndpoint(t *testing.T) {
 }
 
 func TestNewOpenAIJSONClientFromProcessorEnv_UsesSharedFallback(t *testing.T) {
-	t.Setenv("EXTRACT_DOCMETA_LLM_NAME", "")
+	t.Setenv("EXTRACT_DOCMETA_MODEL_NAME", "")
 	t.Setenv("EXTRACT_DOCMETA_LLM_API_KEY", "")
 	t.Setenv("EXTRACT_DOCMETA_LLM_BASE_URL", "")
 	t.Setenv("EXTRACT_DOCMETA_LLM_TIMEOUT_SEC", "")
-	t.Setenv("SHARED_LLM_NAME", "gpt-5.4-mini")
+	t.Setenv("SHARED_MODEL_NAME", "gpt-5.4-mini")
 	t.Setenv("SHARED_LLM_API_KEY", "shared-key")
 	t.Setenv("SHARED_LLM_BASE_URL", "https://api.openai.com")
 	t.Setenv("SHARED_LLM_TIMEOUT_SEC", "")
 
-	client, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_DOCMETA")
+	logger := loggerutil.CreateDefaultLogger("MID_26050803")
+	client, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_DOCMETA", logger)
 	if err != nil {
 		t.Fatalf("NewOpenAIJSONClientFromProcessorEnv error: %v", err)
 	}
@@ -300,7 +303,7 @@ func TestNewOpenAIJSONClientFromProcessorEnv_UsesSharedFallback(t *testing.T) {
 }
 
 func TestNewOpenAIJSONClientFromProcessorEnv_RequiresSpecificFieldsWhenSpecificNameSet(t *testing.T) {
-	t.Setenv("EXTRACT_METRICS_LLM_NAME", "gemma4:26b")
+	t.Setenv("EXTRACT_METRICS_MODEL_NAME", "gemma4:26b")
 	t.Setenv("EXTRACT_METRICS_LLM_API_KEY", "")
 	t.Setenv("EXTRACT_METRICS_LLM_BASE_URL", "")
 	t.Setenv("EXTRACT_METRICS_LLM_TIMEOUT_SEC", "")
@@ -308,7 +311,8 @@ func TestNewOpenAIJSONClientFromProcessorEnv_RequiresSpecificFieldsWhenSpecificN
 	t.Setenv("SHARED_LLM_BASE_URL", "http://shared-llm")
 	t.Setenv("SHARED_LLM_TIMEOUT_SEC", "120")
 
-	_, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_METRICS")
+	logger := loggerutil.CreateDefaultLogger("MID_26050803")
+	_, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_METRICS", logger)
 	if err == nil {
 		t.Fatalf("expected error when specific processor name is set but specific key/base/timeout are missing")
 	}
