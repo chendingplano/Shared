@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -31,92 +30,45 @@ type OpenAIJSONClient struct {
 	logger       ApiTypes.JimoLogger
 }
 
-func NewOpenAIJSONClientFromProcessorEnv(processor string, logger ApiTypes.JimoLogger) (*OpenAIJSONClient, error) {
-	processor = strings.ToUpper(strings.TrimSpace(processor))
-	if processor == "" {
-		return nil, errors.New("(MID_26050155) processor is required")
+type OpenAIJSONClientConfig struct {
+	ModelName    string
+	APIKey       string
+	BaseURL      string
+	TimeoutSec   int
+	ThinkingType string
+}
+
+func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.JimoLogger) (*OpenAIJSONClient, error) {
+	model := strings.TrimSpace(cfg.ModelName)
+	if model == "" {
+		return nil, errors.New("(MID_26050155) model name is required")
 	}
 
-	modelKey := processor + "_MODEL_NAME"
-	apiKeyKey := processor + "_LLM_API_KEY"
-	baseURLKey := processor + "_LLM_BASE_URL"
-	timeoutKey := processor + "_LLM_TIMEOUT_SEC"
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if apiKey == "" {
+		return nil, errors.New("(MID_26050170) api key is required")
+	}
 
-	specificModel := strings.TrimSpace(os.Getenv(modelKey))
-	useSharedFallback := specificModel == ""
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" {
+		return nil, errors.New("(MID_26050171) base url is required")
+	}
 
-	model, err := resolveScopedString(modelKey, "SHARED_MODEL_NAME", useSharedFallback, logger)
-	if err != nil {
-		return nil, fmt.Errorf("(MID_26050170) failed resolveScopedString, error:%w", err)
-	}
-	apiKey, err := resolveScopedString(apiKeyKey, "SHARED_LLM_API_KEY", useSharedFallback, logger)
-	if err != nil {
-		return nil, fmt.Errorf("(MID_26050171) failed resolveScopedString, error:%w", err)
-	}
-	baseURL, err := resolveScopedString(baseURLKey, "SHARED_LLM_BASE_URL", useSharedFallback, logger)
-	if err != nil {
-		return nil, fmt.Errorf("(MID_26050172) failed resolveScopedString, error:%w", err)
-	}
-	timeoutSec, err := resolveScopedTimeout(timeoutKey, "SHARED_LLM_TIMEOUT_SEC", useSharedFallback, 100)
-	if err != nil {
-		return nil, fmt.Errorf("(MID_26050173) failed resolveScopedString, error:%w", err)
+	timeoutSec := cfg.TimeoutSec
+	if timeoutSec <= 0 {
+		return nil, errors.New("(MID_26050172) timeout_sec must be a positive integer")
 	}
 
 	return &OpenAIJSONClient{
-		BaseURL:   baseURL,
-		APIKey:    apiKey,
-		ModelName: model,
-		logger:    logger,
+		BaseURL:      baseURL,
+		APIKey:       apiKey,
+		ModelName:    model,
+		ThinkingType: normalizeThinkingType(cfg.ThinkingType),
+		logger:       logger,
 		HTTPClient: &http.Client{
 			Timeout: time.Duration(timeoutSec) * time.Second,
 		},
 	}, nil
-}
-
-func resolveScopedString(
-	specificKey,
-	sharedKey string,
-	allowSharedFallback bool,
-	logger ApiTypes.JimoLogger) (string, error) {
-	specific := strings.TrimSpace(os.Getenv(specificKey))
-	if specific != "" {
-		return specific, nil
-	}
-
-	logger.Warn("env var not defined", "env var", specificKey)
-
-	if !allowSharedFallback {
-		return "", fmt.Errorf("(MID_26050149) %s is required when processor-specific LLM name is set", specificKey)
-	}
-	shared := strings.TrimSpace(os.Getenv(sharedKey))
-	if shared == "" {
-		return "", fmt.Errorf("(MID_26050150) %s is required", sharedKey)
-	}
-	return shared, nil
-}
-
-func resolveScopedTimeout(specificKey, sharedKey string, allowSharedFallback bool, sharedDefault int) (int, error) {
-	specificRaw := strings.TrimSpace(os.Getenv(specificKey))
-	if specificRaw != "" {
-		n, err := parsePositiveInt(specificRaw)
-		if err != nil {
-			return 0, fmt.Errorf("(MID_26050151) invalid %s: %w", specificKey, err)
-		}
-		return n, nil
-	}
-	if !allowSharedFallback {
-		return 0, fmt.Errorf("(MID_26050152) %s is required when processor-specific LLM name is set", specificKey)
-	}
-
-	sharedRaw := strings.TrimSpace(os.Getenv(sharedKey))
-	if sharedRaw == "" {
-		return sharedDefault, nil
-	}
-	n, err := parsePositiveInt(sharedRaw)
-	if err != nil {
-		return 0, fmt.Errorf("(MID_26050153) invalid %s: %w", sharedKey, err)
-	}
-	return n, nil
 }
 
 func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInput) (map[string]any, error) {
@@ -244,7 +196,7 @@ func parseOpenAIContent(respBody []byte) (string, error) {
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return "", fmt.Errorf("(MID_26050142) decode llm response: %w", err)
+		return "", fmt.Errorf("(MID_26050142) decode llm response: %w, json:%s", err, payload)
 	}
 	if len(payload.Choices) == 0 {
 		return "", errors.New("(MID_26050157) llm response has no choices")
@@ -468,6 +420,7 @@ func asString(v any) string {
 	}
 }
 
+/*
 func parsePositiveInt(raw string) (int, error) {
 	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
@@ -478,6 +431,7 @@ func parsePositiveInt(raw string) (int, error) {
 	}
 	return n, nil
 }
+*/
 
 // EmbedInput holds parameters for a single embedding call.
 type EmbedInput struct {

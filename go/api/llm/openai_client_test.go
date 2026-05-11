@@ -273,50 +273,47 @@ func TestBuildChatCompletionsEndpoint(t *testing.T) {
 	}
 }
 
-func TestNewOpenAIJSONClientFromProcessorEnv_UsesSharedFallback(t *testing.T) {
-	t.Setenv("EXTRACT_DOCMETA_MODEL_NAME", "")
-	t.Setenv("EXTRACT_DOCMETA_LLM_API_KEY", "")
-	t.Setenv("EXTRACT_DOCMETA_LLM_BASE_URL", "")
-	t.Setenv("EXTRACT_DOCMETA_LLM_TIMEOUT_SEC", "")
-	t.Setenv("SHARED_MODEL_NAME", "gpt-5.4-mini")
-	t.Setenv("SHARED_LLM_API_KEY", "shared-key")
-	t.Setenv("SHARED_LLM_BASE_URL", "https://api.openai.com")
-	t.Setenv("SHARED_LLM_TIMEOUT_SEC", "")
-
+func TestNewOpenAIJSONClientFromConfig(t *testing.T) {
 	logger := loggerutil.CreateDefaultLogger("MID_26050803")
-	client, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_DOCMETA", logger)
+	client, err := NewOpenAIJSONClientFromConfig(OpenAIJSONClientConfig{
+		ModelName:    "gpt-5.4-mini",
+		APIKey:       "test-key",
+		BaseURL:      "https://api.openai.com",
+		TimeoutSec:   100,
+		ThinkingType: "enabled",
+	}, logger)
 	if err != nil {
-		t.Fatalf("NewOpenAIJSONClientFromProcessorEnv error: %v", err)
+		t.Fatalf("NewOpenAIJSONClientFromConfig error: %v", err)
 	}
 	if client.ModelName != "gpt-5.4-mini" {
-		t.Fatalf("ModelName=%q, want shared fallback", client.ModelName)
+		t.Fatalf("ModelName=%q", client.ModelName)
 	}
-	if client.APIKey != "shared-key" {
-		t.Fatalf("APIKey=%q, want shared fallback", client.APIKey)
+	if client.APIKey != "test-key" {
+		t.Fatalf("APIKey=%q", client.APIKey)
 	}
 	if client.BaseURL != "https://api.openai.com" {
-		t.Fatalf("BaseURL=%q, want shared fallback", client.BaseURL)
+		t.Fatalf("BaseURL=%q", client.BaseURL)
 	}
 	if client.HTTPClient == nil || client.HTTPClient.Timeout != 100*time.Second {
 		t.Fatalf("timeout=%v, want 100s", client.HTTPClient.Timeout)
 	}
+	if client.ThinkingType != "enabled" {
+		t.Fatalf("ThinkingType=%q, want enabled", client.ThinkingType)
+	}
 }
 
-func TestNewOpenAIJSONClientFromProcessorEnv_RequiresSpecificFieldsWhenSpecificNameSet(t *testing.T) {
-	t.Setenv("EXTRACT_METRICS_MODEL_NAME", "gemma4:26b")
-	t.Setenv("EXTRACT_METRICS_LLM_API_KEY", "")
-	t.Setenv("EXTRACT_METRICS_LLM_BASE_URL", "")
-	t.Setenv("EXTRACT_METRICS_LLM_TIMEOUT_SEC", "")
-	t.Setenv("SHARED_LLM_API_KEY", "shared-key")
-	t.Setenv("SHARED_LLM_BASE_URL", "http://shared-llm")
-	t.Setenv("SHARED_LLM_TIMEOUT_SEC", "120")
-
+func TestNewOpenAIJSONClientFromConfig_RequiresAllModelAttributes(t *testing.T) {
 	logger := loggerutil.CreateDefaultLogger("MID_26050803")
-	_, err := NewOpenAIJSONClientFromProcessorEnv("EXTRACT_METRICS", logger)
+	_, err := NewOpenAIJSONClientFromConfig(OpenAIJSONClientConfig{
+		ModelName:  "gemma4:26b",
+		APIKey:     "",
+		BaseURL:    "",
+		TimeoutSec: 0,
+	}, logger)
 	if err == nil {
-		t.Fatalf("expected error when specific processor name is set but specific key/base/timeout are missing")
+		t.Fatalf("expected error when required model attributes are missing")
 	}
-	if !strings.Contains(err.Error(), "EXTRACT_METRICS_LLM_API_KEY is required") {
+	if !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
