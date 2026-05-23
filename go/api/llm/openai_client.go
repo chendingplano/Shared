@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type JSONExtractionInput struct {
@@ -59,6 +60,10 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 		return nil, errors.New("(MID_26050172) timeout_sec must be a positive integer")
 	}
 
+	if logger == nil {
+		logger = loggerutil.CreateDefaultLogger("MID_26052101")
+	}
+
 	return &OpenAIJSONClient{
 		BaseURL:      baseURL,
 		APIKey:       apiKey,
@@ -76,9 +81,12 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050174) failed resolveScopedString, error:%w", err)
 	}
-	if c.logger != nil {
-		c.logger.Info("llm raw response", "content", content)
+
+	if c.logger == nil {
+		c.logger = loggerutil.CreateDefaultLogger("MID_26052102")
 	}
+
+	// c.logger.Info("llm raw response", "content", content)
 
 	parsed, err := parseLLMJSONMap(content)
 	if err != nil {
@@ -110,7 +118,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		"messages":    buildMessages(prompt, in.InputText),
 		"temperature": 0,
 	}
-	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType != "" {
+	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType == "enabled" {
 		body["thinking"] = map[string]string{"type": thinkingType}
 	}
 	if jsonResponse {
@@ -137,6 +145,18 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+
+	if c.logger == nil {
+		c.logger = loggerutil.CreateDefaultLogger("MID_26052102")
+	}
+
+	/*
+	c.logger.Info("llm raw http response",
+		"model_name", model,
+		"status_code", resp.StatusCode,
+		"response_body", strings.TrimSpace(string(respBody)))
+	*/
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}

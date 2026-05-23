@@ -183,14 +183,14 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-func TestExtractJSON_IncludesThinkingWhenConfigured(t *testing.T) {
+func TestExtractJSON_IncludesThinkingWhenEnabled(t *testing.T) {
 	const llmJSON = `{"status":"ok"}`
 
 	client := &OpenAIJSONClient{
 		BaseURL:      "https://api.deepseek.com",
 		APIKey:       "test-key",
 		ModelName:    "deepseek-v4-flash",
-		ThinkingType: "disabled",
+		ThinkingType: "enabled",
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -200,8 +200,40 @@ func TestExtractJSON_IncludesThinkingWhenConfigured(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected thinking object in request body, got %T", body["thinking"])
 			}
-			if got := thinking["type"]; got != "disabled" {
-				t.Fatalf("thinking.type=%v, want disabled", got)
+			if got := thinking["type"]; got != "enabled" {
+				t.Fatalf("thinking.type=%v, want enabled", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, llmJSON))),
+			}, nil
+		})},
+	}
+
+	if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	}); err != nil {
+		t.Fatalf("ExtractJSON error: %v", err)
+	}
+}
+
+func TestExtractJSON_OmitsThinkingWhenDisabled(t *testing.T) {
+	const llmJSON = `{"status":"ok"}`
+
+	client := &OpenAIJSONClient{
+		BaseURL:      "https://api.openai.com",
+		APIKey:       "test-key",
+		ModelName:    "gpt-5.4-mini",
+		ThinkingType: "disabled",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			if _, ok := body["thinking"]; ok {
+				t.Fatalf("did not expect thinking field in request body when disabled")
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
