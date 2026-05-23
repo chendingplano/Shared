@@ -20,7 +20,9 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 )
 
 // ProviderID enumerates supported providers.
@@ -129,4 +131,42 @@ type StreamHandler func(StreamChunk) error
 type Client interface {
 	Complete(ctx context.Context, req Request) (*Response, error)
 	Stream(ctx context.Context, req Request, on StreamHandler) error
+}
+
+// StructuredOutputContract declares the machine-readable output shape expected
+// from a JSON-producing LLM call.
+type StructuredOutputContract struct {
+	Name              string
+	Schema            json.RawMessage
+	AllowRepair       bool
+	MaxRetries        int
+	DisallowExtraKeys bool
+}
+
+// Validate ensures the contract has the minimum fields required to enforce a
+// structured JSON response.
+func (c StructuredOutputContract) Validate() error {
+	if strings.TrimSpace(c.Name) == "" {
+		return errors.Join(ErrStructuredOutputInvalidContract, errors.New("structured output contract name is required"))
+	}
+	if len(c.Schema) == 0 {
+		return errors.Join(ErrStructuredOutputInvalidContract, errors.New("structured output contract schema is required"))
+	}
+	return nil
+}
+
+// StructuredOutputResult is the parsed result plus raw model content used to
+// produce it.
+type StructuredOutputResult struct {
+	Parsed map[string]any
+	Raw    string
+}
+
+func legacyJSONObjectContract() StructuredOutputContract {
+	return StructuredOutputContract{
+		Name:        "legacy_json_object",
+		Schema:      json.RawMessage(`{"type":"object"}`),
+		AllowRepair: true,
+		MaxRetries:  1,
+	}
 }

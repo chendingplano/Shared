@@ -76,23 +76,21 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 	}, nil
 }
 
+// ExtractJSON is the legacy compatibility API for callers that still expect a
+// top-level JSON object without supplying an explicit schema contract. New code
+// should prefer ExtractStructuredJSON so shape validation lives in code rather
+// than prompts.
 func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInput) (map[string]any, error) {
-	content, err := c.extractTextWithFormat(ctx, in, true)
+	result, err := c.ExtractStructuredJSON(ctx, in, legacyJSONObjectContract())
 	if err != nil {
-		return nil, fmt.Errorf("(MID_26050174) failed resolveScopedString, error:%w", err)
+		raw := ""
+		var structuredErr *StructuredOutputError
+		if errors.As(err, &structuredErr) {
+			raw = structuredErr.Raw
+		}
+		return nil, fmt.Errorf("(MID_26050140) llm response is not valid json: %w; response=%q", err, strings.TrimSpace(raw))
 	}
-
-	if c.logger == nil {
-		c.logger = loggerutil.CreateDefaultLogger("MID_26052102")
-	}
-
-	// c.logger.Info("llm raw response", "content", content)
-
-	parsed, err := parseLLMJSONMap(content)
-	if err != nil {
-		return nil, fmt.Errorf("(MID_26050140) llm response is not valid json: %w; response=%q", err, strings.TrimSpace(content))
-	}
-	return parsed, nil
+	return result.Parsed, nil
 }
 
 func (c *OpenAIJSONClient) ExtractText(ctx context.Context, in JSONExtractionInput) (string, error) {
@@ -260,12 +258,11 @@ func parseLLMJSONMap(content string) (map[string]any, error) {
 		return parsed, nil
 	}
 
-	cleaned := cleanMarkdownJSONFence(raw)
-	if cleaned != raw {
-		if parsed, err := tryDecode(cleaned); err == nil {
+	if repaired, ok := repairLLMJSON(raw); ok {
+		if parsed, err := tryDecode(repaired); err == nil {
 			return parsed, nil
 		}
-		raw = cleaned
+		raw = repaired
 	}
 
 	// LLM sometimes wraps the object in an array — extract the first element.
