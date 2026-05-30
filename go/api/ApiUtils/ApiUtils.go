@@ -1040,3 +1040,17 @@ func SetConfig(config ApiTypes.CommonConfigDef) error {
 
 	return nil
 }
+
+func IsEmptyJSONResponse(err error) bool {
+	// It returns true if 'err' contains "unexpected end of JSON input"
+	// and "json:{[]}"
+	if err == nil {
+		return false
+	}
+	msg := strings.TrimSpace(err.Error())
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "unexpected end of JSON input") &&
+		strings.Contains(msg, "json:{[]}")
+}

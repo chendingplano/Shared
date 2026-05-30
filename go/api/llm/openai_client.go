@@ -142,7 +142,10 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", fmt.Errorf("(MID_26052901) failed reading LLM response body: %w", readErr)
+	}
 
 	if c.logger == nil {
 		c.logger = loggerutil.CreateDefaultLogger("MID_26052102")
@@ -492,7 +495,10 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("(MID_26052902) failed reading embedding response body: %w", readErr)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
