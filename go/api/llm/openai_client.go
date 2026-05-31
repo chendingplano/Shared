@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -144,7 +145,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return "", fmt.Errorf("(MID_26052901) failed reading LLM response body: %w", readErr)
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("(MID_26053001) caller_context_cancelled: %w", readErr)
+		}
+		var netErr net.Error
+		if errors.As(readErr, &netErr) && netErr.Timeout() {
+			return "", fmt.Errorf("(MID_26053002) http_client_timeout (%v): %w", c.HTTPClient.Timeout, readErr)
+		}
+		return "", fmt.Errorf("(MID_26053003) network_error: %w", readErr)
 	}
 
 	if c.logger == nil {
@@ -152,10 +160,10 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	}
 
 	/*
-	c.logger.Info("llm raw http response",
-		"model_name", model,
-		"status_code", resp.StatusCode,
-		"response_body", strings.TrimSpace(string(respBody)))
+		c.logger.Info("llm raw http response",
+			"model_name", model,
+			"status_code", resp.StatusCode,
+			"response_body", strings.TrimSpace(string(respBody)))
 	*/
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

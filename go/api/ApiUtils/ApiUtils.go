@@ -1047,10 +1047,16 @@ func IsEmptyJSONResponse(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	msg := strings.TrimSpace(err.Error())
 	if msg == "" {
 		return false
 	}
+
+	if strings.Contains(msg, "(MID_26053002) http_client_timeout") {
+		return true
+	}
+
 	return strings.Contains(msg, "unexpected end of JSON input") &&
 		strings.Contains(msg, "json:{[]}")
 }
