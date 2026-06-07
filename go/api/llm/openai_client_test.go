@@ -349,3 +349,74 @@ func TestNewOpenAIJSONClientFromConfig_RequiresAllModelAttributes(t *testing.T) 
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestEmbed_DefaultsHTTPClientWhenNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Fatalf("Authorization=%q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2,0.3]}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "text-embedding-3-small",
+	}
+
+	vec, err := client.Embed(context.Background(), EmbedInput{
+		InputText: "test input",
+	})
+	if err != nil {
+		t.Fatalf("Embed error: %v", err)
+	}
+	if client.HTTPClient == nil {
+		t.Fatalf("HTTPClient was not initialized")
+	}
+	if len(vec) != 3 {
+		t.Fatalf("embedding length=%d, want 3", len(vec))
+	}
+}
+
+func TestEmbedBatch_SendsInputArrayAndReturnsVectors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		input, ok := body["input"].([]any)
+		if !ok {
+			t.Fatalf("input type=%T, want []any", body["input"])
+		}
+		if len(input) != 2 {
+			t.Fatalf("input len=%d, want 2", len(input))
+		}
+		if input[0] != "first input" || input[1] != "second input" {
+			t.Fatalf("input=%v, want [first input second input]", input)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2]},{"embedding":[0.3,0.4]}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "text-embedding-3-small",
+	}
+
+	vecs, err := client.EmbedBatch(context.Background(), EmbedBatchInput{
+		InputTexts: []string{"first input", "second input"},
+	})
+	if err != nil {
+		t.Fatalf("EmbedBatch error: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("embedding count=%d, want 2", len(vecs))
+	}
+	if len(vecs[0]) != 2 || len(vecs[1]) != 2 {
+		t.Fatalf("unexpected embedding lengths: %+v", vecs)
+	}
+}

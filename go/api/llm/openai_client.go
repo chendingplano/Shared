@@ -40,6 +40,13 @@ type OpenAIJSONClientConfig struct {
 	ThinkingType string
 }
 
+func (c *OpenAIJSONClient) httpClient() *http.Client {
+	if c.HTTPClient == nil {
+		c.HTTPClient = defaultHTTPClient()
+	}
+	return c.HTTPClient
+}
+
 func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.JimoLogger) (*OpenAIJSONClient, error) {
 	model := strings.TrimSpace(cfg.ModelName)
 	if model == "" {
@@ -137,7 +144,8 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.HTTPClient.Do(req)
+	httpClient := c.httpClient()
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("(MID_26050154) openai request failed: %w", err)
 	}
@@ -150,7 +158,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		}
 		var netErr net.Error
 		if errors.As(readErr, &netErr) && netErr.Timeout() {
-			return "", fmt.Errorf("(MID_26053002) http_client_timeout (%v): %w", c.HTTPClient.Timeout, readErr)
+			return "", fmt.Errorf("(MID_26053002) http_client_timeout (%v): %w", httpClient.Timeout, readErr)
 		}
 		return "", fmt.Errorf("(MID_26053003) network_error: %w", readErr)
 	}
@@ -467,6 +475,12 @@ type EmbedInput struct {
 	InputText string
 }
 
+// EmbedBatchInput holds parameters for a batched embedding call.
+type EmbedBatchInput struct {
+	ModelName  string
+	InputTexts []string
+}
+
 // Embed calls the OpenAI embeddings API and returns the embedding vector.
 func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64, error) {
 	model := strings.TrimSpace(in.ModelName)
@@ -484,6 +498,46 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 		"model": model,
 		"input": in.InputText,
 	}
+	vecs, err := c.embedRequest(ctx, body, in.ModelName)
+	if err != nil {
+		return nil, err
+	}
+	if len(vecs) == 0 {
+		return nil, errors.New("(MID_26050163) embedding response has no data")
+	}
+	return vecs[0], nil
+}
+
+// EmbedBatch calls the OpenAI embeddings API for multiple inputs in one request.
+func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) ([][]float64, error) {
+	model := strings.TrimSpace(in.ModelName)
+	if model == "" {
+		model = strings.TrimSpace(c.ModelName)
+	}
+	if model == "" {
+		return nil, errors.New("(MID_26060601) embedding model name is empty")
+	}
+	if len(in.InputTexts) == 0 {
+		return nil, errors.New("(MID_26060602) embedding input texts are empty")
+	}
+
+	inputs := make([]string, 0, len(in.InputTexts))
+	for _, text := range in.InputTexts {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, errors.New("(MID_26060603) embedding batch input text is empty")
+		}
+		inputs = append(inputs, text)
+	}
+
+	body := map[string]any{
+		"model": model,
+		"input": inputs,
+	}
+	return c.embedRequest(ctx, body, in.ModelName)
+}
+
+func (c *OpenAIJSONClient) embedRequest(ctx context.Context, body map[string]any, modelName string) ([][]float64, error) {
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
@@ -497,9 +551,9 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, in.ModelName)
+		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, modelName)
 	}
 	defer resp.Body.Close()
 
@@ -522,7 +576,11 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if len(payload.Data) == 0 {
 		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
-	return payload.Data[0].Embedding, nil
+	out := make([][]float64, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		out = append(out, item.Embedding)
+	}
+	return out, nil
 }
 
 func buildEmbeddingsEndpoint(baseURL string) string {

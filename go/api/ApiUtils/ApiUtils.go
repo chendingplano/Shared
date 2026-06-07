@@ -1060,3 +1060,17 @@ func IsEmptyJSONResponse(err error) bool {
 	return strings.Contains(msg, "unexpected end of JSON input") &&
 		strings.Contains(msg, "json:{[]}")
 }
+
+func NormalizeLang(lang string) string {
+	lower_lang := strings.ToLower(strings.TrimSpace(lang))
+	if lower_lang == "chinese" || lower_lang == "中文" || lower_lang == "zh-cn"{
+		return "zh"
+	}
+
+	if lower_lang == "english" {
+		return "en"
+	}
+
+	return lower_lang
+}
+
