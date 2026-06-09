@@ -65,6 +65,11 @@ func readStdioFlagFromEnv() bool {
 	}
 }
 
+func shouldUseJSONLogger() bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("JIMO_LOG_FORMAT")))
+	return raw == "json"
+}
+
 // SetStdioOutputEnabled toggles whether JimoLogger writes to stdio handlers.
 // It returns the previous setting.
 func SetStdioOutputEnabled(enabled bool) bool {
@@ -90,6 +95,21 @@ type JimoLoggerImpl struct {
 
 func CreateDefaultLogger(loc string) ApiTypes.JimoLogger {
 	return createLogger(ContextTypeBackground, LogHandlerTypeDefault, 10000, loc)
+}
+
+func CreateLoggerFromContext(ctx context.Context, loc string) ApiTypes.JimoLogger {
+	logger := createLogger(ContextTypeBackground, LogHandlerTypeDefault, 10000, loc)
+	impl, ok := logger.(*JimoLoggerImpl)
+	if !ok {
+		return logger
+	}
+	if ctx != nil {
+		if reqID, ok := ctx.Value(ApiTypes.RequestIDKey).(string); ok && reqID != "" {
+			impl.reqID = reqID
+		}
+		impl.ctx = ctx
+	}
+	return impl
 }
 
 func createLogger(
@@ -236,7 +256,7 @@ func getConsoleHandler(handlerType LogFormat, loc string) slog.Handler {
 }
 
 func getLogger(handlerType LogFormat) *slog.Logger {
-	is_json := false
+	is_json := shouldUseJSONLogger()
 	if is_json {
 		jsonOnce.Do(func() {
 			consoleHandler := getConsoleHandler(handlerType, "SHD_JLG_250")

@@ -493,6 +493,9 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if strings.TrimSpace(in.InputText) == "" {
 		return nil, errors.New("(MID_26050162) embedding input text is empty")
 	}
+	if err := waitForEmbeddingRateLimit(ctx, []string{in.InputText}); err != nil {
+		return nil, fmt.Errorf("(MID_26060801) embedding rate limit wait failed: %w", err)
+	}
 
 	body := map[string]any{
 		"model": model,
@@ -528,6 +531,9 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 			return nil, errors.New("(MID_26060603) embedding batch input text is empty")
 		}
 		inputs = append(inputs, text)
+	}
+	if err := waitForEmbeddingRateLimit(ctx, inputs); err != nil {
+		return nil, fmt.Errorf("(MID_26060802) embedding batch rate limit wait failed: %w", err)
 	}
 
 	body := map[string]any{

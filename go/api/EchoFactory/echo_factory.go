@@ -113,7 +113,7 @@ func NewRCAsAdmin(loc string) ApiTypes.RequestContext {
 
 func NewFromEcho(c echo.Context, loc string) ApiTypes.RequestContext {
 	ctx := c.Request().Context()
-	logger := loggerutil.CreateDefaultLogger("SHD_EFC_070")
+	logger := loggerutil.CreateLoggerFromContext(ctx, "SHD_EFC_070")
 	ee := &echoContext{
 		c:         c,
 		call_flow: []string{loc},

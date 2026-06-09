@@ -420,3 +420,85 @@ func TestEmbedBatch_SendsInputArrayAndReturnsVectors(t *testing.T) {
 		t.Fatalf("unexpected embedding lengths: %+v", vecs)
 	}
 }
+
+func TestEmbed_RespectsRequestsPerMinuteLimit(t *testing.T) {
+	resetEmbeddingRateLimiterForTest()
+	t.Cleanup(resetEmbeddingRateLimiterForTest)
+	t.Setenv("EMBEDDING_MAX_REQUESTS_PER_MINUTE", "600")
+	t.Setenv("EMBEDDING_MAX_TOKENS_PER_MINUTE", "600000")
+
+	var firstRequestAt time.Time
+	var secondRequestAt time.Time
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			firstRequestAt = time.Now()
+		} else if requestCount == 2 {
+			secondRequestAt = time.Now()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2]}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "text-embedding-3-small",
+	}
+
+	if _, err := client.Embed(context.Background(), EmbedInput{InputText: "first input"}); err != nil {
+		t.Fatalf("first Embed error: %v", err)
+	}
+	if _, err := client.Embed(context.Background(), EmbedInput{InputText: "second input"}); err != nil {
+		t.Fatalf("second Embed error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count=%d, want 2", requestCount)
+	}
+	if gap := secondRequestAt.Sub(firstRequestAt); gap < 8*time.Millisecond {
+		t.Fatalf("request gap=%s, want at least 8ms", gap)
+	}
+}
+
+func TestEmbedBatch_RespectsTokenPerMinuteLimitForCombinedInputs(t *testing.T) {
+	resetEmbeddingRateLimiterForTest()
+	t.Cleanup(resetEmbeddingRateLimiterForTest)
+	t.Setenv("EMBEDDING_MAX_REQUESTS_PER_MINUTE", "600000")
+	t.Setenv("EMBEDDING_MAX_TOKENS_PER_MINUTE", "600")
+
+	var firstRequestAt time.Time
+	var secondRequestAt time.Time
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			firstRequestAt = time.Now()
+		} else if requestCount == 2 {
+			secondRequestAt = time.Now()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2]},{"embedding":[0.3,0.4]}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "text-embedding-3-small",
+	}
+	inputs := []string{"abcdefghij", "klmnopqrst"}
+	if _, err := client.EmbedBatch(context.Background(), EmbedBatchInput{InputTexts: inputs}); err != nil {
+		t.Fatalf("first EmbedBatch error: %v", err)
+	}
+	if _, err := client.EmbedBatch(context.Background(), EmbedBatchInput{InputTexts: inputs}); err != nil {
+		t.Fatalf("second EmbedBatch error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count=%d, want 2", requestCount)
+	}
+	if gap := secondRequestAt.Sub(firstRequestAt); gap < 90*time.Millisecond {
+		t.Fatalf("request gap=%s, want at least 90ms", gap)
+	}
+}

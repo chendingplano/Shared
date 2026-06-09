@@ -1061,16 +1061,101 @@ func IsEmptyJSONResponse(err error) bool {
 		strings.Contains(msg, "json:{[]}")
 }
 
+// langAliasMap maps language name/code variants to canonical lowercase BCP-47 base codes.
+// Add entries here to extend normalization coverage.
+var langAliasMap = map[string]string{
+	// Chinese (Simplified)
+	"chinese":            "zh",
+	"中文":                "zh",
+	"zh-cn":              "zh",
+	"zh-hans":            "zh",
+	"simplified chinese": "zh",
+	"简体中文":              "zh",
+	"普通话":               "zh",
+	"mandarin":           "zh",
+	// Chinese (Traditional)
+	"zh-tw":               "zh-tw",
+	"zh-hk":               "zh-tw",
+	"zh-mo":               "zh-tw",
+	"zh-hant":             "zh-tw",
+	"traditional chinese": "zh-tw",
+	"繁體中文":               "zh-tw",
+	"繁体中文":               "zh-tw",
+	"cantonese":           "zh-tw",
+	// English
+	"english": "en",
+	"en-us":   "en",
+	"en-gb":   "en",
+	"en-au":   "en",
+	"en-ca":   "en",
+	"en-nz":   "en",
+	// French
+	"french":   "fr",
+	"français": "fr",
+	"francais": "fr",
+	"fr-fr":    "fr",
+	"fr-ca":    "fr",
+	// German
+	"german":  "de",
+	"deutsch": "de",
+	"de-de":   "de",
+	"de-at":   "de",
+	"de-ch":   "de",
+	// Spanish
+	"spanish": "es",
+	"español": "es",
+	"espanol": "es",
+	"es-es":   "es",
+	"es-mx":   "es",
+	"es-la":   "es",
+	// Japanese
+	"japanese": "ja",
+	"日本語":      "ja",
+	"日语":       "ja",
+	// Korean
+	"korean": "ko",
+	"한국어":    "ko",
+	"朝鲜语":    "ko",
+	"韩语":     "ko",
+	// Arabic
+	"arabic":  "ar",
+	"عربي":    "ar",
+	"عربية":   "ar",
+	"阿拉伯语":   "ar",
+	// Portuguese
+	"portuguese": "pt",
+	"português":  "pt",
+	"portugues":  "pt",
+	"pt-br":      "pt",
+	"pt-pt":      "pt",
+	// Russian
+	"russian": "ru",
+	"русский": "ru",
+	"俄语":      "ru",
+	// Italian
+	"italian": "it",
+	"italiano": "it",
+	"it-it":   "it",
+	// Dutch
+	"dutch":      "nl",
+	"nederlands": "nl",
+	"nl-nl":      "nl",
+	"nl-be":      "nl",
+	// Hindi
+	"hindi":    "hi",
+	"हिन्दी":   "hi",
+	"हिंदी":    "hi",
+	"印地语":     "hi",
+}
+
 func NormalizeLang(lang string) string {
 	lower_lang := strings.ToLower(strings.TrimSpace(lang))
-	if lower_lang == "chinese" || lower_lang == "中文" || lower_lang == "zh-cn"{
-		return "zh"
+	if lower_lang == "" {
+		return ""
 	}
-
-	if lower_lang == "english" {
-		return "en"
+	if canonical, ok := langAliasMap[lower_lang]; ok {
+		return canonical
 	}
-
 	return lower_lang
 }
 

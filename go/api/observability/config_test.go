@@ -31,7 +31,7 @@ func TestConfigFromEnvClickStackDefaults(t *testing.T) {
 	if !cfg.Enabled {
 		t.Fatalf("expected observability to be enabled")
 	}
-	if cfg.OTLPEndpoint != "http://localhost:4318" {
+	if cfg.OTLPEndpoint != "http://localhost:14318" {
 		t.Fatalf("OTLP endpoint = %q, want local ClickStack endpoint", cfg.OTLPEndpoint)
 	}
 	if cfg.ServiceName != "chenweb" {
