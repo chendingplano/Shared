@@ -96,7 +96,9 @@ type Usage struct {
 // Request describes one inference call.
 type Request struct {
 	Model       string
+	PromptName  string
 	Messages    []Message
+	Capture     *RequestCapture
 	Temperature *float64
 	MaxTokens   *int
 	TopP        *float64

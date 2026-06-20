@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // openaiClient speaks the OpenAI Chat Completions REST API. It also powers
@@ -178,6 +179,7 @@ func (c *openaiClient) newHTTPRequest(ctx context.Context, payload []byte) (*htt
 }
 
 func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, error) {
+	startedAt := time.Now().UTC()
 	payload, err := c.buildBody(req, false)
 	if err != nil {
 		return nil, err
@@ -188,15 +190,51 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      err.Error(),
+		})
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      err.Error(),
+		})
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, HTTPStatus: resp.StatusCode, Err: err}
 	}
 	if resp.StatusCode >= 400 {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      string(raw),
+		})
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw),
@@ -205,6 +243,18 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 
 	var parsed oaCompletion
 	if err := json.Unmarshal(raw, &parsed); err != nil {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      err.Error(),
+		})
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw), Err: err,
@@ -226,10 +276,24 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			TotalTokens:  parsed.Usage.Total,
 		}
 	}
+	captureUsageRecord(ctx, req, UsageCaptureInput{
+		AccountID:         captureAccountID(req),
+		ProfileID:         captureProfileID(req),
+		Provider:          c.cfg.ID,
+		ModelName:         req.Model,
+		PromptName:        req.PromptName,
+		RequestStartedAt:  startedAt,
+		RequestFinishedAt: time.Now().UTC(),
+		InputTokens:       usageInputTokens(out.Usage),
+		OutputTokens:      usageOutputTokens(out.Usage),
+		InputBodyRef:      captureInputBodyRef(req),
+		OutputBodyRef:     captureOutputBodyRef(req),
+	})
 	return out, nil
 }
 
 func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler) error {
+	startedAt := time.Now().UTC()
 	payload, err := c.buildBody(req, true)
 	if err != nil {
 		return err
@@ -241,12 +305,36 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 	httpReq.Header.Set("Accept", "text/event-stream")
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      err.Error(),
+		})
 		return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      string(body),
+		})
 		return &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(body),
@@ -255,10 +343,25 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 
 	finishReason := ""
 	var lastUsage *Usage
+	var output strings.Builder
 
 	reader := bufio.NewReader(resp.Body)
 	for {
 		if ctx.Err() != nil {
+			captureUsageRecord(ctx, req, UsageCaptureInput{
+				AccountID:         captureAccountID(req),
+				ProfileID:         captureProfileID(req),
+				Provider:          c.cfg.ID,
+				ModelName:         req.Model,
+				PromptName:        req.PromptName,
+				RequestStartedAt:  startedAt,
+				RequestFinishedAt: time.Now().UTC(),
+				InputTokens:       usageInputTokens(lastUsage),
+				OutputTokens:      usageOutputTokens(lastUsage),
+				InputBodyRef:      captureInputBodyRef(req),
+				OutputBodyRef:     captureOutputBodyRef(req),
+				ErrorMessage:      ctx.Err().Error(),
+			})
 			return ctx.Err()
 		}
 		line, rerr := reader.ReadString('\n')
@@ -268,8 +371,36 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			}
 			if !errors.Is(rerr, io.EOF) {
 				if ctx.Err() != nil {
+					captureUsageRecord(ctx, req, UsageCaptureInput{
+						AccountID:         captureAccountID(req),
+						ProfileID:         captureProfileID(req),
+						Provider:          c.cfg.ID,
+						ModelName:         req.Model,
+						PromptName:        req.PromptName,
+						RequestStartedAt:  startedAt,
+						RequestFinishedAt: time.Now().UTC(),
+						InputTokens:       usageInputTokens(lastUsage),
+						OutputTokens:      usageOutputTokens(lastUsage),
+						InputBodyRef:      captureInputBodyRef(req),
+						OutputBodyRef:     captureOutputBodyRef(req),
+						ErrorMessage:      ctx.Err().Error(),
+					})
 					return ctx.Err()
 				}
+				captureUsageRecord(ctx, req, UsageCaptureInput{
+					AccountID:         captureAccountID(req),
+					ProfileID:         captureProfileID(req),
+					Provider:          c.cfg.ID,
+					ModelName:         req.Model,
+					PromptName:        req.PromptName,
+					RequestStartedAt:  startedAt,
+					RequestFinishedAt: time.Now().UTC(),
+					InputTokens:       usageInputTokens(lastUsage),
+					OutputTokens:      usageOutputTokens(lastUsage),
+					InputBodyRef:      captureInputBodyRef(req),
+					OutputBodyRef:     captureOutputBodyRef(req),
+					ErrorMessage:      rerr.Error(),
+				})
 				return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: rerr}
 			}
 		}
@@ -295,7 +426,22 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			}
 			delta := ch.Delta
 			if delta.Content != "" {
+				output.WriteString(delta.Content)
 				if herr := on(StreamChunk{Delta: delta.Content}); herr != nil {
+					captureUsageRecord(ctx, req, UsageCaptureInput{
+						AccountID:         captureAccountID(req),
+						ProfileID:         captureProfileID(req),
+						Provider:          c.cfg.ID,
+						ModelName:         req.Model,
+						PromptName:        req.PromptName,
+						RequestStartedAt:  startedAt,
+						RequestFinishedAt: time.Now().UTC(),
+						InputTokens:       usageInputTokens(lastUsage),
+						OutputTokens:      usageOutputTokens(lastUsage),
+						InputBodyRef:      captureInputBodyRef(req),
+						OutputBodyRef:     captureOutputBodyRef(req),
+						ErrorMessage:      herr.Error(),
+					})
 					return herr
 				}
 			}
@@ -304,6 +450,20 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 					ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments,
 				}
 				if herr := on(StreamChunk{ToolCall: &toolCall}); herr != nil {
+					captureUsageRecord(ctx, req, UsageCaptureInput{
+						AccountID:         captureAccountID(req),
+						ProfileID:         captureProfileID(req),
+						Provider:          c.cfg.ID,
+						ModelName:         req.Model,
+						PromptName:        req.PromptName,
+						RequestStartedAt:  startedAt,
+						RequestFinishedAt: time.Now().UTC(),
+						InputTokens:       usageInputTokens(lastUsage),
+						OutputTokens:      usageOutputTokens(lastUsage),
+						InputBodyRef:      captureInputBodyRef(req),
+						OutputBodyRef:     captureOutputBodyRef(req),
+						ErrorMessage:      herr.Error(),
+					})
 					return herr
 				}
 			}
@@ -317,7 +477,81 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		}
 	}
 
-	return on(StreamChunk{Done: true, FinishReason: finishReason, Usage: lastUsage})
+	if err := on(StreamChunk{Done: true, FinishReason: finishReason, Usage: lastUsage}); err != nil {
+		captureUsageRecord(ctx, req, UsageCaptureInput{
+			AccountID:         captureAccountID(req),
+			ProfileID:         captureProfileID(req),
+			Provider:          c.cfg.ID,
+			ModelName:         req.Model,
+			PromptName:        req.PromptName,
+			RequestStartedAt:  startedAt,
+			RequestFinishedAt: time.Now().UTC(),
+			InputTokens:       usageInputTokens(lastUsage),
+			OutputTokens:      usageOutputTokens(lastUsage),
+			InputBodyRef:      captureInputBodyRef(req),
+			OutputBodyRef:     captureOutputBodyRef(req),
+			ErrorMessage:      err.Error(),
+		})
+		return err
+	}
+
+	captureUsageRecord(ctx, req, UsageCaptureInput{
+		AccountID:         captureAccountID(req),
+		ProfileID:         captureProfileID(req),
+		Provider:          c.cfg.ID,
+		ModelName:         req.Model,
+		PromptName:        req.PromptName,
+		RequestStartedAt:  startedAt,
+		RequestFinishedAt: time.Now().UTC(),
+		InputTokens:       usageInputTokens(lastUsage),
+		OutputTokens:      usageOutputTokens(lastUsage),
+		InputBodyRef:      captureInputBodyRef(req),
+		OutputBodyRef:     captureOutputBodyRef(req),
+	})
+	_ = output.String()
+	return nil
+}
+
+func captureAccountID(req Request) int64 {
+	if req.Capture == nil {
+		return 0
+	}
+	return req.Capture.AccountID
+}
+
+func captureProfileID(req Request) int64 {
+	if req.Capture == nil {
+		return 0
+	}
+	return req.Capture.ProfileID
+}
+
+func captureInputBodyRef(req Request) string {
+	if req.Capture == nil {
+		return ""
+	}
+	return req.Capture.InputBodyRef
+}
+
+func captureOutputBodyRef(req Request) string {
+	if req.Capture == nil {
+		return ""
+	}
+	return req.Capture.OutputBodyRef
+}
+
+func usageInputTokens(usage *Usage) int {
+	if usage == nil {
+		return 0
+	}
+	return usage.InputTokens
+}
+
+func usageOutputTokens(usage *Usage) int {
+	if usage == nil {
+		return 0
+	}
+	return usage.OutputTokens
 }
 
 var _ Client = (*openaiClient)(nil)

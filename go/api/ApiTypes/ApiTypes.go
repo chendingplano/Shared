@@ -83,12 +83,16 @@ var CommonConfig CommonConfigDef
 // LLMModelDef describes one logical model entry in `.models.toml`.
 //
 // Example:
-// [gpt-5-4-mini]
+// [deepseek-v4-flash]
 // host = "cloud"
-// model_name = "gpt-5.4-mini"
+// model_name = "deepseek-v4-flash"
 // api_key = "sk-..."
 // base_url = "https://api.openai.com"
 // timeout_sec = 100
+// max_inflight = 16
+// max_requests_per_minute = 500
+// max_tokens_per_minute = 200000
+// token_reserve_per_call = 256
 type LLMModelDef struct {
 	Host         string `toml:"host"`
 	ModelName    string `toml:"model_name"`
@@ -96,10 +100,16 @@ type LLMModelDef struct {
 	BaseURL      string `toml:"base_url"`
 	TimeoutSec   int    `toml:"timeout_sec"`
 	ThinkingType string `toml:"thinking_type"`
+	// Process-wide concurrency and rate budget (ADR 2026061802 DR6).
+	// Zero means use the process-wide env-var default.
+	MaxInflight          int `toml:"max_inflight"`
+	MaxRequestsPerMinute int `toml:"max_requests_per_minute"`
+	MaxTokensPerMinute   int `toml:"max_tokens_per_minute"`
+	TokenReservePerCall  int `toml:"token_reserve_per_call"`
 }
 
 // LLMModelsFile maps logical model names to model configuration.
-// Key example: "gpt-5-4-mini".
+// Key example: "deepseek-v4-flash".
 type LLMModelsFile map[string]LLMModelDef
 
 type LibConfigDef struct {

@@ -6,9 +6,30 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+type testUsageCaptureSink struct {
+	mu      sync.Mutex
+	records []UsageCaptureRecord
+}
+
+func (s *testUsageCaptureSink) Capture(_ context.Context, record UsageCaptureRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
+}
+
+func (s *testUsageCaptureSink) Records() []UsageCaptureRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]UsageCaptureRecord, len(s.records))
+	copy(out, s.records)
+	return out
+}
 
 func newTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
@@ -85,6 +106,89 @@ func TestOpenAICompleteReturnsProviderErrorOn401(t *testing.T) {
 	}
 }
 
+func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "id":"req_abc","object":"chat.completion","model":"deepseek-v4-flash",
+		  "choices":[{"index":0,"message":{"role":"assistant","content":"hello world"},"finish_reason":"stop"}],
+		  "usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11}
+		}`))
+	})
+
+	c, _ := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	})
+	_, err := c.Complete(context.Background(), Request{
+		Model:      "deepseek-v4-flash",
+		PromptName: "extract-products-v2",
+		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+		Capture: &RequestCapture{
+			AccountID:     10,
+			ProfileID:     20,
+			InputBodyRef:  "archive/in.json.gz",
+			OutputBodyRef: "archive/out.json.gz",
+			Sink:          sink,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.AccountID != 10 || got.ProfileID != 20 {
+		t.Fatalf("unexpected account/profile ids: %+v", got)
+	}
+	if got.PromptName != "extract-products-v2" || got.ModelName != "deepseek-v4-flash" {
+		t.Fatalf("unexpected prompt/model: %+v", got)
+	}
+	if got.InputTokens != 8 || got.OutputTokens != 3 || got.TotalTokens != 11 {
+		t.Fatalf("unexpected tokens: %+v", got)
+	}
+	if got.InputBodyRef != "archive/in.json.gz" || got.OutputBodyRef != "archive/out.json.gz" {
+		t.Fatalf("unexpected refs: %+v", got)
+	}
+}
+
+func TestOpenAICompleteCapturesUsageRecordOnProviderError(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
+	})
+
+	c, _ := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	})
+	_, err := c.Complete(context.Background(), Request{
+		Model:      "deepseek-v4-flash",
+		PromptName: "extract-products-v2",
+		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+		Capture: &RequestCapture{
+			AccountID: 10,
+			ProfileID: 20,
+			Sink:      sink,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if records[0].ErrorMessage == "" {
+		t.Fatalf("expected error message on captured record: %+v", records[0])
+	}
+}
+
 func TestOpenAIStreamHappyPath(t *testing.T) {
 	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -136,6 +240,108 @@ func TestOpenAIStreamHappyPath(t *testing.T) {
 	}
 	if finishReason != "stop" {
 		t.Errorf("finish_reason: got %q", finishReason)
+	}
+}
+
+func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		frames := []string{
+			`data: {"choices":[{"delta":{"content":"hel"}}]}`,
+			`data: {"choices":[{"delta":{"content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":2,"total_tokens":11}}`,
+			`data: [DONE]`,
+		}
+		for _, f := range frames {
+			_, _ = w.Write([]byte(f + "\n\n"))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+
+	c, _ := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	})
+	err := c.Stream(context.Background(), Request{
+		Model:      "deepseek-v4-flash",
+		PromptName: "extract-products-v2",
+		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+		Stream:     true,
+		Capture: &RequestCapture{
+			AccountID:     10,
+			ProfileID:     20,
+			InputBodyRef:  "archive/in.json.gz",
+			OutputBodyRef: "archive/out.json.gz",
+			Sink:          sink,
+		},
+	}, func(ch StreamChunk) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.InputTokens != 9 || got.OutputTokens != 2 || got.TotalTokens != 11 {
+		t.Fatalf("unexpected tokens: %+v", got)
+	}
+	if got.OutputBodyRef != "archive/out.json.gz" {
+		t.Fatalf("unexpected output ref: %+v", got)
+	}
+}
+
+func TestOpenAIStreamCapturesUsageRecordOnHandlerError(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		frames := []string{
+			`data: {"choices":[{"delta":{"content":"hel"}}]}`,
+			`data: {"choices":[{"delta":{"content":"lo"}}]}`,
+		}
+		for _, f := range frames {
+			_, _ = w.Write([]byte(f + "\n\n"))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+
+	c, _ := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	})
+	err := c.Stream(context.Background(), Request{
+		Model:      "deepseek-v4-flash",
+		PromptName: "extract-products-v2",
+		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+		Stream:     true,
+		Capture: &RequestCapture{
+			AccountID: 10,
+			ProfileID: 20,
+			Sink:      sink,
+		},
+	}, func(ch StreamChunk) error {
+		if ch.Delta != "" {
+			return errors.New("stop early")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected handler error")
+	}
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if records[0].ErrorMessage == "" {
+		t.Fatalf("expected error message on captured record: %+v", records[0])
 	}
 }
 

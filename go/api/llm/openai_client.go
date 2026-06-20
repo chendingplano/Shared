@@ -24,20 +24,38 @@ type JSONExtractionInput struct {
 }
 
 type OpenAIJSONClient struct {
-	BaseURL      string
-	APIKey       string
-	ModelName    string
-	ThinkingType string
-	HTTPClient   *http.Client
-	logger       ApiTypes.JimoLogger
+	BaseURL             string
+	APIKey              string
+	ModelName           string
+	ThinkingType        string
+	EmbeddingDimensions int
+	HTTPClient          *http.Client
+	logger              ApiTypes.JimoLogger
 }
 
 type OpenAIJSONClientConfig struct {
-	ModelName    string
-	APIKey       string
-	BaseURL      string
-	TimeoutSec   int
-	ThinkingType string
+	ModelName           string
+	APIKey              string
+	BaseURL             string
+	TimeoutSec          int
+	ThinkingType        string
+	EmbeddingDimensions int
+	// Per-model concurrency and rate budget from .models.toml (ADR 2026061802 DR6).
+	// Zero values mean "use the process-wide env-var default".
+	MaxInflight          int
+	MaxRequestsPerMinute int
+	MaxTokensPerMinute   int
+	TokenReservePerCall  int
+}
+
+func (c *OpenAIJSONClient) ensureLogger() ApiTypes.JimoLogger {
+	if c == nil {
+		return loggerutil.CreateDefaultLogger("MID_26061901")
+	}
+	if c.logger == nil {
+		c.logger = loggerutil.CreateDefaultLogger("MID_26061902")
+	}
+	return c.logger
 }
 
 func (c *OpenAIJSONClient) httpClient() *http.Client {
@@ -72,16 +90,44 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 		logger = loggerutil.CreateDefaultLogger("MID_26052101")
 	}
 
+	// Register per-model concurrency and rate budget from the config so that
+	// the process-wide permit controller and rate limiter use the model's own
+	// .models.toml limits rather than the global env-var defaults.
+	if cfg.MaxInflight > 0 {
+		RegisterModelInflightLimit(model, cfg.MaxInflight)
+	}
+	if cfg.MaxRequestsPerMinute > 0 || cfg.MaxTokensPerMinute > 0 || cfg.TokenReservePerCall > 0 {
+		RegisterLLMModelRateConfig(model, cfg.MaxRequestsPerMinute, cfg.MaxTokensPerMinute, cfg.TokenReservePerCall)
+	}
+
 	return &OpenAIJSONClient{
-		BaseURL:      baseURL,
-		APIKey:       apiKey,
-		ModelName:    model,
-		ThinkingType: normalizeThinkingType(cfg.ThinkingType),
-		logger:       logger,
+		BaseURL:             baseURL,
+		APIKey:              apiKey,
+		ModelName:           model,
+		ThinkingType:        normalizeThinkingType(cfg.ThinkingType),
+		EmbeddingDimensions: cfg.EmbeddingDimensions,
+		logger:              logger,
 		HTTPClient: &http.Client{
 			Timeout: time.Duration(timeoutSec) * time.Second,
 		},
 	}, nil
+}
+
+// RegisterModelBudget registers the per-model concurrency and rate budget from
+// a LLMModelDef with the process-wide permit controller and rate limiter.
+// Call this after loading a model definition from .models.toml, before making
+// the first LLM request for that model. Fields with value zero are ignored.
+func RegisterModelBudget(modelDef ApiTypes.LLMModelDef) {
+	modelName := strings.TrimSpace(modelDef.ModelName)
+	if modelName == "" {
+		return
+	}
+	if modelDef.MaxInflight > 0 {
+		RegisterModelInflightLimit(modelName, modelDef.MaxInflight)
+	}
+	if modelDef.MaxRequestsPerMinute > 0 || modelDef.MaxTokensPerMinute > 0 || modelDef.TokenReservePerCall > 0 {
+		RegisterLLMModelRateConfig(modelName, modelDef.MaxRequestsPerMinute, modelDef.MaxTokensPerMinute, modelDef.TokenReservePerCall)
+	}
 }
 
 // ExtractJSON is the legacy compatibility API for callers that still expect a
@@ -89,6 +135,9 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 // should prefer ExtractStructuredJSON so shape validation lives in code rather
 // than prompts.
 func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInput) (map[string]any, error) {
+	if c == nil {
+		return nil, errors.New("(MID_26061903) openai json client is nil")
+	}
 	result, err := c.ExtractStructuredJSON(ctx, in, legacyJSONObjectContract())
 	if err != nil {
 		raw := ""
@@ -102,10 +151,16 @@ func (c *OpenAIJSONClient) ExtractJSON(ctx context.Context, in JSONExtractionInp
 }
 
 func (c *OpenAIJSONClient) ExtractText(ctx context.Context, in JSONExtractionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("(MID_26061904) openai json client is nil")
+	}
 	return c.extractTextWithFormat(ctx, in, false)
 }
 
 func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExtractionInput, jsonResponse bool) (string, error) {
+	if c == nil {
+		return "", errors.New("(MID_26061907) openai json client is nil")
+	}
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -118,6 +173,18 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	if prompt == "" {
 		return "", errors.New("(MID_26050156) prompt text is empty")
 	}
+	c.ensureLogger().Info("llm-call",
+		"model", model,
+		"estimated_tokens", estimateChatRequestTokensForModel(model, prompt, in.InputText))
+
+	if err := waitForLLMRequestRateLimit(ctx, model, prompt, in.InputText); err != nil {
+		return "", fmt.Errorf("(MID_26061820) llm request rate limit wait failed: %w", err)
+	}
+	permit, err := c.acquireModelPermit(ctx, model)
+	if err != nil {
+		return "", err
+	}
+	defer permit.Release()
 
 	body := map[string]any{
 		"model":       model,
@@ -160,11 +227,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		if errors.As(readErr, &netErr) && netErr.Timeout() {
 			return "", fmt.Errorf("(MID_26053002) http_client_timeout (%v): %w", httpClient.Timeout, readErr)
 		}
-		return "", fmt.Errorf("(MID_26053003) network_error: %w", readErr)
-	}
-
-	if c.logger == nil {
-		c.logger = loggerutil.CreateDefaultLogger("MID_26052102")
+		return "", fmt.Errorf("(MID_26053057) network_error: %w", readErr)
 	}
 
 	/*
@@ -471,18 +534,23 @@ func parsePositiveInt(raw string) (int, error) {
 
 // EmbedInput holds parameters for a single embedding call.
 type EmbedInput struct {
-	ModelName string
-	InputText string
+	ModelName  string
+	InputText  string
+	Dimensions int
 }
 
 // EmbedBatchInput holds parameters for a batched embedding call.
 type EmbedBatchInput struct {
 	ModelName  string
 	InputTexts []string
+	Dimensions int
 }
 
 // Embed calls the OpenAI embeddings API and returns the embedding vector.
 func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64, error) {
+	if c == nil {
+		return nil, errors.New("(MID_26061905) openai json client is nil")
+	}
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -493,13 +561,24 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if strings.TrimSpace(in.InputText) == "" {
 		return nil, errors.New("(MID_26050162) embedding input text is empty")
 	}
+	c.ensureLogger().Info("llm-call embed",
+		"model", model,
+		"estimated_tokens", estimateEmbeddingTokens([]string{in.InputText}))
 	if err := waitForEmbeddingRateLimit(ctx, []string{in.InputText}); err != nil {
 		return nil, fmt.Errorf("(MID_26060801) embedding rate limit wait failed: %w", err)
 	}
+	permit, err := c.acquireModelPermit(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 
 	body := map[string]any{
 		"model": model,
 		"input": in.InputText,
+	}
+	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
+		body["dimensions"] = dims
 	}
 	vecs, err := c.embedRequest(ctx, body, in.ModelName)
 	if err != nil {
@@ -513,6 +592,9 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 
 // EmbedBatch calls the OpenAI embeddings API for multiple inputs in one request.
 func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) ([][]float64, error) {
+	if c == nil {
+		return nil, errors.New("(MID_26061906) openai json client is nil")
+	}
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -532,18 +614,40 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 		}
 		inputs = append(inputs, text)
 	}
+	c.ensureLogger().Info("llm-call batch embed",
+		"model", model,
+		"estimated_tokens", estimateEmbeddingTokens(inputs))
 	if err := waitForEmbeddingRateLimit(ctx, inputs); err != nil {
 		return nil, fmt.Errorf("(MID_26060802) embedding batch rate limit wait failed: %w", err)
 	}
+	permit, err := c.acquireModelPermit(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 
 	body := map[string]any{
 		"model": model,
 		"input": inputs,
 	}
+	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
+		body["dimensions"] = dims
+	}
 	return c.embedRequest(ctx, body, in.ModelName)
 }
 
+func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int {
+	if requestDimensions > 0 {
+		return requestDimensions
+	}
+	if clientDimensions > 0 {
+		return clientDimensions
+	}
+	return 0
+}
+
 func (c *OpenAIJSONClient) embedRequest(ctx context.Context, body map[string]any, modelName string) ([][]float64, error) {
+	// c.ensureLogger().Info("llm-call embed", "model", modelName)
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
@@ -602,4 +706,32 @@ func buildEmbeddingsEndpoint(baseURL string) string {
 		return base + "/embeddings"
 	}
 	return base + "/v1/embeddings"
+}
+
+func (c *OpenAIJSONClient) acquireModelPermit(ctx context.Context, modelName string) (modelPermit, error) {
+	permit, err := defaultOpenAIClientPermitController.Acquire(ctx, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("(MID_26061811) acquire llm permit for model %q: %w", strings.TrimSpace(modelName), err)
+	}
+	if permit == nil {
+		return &acquiredModelPermit{}, nil
+	}
+	return permit, nil
+}
+
+func estimateChatRequestTokensForModel(modelName string, promptText string, inputText string) int {
+	reservePerCall := defaultLLMTokenReservePerCall
+	cfg := llmRequestRateLimitConfigFromEnv()
+	if cfg.tokenReservePerCall > 0 {
+		reservePerCall = cfg.tokenReservePerCall
+	}
+
+	trimmedModel := strings.TrimSpace(modelName)
+	llmModelRateRegistry.mu.RLock()
+	if entry, ok := llmModelRateRegistry.configs[trimmedModel]; ok && entry.tokenReservePerCall > 0 {
+		reservePerCall = entry.tokenReservePerCall
+	}
+	llmModelRateRegistry.mu.RUnlock()
+
+	return estimateLLMRequestTokens(promptText, inputText, reservePerCall)
 }

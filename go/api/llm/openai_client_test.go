@@ -225,7 +225,7 @@ func TestExtractJSON_OmitsThinkingWhenDisabled(t *testing.T) {
 	client := &OpenAIJSONClient{
 		BaseURL:      "https://api.openai.com",
 		APIKey:       "test-key",
-		ModelName:    "gpt-5.4-mini",
+		ModelName:    "deepseek-v4-flash",
 		ThinkingType: "disabled",
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body map[string]any
@@ -308,7 +308,7 @@ func TestBuildChatCompletionsEndpoint(t *testing.T) {
 func TestNewOpenAIJSONClientFromConfig(t *testing.T) {
 	logger := loggerutil.CreateDefaultLogger("MID_26050803")
 	client, err := NewOpenAIJSONClientFromConfig(OpenAIJSONClientConfig{
-		ModelName:    "gpt-5.4-mini",
+		ModelName:    "deepseek-v4-flash",
 		APIKey:       "test-key",
 		BaseURL:      "https://api.openai.com",
 		TimeoutSec:   100,
@@ -317,7 +317,7 @@ func TestNewOpenAIJSONClientFromConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOpenAIJSONClientFromConfig error: %v", err)
 	}
-	if client.ModelName != "gpt-5.4-mini" {
+	if client.ModelName != "deepseek-v4-flash" {
 		t.Fatalf("ModelName=%q", client.ModelName)
 	}
 	if client.APIKey != "test-key" {
@@ -347,6 +347,35 @@ func TestNewOpenAIJSONClientFromConfig_RequiresAllModelAttributes(t *testing.T) 
 	}
 	if !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractJSON_DefaultsLoggerWhenClientBuiltWithoutConstructor(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "gpt-test",
+		HTTPClient: srv.Client(),
+	}
+
+	out, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "text",
+	})
+	if err != nil {
+		t.Fatalf("ExtractJSON error: %v", err)
+	}
+	if got := out["ok"]; got != true {
+		t.Fatalf("ok=%v, want true", got)
+	}
+	if client.logger == nil {
+		t.Fatalf("logger was not initialized")
 	}
 }
 
@@ -421,6 +450,34 @@ func TestEmbedBatch_SendsInputArrayAndReturnsVectors(t *testing.T) {
 	}
 }
 
+func TestEmbedBatch_IncludesConfiguredDimensions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if got := int(body["dimensions"].(float64)); got != 1536 {
+			t.Fatalf("dimensions=%d, want 1536", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2]}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:             srv.URL,
+		APIKey:              "test-key",
+		ModelName:           "text-embedding-v4",
+		EmbeddingDimensions: 1536,
+	}
+
+	if _, err := client.EmbedBatch(context.Background(), EmbedBatchInput{
+		InputTexts: []string{"first input"},
+	}); err != nil {
+		t.Fatalf("EmbedBatch error: %v", err)
+	}
+}
+
 func TestEmbed_RespectsRequestsPerMinuteLimit(t *testing.T) {
 	resetEmbeddingRateLimiterForTest()
 	t.Cleanup(resetEmbeddingRateLimiterForTest)
@@ -432,9 +489,10 @@ func TestEmbed_RespectsRequestsPerMinuteLimit(t *testing.T) {
 	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if requestCount == 1 {
+		switch requestCount {
+		case 1:
 			firstRequestAt = time.Now()
-		} else if requestCount == 2 {
+		case 2:
 			secondRequestAt = time.Now()
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -473,9 +531,10 @@ func TestEmbedBatch_RespectsTokenPerMinuteLimitForCombinedInputs(t *testing.T) {
 	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if requestCount == 1 {
+		switch requestCount {
+		case 1:
 			firstRequestAt = time.Now()
-		} else if requestCount == 2 {
+		case 2:
 			secondRequestAt = time.Now()
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -500,5 +559,150 @@ func TestEmbedBatch_RespectsTokenPerMinuteLimitForCombinedInputs(t *testing.T) {
 	}
 	if gap := secondRequestAt.Sub(firstRequestAt); gap < 90*time.Millisecond {
 		t.Fatalf("request gap=%s, want at least 90ms", gap)
+	}
+}
+
+func TestExtractJSON_AllowsBurstWithinRequestsPerMinuteBudget(t *testing.T) {
+	resetLLMRequestRateLimiterForTest()
+	t.Cleanup(resetLLMRequestRateLimiterForTest)
+	t.Setenv("DOC_PROCESS_LLM_MAX_REQUESTS_PER_MINUTE", "3")
+	t.Setenv("DOC_PROCESS_LLM_MAX_TOKENS_PER_MINUTE", "600000")
+	t.Setenv("DOC_PROCESS_LLM_TOKEN_RESERVE_PER_CALL", "1")
+
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "deepseek-v4-flash",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	for i := 0; i < 3; i++ {
+		if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: "prompt", InputText: "burst input"}); err != nil {
+			t.Fatalf("ExtractJSON request %d error: %v", i+1, err)
+		}
+	}
+	if requestCount != 3 {
+		t.Fatalf("request count=%d, want 3", requestCount)
+	}
+}
+
+func TestExtractJSON_AllowsBurstWithinTokensPerMinuteBudget(t *testing.T) {
+	resetLLMRequestRateLimiterForTest()
+	t.Cleanup(resetLLMRequestRateLimiterForTest)
+	t.Setenv("DOC_PROCESS_LLM_MAX_REQUESTS_PER_MINUTE", "600000")
+	t.Setenv("DOC_PROCESS_LLM_MAX_TOKENS_PER_MINUTE", "42")
+	t.Setenv("DOC_PROCESS_LLM_TOKEN_RESERVE_PER_CALL", "1")
+
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "deepseek-v4-flash",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	prompt := strings.Repeat("abcdefghij", 3)
+	input := strings.Repeat("klmnopqrst", 3)
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: prompt, InputText: input}); err != nil {
+		t.Fatalf("first ExtractJSON error: %v", err)
+	}
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: prompt, InputText: input}); err != nil {
+		t.Fatalf("second ExtractJSON error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count=%d, want 2", requestCount)
+	}
+}
+
+func TestExtractJSON_PerModelRequestsPerMinuteOverrideAllowsConfiguredBurst(t *testing.T) {
+	resetLLMRequestRateLimiterForTest()
+	t.Cleanup(resetLLMRequestRateLimiterForTest)
+	t.Setenv("DOC_PROCESS_LLM_MAX_REQUESTS_PER_MINUTE", "1")
+	t.Setenv("DOC_PROCESS_LLM_MAX_TOKENS_PER_MINUTE", "600000")
+	t.Setenv("DOC_PROCESS_LLM_MAX_REQUESTS_PER_MINUTE_OVERRIDES", "gpt-5.4-mini=2")
+	t.Setenv("DOC_PROCESS_LLM_TOKEN_RESERVE_PER_CALL", "1")
+
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "gpt-5.4-mini",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: "prompt", InputText: "first input"}); err != nil {
+		t.Fatalf("first ExtractJSON error: %v", err)
+	}
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: "prompt", InputText: "second input"}); err != nil {
+		t.Fatalf("second ExtractJSON error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count=%d, want 2", requestCount)
+	}
+}
+
+func TestExtractJSON_PerModelTokensPerMinuteOverrideAllowsConfiguredBurst(t *testing.T) {
+	resetLLMRequestRateLimiterForTest()
+	t.Cleanup(resetLLMRequestRateLimiterForTest)
+	t.Setenv("DOC_PROCESS_LLM_MAX_REQUESTS_PER_MINUTE", "600000")
+	t.Setenv("DOC_PROCESS_LLM_MAX_TOKENS_PER_MINUTE", "41")
+	t.Setenv("DOC_PROCESS_LLM_MAX_TOKENS_PER_MINUTE_OVERRIDES", "gpt-5.4-mini=42")
+	t.Setenv("DOC_PROCESS_LLM_TOKEN_RESERVE_PER_CALL", "1")
+
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:   srv.URL,
+		APIKey:    "test-key",
+		ModelName: "gpt-5.4-mini",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	prompt := strings.Repeat("abcdefghij", 3)
+	input := strings.Repeat("klmnopqrst", 3)
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: prompt, InputText: input}); err != nil {
+		t.Fatalf("first ExtractJSON error: %v", err)
+	}
+	if _, err := client.ExtractJSON(ctx, JSONExtractionInput{PromptText: prompt, InputText: input}); err != nil {
+		t.Fatalf("second ExtractJSON error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count=%d, want 2", requestCount)
 	}
 }
