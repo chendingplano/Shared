@@ -66,6 +66,7 @@ type oaToolCallFn struct {
 }
 
 type oaCompletion struct {
+	ID      string `json:"id"`
 	Choices []struct {
 		Index        int    `json:"index"`
 		FinishReason string `json:"finish_reason"`
@@ -201,6 +202,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
+			InputBody:         payload,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 		})
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
@@ -219,6 +224,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
+			InputBody:         payload,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 		})
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, HTTPStatus: resp.StatusCode, Err: err}
 	}
@@ -234,6 +243,11 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      string(raw),
+			InputBody:         payload,
+			OutputBody:        raw,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 		})
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
@@ -254,6 +268,11 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
+			InputBody:         payload,
+			OutputBody:        raw,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 		})
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
@@ -288,6 +307,9 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		OutputTokens:      usageOutputTokens(out.Usage),
 		InputBodyRef:      captureInputBodyRef(req),
 		OutputBodyRef:     captureOutputBodyRef(req),
+		ProviderRequestID: parsed.ID,
+		InputBody:         payload,
+		OutputBody:        raw,
 	})
 	return out, nil
 }
@@ -316,6 +338,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
+			InputBody:         payload,
 		})
 		return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
@@ -334,6 +357,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      string(body),
+			InputBody:         payload,
+			OutputBody:        body,
 		})
 		return &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
@@ -361,6 +386,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 				InputBodyRef:      captureInputBodyRef(req),
 				OutputBodyRef:     captureOutputBodyRef(req),
 				ErrorMessage:      ctx.Err().Error(),
+				InputBody:         payload,
+				OutputBody:        []byte(output.String()),
 			})
 			return ctx.Err()
 		}
@@ -384,6 +411,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						InputBodyRef:      captureInputBodyRef(req),
 						OutputBodyRef:     captureOutputBodyRef(req),
 						ErrorMessage:      ctx.Err().Error(),
+						InputBody:         payload,
+						OutputBody:        []byte(output.String()),
 					})
 					return ctx.Err()
 				}
@@ -400,6 +429,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 					InputBodyRef:      captureInputBodyRef(req),
 					OutputBodyRef:     captureOutputBodyRef(req),
 					ErrorMessage:      rerr.Error(),
+					InputBody:         payload,
+					OutputBody:        []byte(output.String()),
 				})
 				return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: rerr}
 			}
@@ -441,6 +472,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						InputBodyRef:      captureInputBodyRef(req),
 						OutputBodyRef:     captureOutputBodyRef(req),
 						ErrorMessage:      herr.Error(),
+						InputBody:         payload,
+						OutputBody:        []byte(output.String()),
 					})
 					return herr
 				}
@@ -463,6 +496,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						InputBodyRef:      captureInputBodyRef(req),
 						OutputBodyRef:     captureOutputBodyRef(req),
 						ErrorMessage:      herr.Error(),
+						InputBody:         payload,
+						OutputBody:        []byte(output.String()),
 					})
 					return herr
 				}
@@ -491,6 +526,8 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			InputBodyRef:      captureInputBodyRef(req),
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
+			InputBody:         payload,
+			OutputBody:        []byte(output.String()),
 		})
 		return err
 	}
@@ -507,21 +544,22 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		OutputTokens:      usageOutputTokens(lastUsage),
 		InputBodyRef:      captureInputBodyRef(req),
 		OutputBodyRef:     captureOutputBodyRef(req),
+		InputBody:         payload,
+		OutputBody:        []byte(output.String()),
 	})
-	_ = output.String()
 	return nil
 }
 
-func captureAccountID(req Request) int64 {
+func captureAccountID(req Request) string {
 	if req.Capture == nil {
-		return 0
+		return ""
 	}
 	return req.Capture.AccountID
 }
 
-func captureProfileID(req Request) int64 {
+func captureProfileID(req Request) string {
 	if req.Capture == nil {
-		return 0
+		return ""
 	}
 	return req.Capture.ProfileID
 }

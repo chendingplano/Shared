@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 )
 
@@ -16,14 +15,17 @@ type UsageArchivePaths struct {
 	OutputBodyPath string
 }
 
-func BuildUsageArchivePaths(root string, day time.Time, accountID int64, eventID string) UsageArchivePaths {
+func BuildUsageArchivePaths(root string, day time.Time, accountID string, eventID string) UsageArchivePaths {
 	dayDir := filepath.Join(
 		root,
 		day.Format("2006"),
 		day.Format("2006-01"),
 		day.Format("2006-01-02"),
 	)
-	accountDir := filepath.Join(dayDir, "account-"+strconv.FormatInt(accountID, 10))
+	if accountID == "" {
+		accountID = "unknown"
+	}
+	accountDir := filepath.Join(dayDir, "account-"+accountID)
 	bodiesDir := filepath.Join(accountDir, "bodies")
 
 	return UsageArchivePaths{

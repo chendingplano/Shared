@@ -1,7 +1,7 @@
 package llm
 
 type Account struct {
-	ID       int64
+	ID       string
 	Name     string
 	Provider ProviderID
 	BaseURL  string
@@ -9,15 +9,15 @@ type Account struct {
 }
 
 type AccountProfile struct {
-	ID          int64
-	AccountID   int64
+	ID          string
+	AccountID   string
 	ProfileName string
 	ModelName   string
 }
 
 type ResolvedRequestContext struct {
-	AccountID      int64
-	ProfileID      int64
+	AccountID      string
+	ProfileID      string
 	Provider       ProviderID
 	ModelName      string
 	PromptName     string

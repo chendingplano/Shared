@@ -28,10 +28,12 @@ func TestWriteAndReadGzipFileRoundTrip(t *testing.T) {
 func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	startedAt := time.Date(2026, time.June, 19, 14, 5, 0, 0, time.UTC)
 	finishedAt := startedAt.Add(2 * time.Second)
+	inputBody := []byte(`{"messages":[{"role":"user","content":"hello"}]}`)
+	outputBody := []byte(`{"content":"world"}`)
 
 	record := NewUsageCaptureRecord(UsageCaptureInput{
-		AccountID:         10,
-		ProfileID:         20,
+		AccountID:         "acct_10",
+		ProfileID:         "prof_20",
 		Provider:          ProviderOpenAICompatible,
 		ModelName:         "deepseek-v4-flash",
 		PromptName:        "extract-products-v2",
@@ -43,13 +45,18 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 		OutputBodyRef:     "archive/out.json.gz",
 		ErrorMessage:      "upstream timeout",
 		ProviderRequestID: "req_123",
+		InputBody:         inputBody,
+		OutputBody:        outputBody,
+		RecordID:          77,
+		CallReason:        "extract_products",
+		CallLoc:           "MID-CWB-USAGE-CAPTURE",
 	})
 
-	if record.AccountID != 10 {
-		t.Fatalf("AccountID = %d, want 10", record.AccountID)
+	if record.AccountID != "acct_10" {
+		t.Fatalf("AccountID = %q, want acct_10", record.AccountID)
 	}
-	if record.ProfileID != 20 {
-		t.Fatalf("ProfileID = %d, want 20", record.ProfileID)
+	if record.ProfileID != "prof_20" {
+		t.Fatalf("ProfileID = %q, want prof_20", record.ProfileID)
 	}
 	if record.Provider != ProviderOpenAICompatible {
 		t.Fatalf("Provider = %q, want %q", record.Provider, ProviderOpenAICompatible)
@@ -74,5 +81,14 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	}
 	if record.ProviderRequestID != "req_123" {
 		t.Fatalf("ProviderRequestID = %q", record.ProviderRequestID)
+	}
+	if record.RecordID != 77 || record.CallReason != "extract_products" || record.CallLoc != "MID-CWB-USAGE-CAPTURE" {
+		t.Fatalf("unexpected capture metadata: %+v", record)
+	}
+	if string(record.InputBody) != string(inputBody) {
+		t.Fatalf("InputBody = %q", string(record.InputBody))
+	}
+	if string(record.OutputBody) != string(outputBody) {
+		t.Fatalf("OutputBody = %q", string(record.OutputBody))
 	}
 }

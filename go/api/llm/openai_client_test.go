@@ -350,6 +350,66 @@ func TestNewOpenAIJSONClientFromConfig_RequiresAllModelAttributes(t *testing.T) 
 	}
 }
 
+func TestExtractJSON_CapturesUsageRecordWithLookupHints(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"req_json_1",
+			"choices":[{"message":{"content":"{\"ok\":true}"}}],
+			"usage":{"prompt_tokens":7,"completion_tokens":5,"total_tokens":12}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:     srv.URL,
+		APIKey:      "test-key",
+		ModelName:   "deepseek-chat",
+		ProfileName: "deepseek-prod",
+		Provider:    ProviderOpenAICompatible,
+		HTTPClient:  srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+			PromptName: "extract-products-v2",
+			PromptText: "prompt",
+			InputText:  "text",
+		})
+		if err != nil {
+			t.Fatalf("ExtractJSON error: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.PromptName != "extract-products-v2" {
+		t.Fatalf("PromptName=%q", got.PromptName)
+	}
+	if got.ProfileName != "deepseek-prod" {
+		t.Fatalf("ProfileName=%q", got.ProfileName)
+	}
+	if got.BaseURL != srv.URL {
+		t.Fatalf("BaseURL=%q", got.BaseURL)
+	}
+	if got.APIKey != "test-key" {
+		t.Fatalf("APIKey=%q", got.APIKey)
+	}
+	if got.InputTokens != 7 || got.OutputTokens != 5 || got.TotalTokens != 12 {
+		t.Fatalf("unexpected tokens: %+v", got)
+	}
+	if !strings.Contains(string(got.InputBody), `"model":"deepseek-chat"`) {
+		t.Fatalf("expected serialized request body, got %q", string(got.InputBody))
+	}
+	if !strings.Contains(string(got.OutputBody), `"prompt_tokens":7`) {
+		t.Fatalf("expected raw response body, got %q", string(got.OutputBody))
+	}
+}
+
 func TestExtractJSON_DefaultsLoggerWhenClientBuiltWithoutConstructor(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -406,6 +466,96 @@ func TestEmbed_DefaultsHTTPClientWhenNil(t *testing.T) {
 	}
 	if len(vec) != 3 {
 		t.Fatalf("embedding length=%d, want 3", len(vec))
+	}
+}
+
+func TestEmbed_CapturesUsageRecordWithLookupHints(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data":[{"embedding":[0.1,0.2,0.3]}],
+			"usage":{"prompt_tokens":6,"total_tokens":6}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:     srv.URL,
+		APIKey:      "test-key",
+		ModelName:   "text-embedding-3-small",
+		ProfileName: "embedding-prod",
+		Provider:    ProviderOpenAICompatible,
+		HTTPClient:  srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := client.Embed(context.Background(), EmbedInput{
+			InputText: "test input",
+		})
+		if err != nil {
+			t.Fatalf("Embed error: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.ProfileName != "embedding-prod" {
+		t.Fatalf("ProfileName=%q", got.ProfileName)
+	}
+	if got.BaseURL != srv.URL || got.APIKey != "test-key" {
+		t.Fatalf("unexpected lookup hints: %+v", got)
+	}
+	if got.InputTokens != 6 || got.OutputTokens != 0 || got.TotalTokens != 6 {
+		t.Fatalf("unexpected tokens: %+v", got)
+	}
+	if !strings.Contains(string(got.InputBody), `"input":"test input"`) {
+		t.Fatalf("expected serialized request body, got %q", string(got.InputBody))
+	}
+	if !strings.Contains(string(got.OutputBody), `"prompt_tokens":6`) {
+		t.Fatalf("expected raw response body, got %q", string(got.OutputBody))
+	}
+}
+
+func TestEmbed_CapturesProviderErrorBody(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad embedding key"}}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:     srv.URL,
+		APIKey:      "test-key",
+		ModelName:   "text-embedding-3-small",
+		ProfileName: "embedding-prod",
+		Provider:    ProviderOpenAICompatible,
+		HTTPClient:  srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := client.Embed(context.Background(), EmbedInput{
+			InputText: "test input",
+		})
+		if err == nil {
+			t.Fatalf("expected Embed error")
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if records[0].ErrorMessage == "" {
+		t.Fatalf("expected error message on captured record: %+v", records[0])
+	}
+	if !strings.Contains(string(records[0].OutputBody), "bad embedding key") {
+		t.Fatalf("expected raw provider error body, got %q", string(records[0].OutputBody))
 	}
 }
 

@@ -97,6 +97,9 @@ type Usage struct {
 type Request struct {
 	Model       string
 	PromptName  string
+	RecordID    int64
+	CallReason  string
+	CallLoc     string
 	Messages    []Message
 	Capture     *RequestCapture
 	Temperature *float64

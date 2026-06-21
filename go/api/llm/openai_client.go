@@ -18,14 +18,22 @@ import (
 )
 
 type JSONExtractionInput struct {
+	PromptName string
 	PromptText string
 	ModelName  string
 	InputText  string
+	RecordID   int64
+	CallReason string
+	CallLoc    string
 }
 
 type OpenAIJSONClient struct {
 	BaseURL             string
 	APIKey              string
+	AccountID           string
+	ProfileID           string
+	ProfileName         string
+	Provider            ProviderID
 	ModelName           string
 	ThinkingType        string
 	EmbeddingDimensions int
@@ -37,6 +45,10 @@ type OpenAIJSONClientConfig struct {
 	ModelName           string
 	APIKey              string
 	BaseURL             string
+	AccountID           string
+	ProfileID           string
+	ProfileName         string
+	Provider            ProviderID
 	TimeoutSec          int
 	ThinkingType        string
 	EmbeddingDimensions int
@@ -103,6 +115,10 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 	return &OpenAIJSONClient{
 		BaseURL:             baseURL,
 		APIKey:              apiKey,
+		AccountID:           strings.TrimSpace(cfg.AccountID),
+		ProfileID:           strings.TrimSpace(cfg.ProfileID),
+		ProfileName:         strings.TrimSpace(cfg.ProfileName),
+		Provider:            normalizeOpenAIJSONProvider(cfg.Provider, baseURL),
 		ModelName:           model,
 		ThinkingType:        normalizeThinkingType(cfg.ThinkingType),
 		EmbeddingDimensions: cfg.EmbeddingDimensions,
@@ -161,6 +177,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	if c == nil {
 		return "", errors.New("(MID_26061907) openai json client is nil")
 	}
+	startedAt := time.Now().UTC()
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -173,9 +190,9 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	if prompt == "" {
 		return "", errors.New("(MID_26050156) prompt text is empty")
 	}
-	c.ensureLogger().Info("llm-call",
-		"model", model,
-		"estimated_tokens", estimateChatRequestTokensForModel(model, prompt, in.InputText))
+	// c.ensureLogger().Info("llm-call",
+	// 	"model", model,
+	// 	"estimated_tokens", estimateChatRequestTokensForModel(model, prompt, in.InputText))
 
 	if err := waitForLLMRequestRateLimit(ctx, model, prompt, in.InputText); err != nil {
 		return "", fmt.Errorf("(MID_26061820) llm request rate limit wait failed: %w", err)
@@ -200,12 +217,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	bs, err := json.Marshal(body)
 	if err != nil {
+		c.captureUsage(ctx, in, model, startedAt, nil, nil, "", "", 0, 0, err)
 		return "", fmt.Errorf("(MID_26050175) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildChatCompletionsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, err)
 		return "", fmt.Errorf("(MID_26050176) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -214,12 +233,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	httpClient := c.httpClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, err)
 		return "", fmt.Errorf("(MID_26050154) openai request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, readErr)
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("(MID_26053001) caller_context_cancelled: %w", readErr)
 		}
@@ -238,14 +259,78 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	*/
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, fmt.Errorf("status %d", resp.StatusCode))
 		return "", fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	content, err := parseOpenAIContent(respBody)
 	if err != nil {
+		providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, err)
 		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
+	providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
+	c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, nil)
 	return content, nil
+}
+
+func (c *OpenAIJSONClient) captureUsage(ctx context.Context, in JSONExtractionInput, model string, startedAt time.Time, inputBody, outputBody []byte, providerRequestID string, outputContent string, inputTokens, outputTokens int, err error) {
+	errorMessage := ""
+	if err != nil {
+		errorMessage = err.Error()
+	}
+	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
+		AccountID:         strings.TrimSpace(c.AccountID),
+		ProfileID:         strings.TrimSpace(c.ProfileID),
+		ProfileName:       strings.TrimSpace(c.ProfileName),
+		Provider:          normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
+		BaseURL:           strings.TrimSpace(c.BaseURL),
+		APIKey:            strings.TrimSpace(c.APIKey),
+		ModelName:         strings.TrimSpace(model),
+		PromptName:        strings.TrimSpace(in.PromptName),
+		RequestStartedAt:  startedAt,
+		RequestFinishedAt: time.Now().UTC(),
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		ProviderRequestID: strings.TrimSpace(providerRequestID),
+		InputBody:         inputBody,
+		OutputBody:        outputBody,
+		ErrorMessage:      errorMessage,
+		RecordID:          in.RecordID,
+		CallReason:        strings.TrimSpace(in.CallReason),
+		CallLoc:           strings.TrimSpace(in.CallLoc),
+	})
+	_ = outputContent
+}
+
+func parseOpenAIUsageMetadata(respBody []byte) (providerRequestID string, inputTokens int, outputTokens int) {
+	var out oaCompletion
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		return "", 0, 0
+	}
+	providerRequestID = strings.TrimSpace(out.ID)
+	if out.Usage == nil {
+		return providerRequestID, 0, 0
+	}
+	return providerRequestID, out.Usage.Prompt, out.Usage.Completion
+}
+
+func normalizeOpenAIJSONProvider(provider ProviderID, baseURL string) ProviderID {
+	if strings.TrimSpace(string(provider)) != "" {
+		return provider
+	}
+	base := strings.ToLower(strings.TrimSpace(baseURL))
+	switch {
+	case strings.Contains(base, "deepseek"):
+		return ProviderID("deepseek")
+	case strings.Contains(base, "dashscope"):
+		return ProviderID("qwen")
+	case strings.Contains(base, "openai"):
+		return ProviderOpenAI
+	default:
+		return ProviderOpenAICompatible
+	}
 }
 
 func buildChatCompletionsEndpoint(baseURL string) string {
@@ -546,11 +631,22 @@ type EmbedBatchInput struct {
 	Dimensions int
 }
 
+type embeddingResponsePayload struct {
+	Data []struct {
+		Embedding []float64 `json:"embedding"`
+	} `json:"data"`
+	Usage *struct {
+		Prompt int `json:"prompt_tokens"`
+		Total  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 // Embed calls the OpenAI embeddings API and returns the embedding vector.
 func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64, error) {
 	if c == nil {
 		return nil, errors.New("(MID_26061905) openai json client is nil")
 	}
+	startedAt := time.Now().UTC()
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -580,7 +676,7 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	vecs, err := c.embedRequest(ctx, body, in.ModelName)
+	vecs, err := c.embedRequest(ctx, body, model, startedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -595,6 +691,7 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	if c == nil {
 		return nil, errors.New("(MID_26061906) openai json client is nil")
 	}
+	startedAt := time.Now().UTC()
 	model := strings.TrimSpace(in.ModelName)
 	if model == "" {
 		model = strings.TrimSpace(c.ModelName)
@@ -633,7 +730,7 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	return c.embedRequest(ctx, body, in.ModelName)
+	return c.embedRequest(ctx, body, model, startedAt)
 }
 
 func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int {
@@ -646,16 +743,18 @@ func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int
 	return 0
 }
 
-func (c *OpenAIJSONClient) embedRequest(ctx context.Context, body map[string]any, modelName string) ([][]float64, error) {
+func (c *OpenAIJSONClient) embedRequest(ctx context.Context, body map[string]any, modelName string, startedAt time.Time) ([][]float64, error) {
 	// c.ensureLogger().Info("llm-call embed", "model", modelName)
 	bs, err := json.Marshal(body)
 	if err != nil {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, nil, nil, 0, err)
 		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildEmbeddingsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, err)
 		return nil, fmt.Errorf("(MID_26050181) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -663,34 +762,77 @@ func (c *OpenAIJSONClient) embedRequest(ctx context.Context, body map[string]any
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, err)
 		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, modelName)
 	}
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, readErr)
 		return nil, fmt.Errorf("(MID_26052902) failed reading embedding response body: %w", readErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingInputTokens(respBody), fmt.Errorf("status %d", resp.StatusCode))
 		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
-	var payload struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-		} `json:"data"`
-	}
+	var payload embeddingResponsePayload
 	if err := json.Unmarshal(respBody, &payload); err != nil {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, 0, err)
 		return nil, fmt.Errorf("(MID_26050148) decode embedding response: %w", err)
 	}
 	if len(payload.Data) == 0 {
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), errors.New("(MID_26050163) embedding response has no data"))
 		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
 	out := make([][]float64, 0, len(payload.Data))
 	for _, item := range payload.Data {
 		out = append(out, item.Embedding)
 	}
+	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), nil)
 	return out, nil
+}
+
+func (c *OpenAIJSONClient) captureEmbeddingUsage(ctx context.Context, model string, startedAt time.Time, inputBody, outputBody []byte, inputTokens int, err error) {
+	errorMessage := ""
+	if err != nil {
+		errorMessage = err.Error()
+	}
+	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
+		AccountID:         strings.TrimSpace(c.AccountID),
+		ProfileID:         strings.TrimSpace(c.ProfileID),
+		ProfileName:       strings.TrimSpace(c.ProfileName),
+		Provider:          normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
+		BaseURL:           strings.TrimSpace(c.BaseURL),
+		APIKey:            strings.TrimSpace(c.APIKey),
+		ModelName:         strings.TrimSpace(model),
+		RequestStartedAt:  startedAt,
+		RequestFinishedAt: time.Now().UTC(),
+		InputTokens:       inputTokens,
+		OutputTokens:      0,
+		InputBody:         inputBody,
+		OutputBody:        outputBody,
+		ErrorMessage:      errorMessage,
+	})
+}
+
+func parseEmbeddingInputTokens(respBody []byte) int {
+	var payload embeddingResponsePayload
+	if err := json.Unmarshal(respBody, &payload); err != nil {
+		return 0
+	}
+	return parseEmbeddingUsageInputTokens(payload.Usage)
+}
+
+func parseEmbeddingUsageInputTokens(usage *struct {
+	Prompt int `json:"prompt_tokens"`
+	Total  int `json:"total_tokens"`
+}) int {
+	if usage == nil {
+		return 0
+	}
+	return usage.Prompt
 }
 
 func buildEmbeddingsEndpoint(baseURL string) string {

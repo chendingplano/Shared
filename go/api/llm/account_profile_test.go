@@ -4,15 +4,15 @@ import "testing"
 
 func TestResolveRequestContextBuildsProviderConfigFromAccountProfile(t *testing.T) {
 	account := Account{
-		ID:       7,
+		ID:       "acct_7",
 		Name:     "DeepSeek Prod",
 		Provider: ProviderOpenAICompatible,
 		BaseURL:  "https://api.deepseek.com",
 		APIKey:   "sk-test-value",
 	}
 	profile := AccountProfile{
-		ID:          11,
-		AccountID:   7,
+		ID:          "prof_11",
+		AccountID:   "acct_7",
 		ProfileName: "deepseek-v4-flash",
 		ModelName:   "deepseek-v4-flash",
 	}
@@ -24,11 +24,11 @@ func TestResolveRequestContextBuildsProviderConfigFromAccountProfile(t *testing.
 
 	resolved := ResolveRequestContext(account, profile, req)
 
-	if resolved.AccountID != 7 {
-		t.Fatalf("AccountID = %d, want 7", resolved.AccountID)
+	if resolved.AccountID != "acct_7" {
+		t.Fatalf("AccountID = %q, want acct_7", resolved.AccountID)
 	}
-	if resolved.ProfileID != 11 {
-		t.Fatalf("ProfileID = %d, want 11", resolved.ProfileID)
+	if resolved.ProfileID != "prof_11" {
+		t.Fatalf("ProfileID = %q, want prof_11", resolved.ProfileID)
 	}
 	if resolved.Provider != ProviderOpenAICompatible {
 		t.Fatalf("Provider = %q", resolved.Provider)
@@ -52,14 +52,14 @@ func TestResolveRequestContextBuildsProviderConfigFromAccountProfile(t *testing.
 
 func TestResolveRequestContextFallsBackToRequestModelWhenProfileModelEmpty(t *testing.T) {
 	account := Account{
-		ID:       9,
+		ID:       "acct_9",
 		Name:     "OpenAI Backup",
 		Provider: ProviderOpenAI,
 		APIKey:   "sk-live",
 	}
 	profile := AccountProfile{
-		ID:        19,
-		AccountID: 9,
+		ID:        "prof_19",
+		AccountID: "acct_9",
 	}
 	req := Request{
 		Model:      "gpt-5-mini",

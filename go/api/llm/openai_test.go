@@ -31,6 +31,13 @@ func (s *testUsageCaptureSink) Records() []UsageCaptureRecord {
 	return out
 }
 
+func withDefaultUsageCaptureSink(sink UsageCaptureSink, fn func()) {
+	original := DefaultUsageCaptureSink
+	DefaultUsageCaptureSink = sink
+	defer func() { DefaultUsageCaptureSink = original }()
+	fn()
+}
+
 func newTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 	s := httptest.NewServer(handler)
@@ -125,8 +132,8 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 		PromptName: "extract-products-v2",
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
 		Capture: &RequestCapture{
-			AccountID:     10,
-			ProfileID:     20,
+			AccountID:     "acct_10",
+			ProfileID:     "prof_20",
 			InputBodyRef:  "archive/in.json.gz",
 			OutputBodyRef: "archive/out.json.gz",
 			Sink:          sink,
@@ -141,7 +148,7 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 		t.Fatalf("captured records = %d, want 1", len(records))
 	}
 	got := records[0]
-	if got.AccountID != 10 || got.ProfileID != 20 {
+	if got.AccountID != "acct_10" || got.ProfileID != "prof_20" {
 		t.Fatalf("unexpected account/profile ids: %+v", got)
 	}
 	if got.PromptName != "extract-products-v2" || got.ModelName != "deepseek-v4-flash" {
@@ -152,6 +159,12 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 	}
 	if got.InputBodyRef != "archive/in.json.gz" || got.OutputBodyRef != "archive/out.json.gz" {
 		t.Fatalf("unexpected refs: %+v", got)
+	}
+	if !strings.Contains(string(got.InputBody), `"model":"deepseek-v4-flash"`) {
+		t.Fatalf("expected serialized request body, got %q", string(got.InputBody))
+	}
+	if !strings.Contains(string(got.OutputBody), `"content":"hello world"`) {
+		t.Fatalf("expected raw response body, got %q", string(got.OutputBody))
 	}
 }
 
@@ -171,8 +184,8 @@ func TestOpenAICompleteCapturesUsageRecordOnProviderError(t *testing.T) {
 		PromptName: "extract-products-v2",
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
 		Capture: &RequestCapture{
-			AccountID: 10,
-			ProfileID: 20,
+			AccountID: "acct_10",
+			ProfileID: "prof_20",
 			Sink:      sink,
 		},
 	})
@@ -186,6 +199,44 @@ func TestOpenAICompleteCapturesUsageRecordOnProviderError(t *testing.T) {
 	}
 	if records[0].ErrorMessage == "" {
 		t.Fatalf("expected error message on captured record: %+v", records[0])
+	}
+	if !strings.Contains(string(records[0].OutputBody), "bad key") {
+		t.Fatalf("expected raw provider error body, got %q", string(records[0].OutputBody))
+	}
+}
+
+func TestOpenAICompleteUsesDefaultCaptureSinkWhenRequestCaptureMissing(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "id":"req_default","object":"chat.completion","model":"gpt-4o-mini",
+		  "choices":[{"index":0,"message":{"role":"assistant","content":"hello world"},"finish_reason":"stop"}],
+		  "usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}
+		}`))
+	})
+
+	c, _ := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	})
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := c.Complete(context.Background(), Request{
+			Model:      "gpt-4o-mini",
+			PromptName: "default-sink-test",
+			Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+		})
+		if err != nil {
+			t.Fatalf("Complete: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if records[0].PromptName != "default-sink-test" {
+		t.Fatalf("PromptName = %q", records[0].PromptName)
 	}
 }
 
@@ -270,8 +321,8 @@ func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
 		Stream:     true,
 		Capture: &RequestCapture{
-			AccountID:     10,
-			ProfileID:     20,
+			AccountID:     "acct_10",
+			ProfileID:     "prof_20",
 			InputBodyRef:  "archive/in.json.gz",
 			OutputBodyRef: "archive/out.json.gz",
 			Sink:          sink,
@@ -293,6 +344,9 @@ func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
 	}
 	if got.OutputBodyRef != "archive/out.json.gz" {
 		t.Fatalf("unexpected output ref: %+v", got)
+	}
+	if !strings.Contains(string(got.OutputBody), "hello") {
+		t.Fatalf("expected collected stream output body, got %q", string(got.OutputBody))
 	}
 }
 
@@ -322,8 +376,8 @@ func TestOpenAIStreamCapturesUsageRecordOnHandlerError(t *testing.T) {
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
 		Stream:     true,
 		Capture: &RequestCapture{
-			AccountID: 10,
-			ProfileID: 20,
+			AccountID: "acct_10",
+			ProfileID: "prof_20",
 			Sink:      sink,
 		},
 	}, func(ch StreamChunk) error {
