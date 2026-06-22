@@ -71,3 +71,18 @@ npm publish
 | `go test ./go/api/goose -run '^TestGoosePG' -v -count=1 -args -testname goose_pg` | Run goose tests directly with verbose output, no cache, and explicit test name. |
 --------
 --------
+
+## Debugs
+
+If encounter:
+```text
+jj git push                                                                                                                                                                                                                                             Changes to push to origin:
+  Move forward bookmark main from 187fc61a8cab to daaf7b39d500
+Error: Git process failed: External git program failed:
+fatal: unable to access 'https://github.com/chendingplano/Shared.git/': SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+```
+
+run the command:
+```text
+env -u HTTPS_PROXY -u HTTP_PROXY jj git push
+```
