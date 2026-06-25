@@ -32,24 +32,26 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	outputBody := []byte(`{"content":"world"}`)
 
 	record := NewUsageCaptureRecord(UsageCaptureInput{
-		AccountID:         "acct_10",
-		ProfileID:         "prof_20",
-		Provider:          ProviderOpenAICompatible,
-		ModelName:         "deepseek-v4-flash",
-		PromptName:        "extract-products-v2",
-		RequestStartedAt:  startedAt,
-		RequestFinishedAt: finishedAt,
-		InputTokens:       123,
-		OutputTokens:      45,
-		InputBodyRef:      "archive/in.json.gz",
-		OutputBodyRef:     "archive/out.json.gz",
-		ErrorMessage:      "upstream timeout",
-		ProviderRequestID: "req_123",
-		InputBody:         inputBody,
-		OutputBody:        outputBody,
-		RecordID:          77,
-		CallReason:        "extract_products",
-		CallLoc:           "MID-CWB-USAGE-CAPTURE",
+		AccountID:             "acct_10",
+		ProfileID:             "prof_20",
+		Provider:              ProviderOpenAICompatible,
+		ModelName:             "deepseek-v4-flash",
+		PromptName:            "extract-products-v2",
+		RequestStartedAt:      startedAt,
+		RequestFinishedAt:     finishedAt,
+		InputTokens:           123,
+		OutputTokens:          45,
+		PromptCacheHitTokens:  100,
+		PromptCacheMissTokens: 23,
+		InputBodyRef:          "archive/in.json.gz",
+		OutputBodyRef:         "archive/out.json.gz",
+		ErrorMessage:          "upstream timeout",
+		ProviderRequestID:     "req_123",
+		InputBody:             inputBody,
+		OutputBody:            outputBody,
+		RecordID:              77,
+		CallReason:            "extract_products",
+		CallLoc:               "MID-CWB-USAGE-CAPTURE",
 	})
 
 	if record.AccountID != "acct_10" {
@@ -72,6 +74,9 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	}
 	if record.InputTokens != 123 || record.OutputTokens != 45 || record.TotalTokens != 168 {
 		t.Fatalf("unexpected tokens: %+v", record)
+	}
+	if record.PromptCacheHitTokens != 100 || record.PromptCacheMissTokens != 23 {
+		t.Fatalf("unexpected cache tokens: %+v", record)
 	}
 	if record.InputBodyRef != "archive/in.json.gz" || record.OutputBodyRef != "archive/out.json.gz" {
 		t.Fatalf("unexpected refs: %+v", record)

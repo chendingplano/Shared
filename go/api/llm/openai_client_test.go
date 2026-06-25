@@ -52,6 +52,29 @@ func TestExtractJSON_PreservesAllFields(t *testing.T) {
 	}
 }
 
+func TestBuildMessagesCanPlaceDocumentBeforeTaskForPromptCache(t *testing.T) {
+	messages := buildMessages("Review grammar only.", `{"doc_context":"Spec","lines":[]}`, true)
+
+	if len(messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages))
+	}
+	if messages[0]["role"] != "system" {
+		t.Fatalf("system role = %q", messages[0]["role"])
+	}
+	if strings.Contains(messages[0]["content"], "Review grammar only.") {
+		t.Fatalf("reviewer task should not be in common system message: %q", messages[0]["content"])
+	}
+	user := messages[1]["content"]
+	docPos := strings.Index(user, `{"doc_context":"Spec","lines":[]}`)
+	taskPos := strings.Index(user, "Review grammar only.")
+	if docPos < 0 || taskPos < 0 {
+		t.Fatalf("user message missing document or task: %q", user)
+	}
+	if docPos > taskPos {
+		t.Fatalf("document should precede reviewer task for prefix cache: %q", user)
+	}
+}
+
 func TestExtractJSON_StripsMarkdownJSONFence(t *testing.T) {
 	const llmJSON = "```json\n{\n  \"title\": \"绿色建筑评价标准\",\n  \"doc_no\": \"GB/T 50378-2019\"\n}\n```"
 
@@ -407,6 +430,56 @@ func TestExtractJSON_CapturesUsageRecordWithLookupHints(t *testing.T) {
 	}
 	if !strings.Contains(string(got.OutputBody), `"prompt_tokens":7`) {
 		t.Fatalf("expected raw response body, got %q", string(got.OutputBody))
+	}
+}
+
+func TestExtractJSON_CapturesDeepSeekPromptCacheTokens(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"req_cache_1",
+			"choices":[{"message":{"content":"{\"ok\":true}"}}],
+			"usage":{
+				"prompt_tokens":1200,
+				"completion_tokens":50,
+				"total_tokens":1250,
+				"prompt_cache_hit_tokens":1000,
+				"prompt_cache_miss_tokens":200
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "deepseek-v4-flash",
+		Provider:   ProviderID("deepseek"),
+		HTTPClient: srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+			PromptName: "review-correctness",
+			PromptText: "prompt",
+			InputText:  "text",
+		})
+		if err != nil {
+			t.Fatalf("ExtractJSON error: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.InputTokens != 1200 || got.OutputTokens != 50 || got.TotalTokens != 1250 {
+		t.Fatalf("unexpected tokens: %+v", got)
+	}
+	if got.PromptCacheHitTokens != 1000 || got.PromptCacheMissTokens != 200 {
+		t.Fatalf("unexpected prompt cache tokens: %+v", got)
 	}
 }
 

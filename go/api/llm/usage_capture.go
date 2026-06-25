@@ -20,79 +20,85 @@ type RequestCapture struct {
 }
 
 type UsageCaptureInput struct {
-	AccountID         string
-	ProfileID         string
-	ProfileName       string
-	Provider          ProviderID
-	BaseURL           string
-	APIKey            string
-	ModelName         string
-	PromptName        string
-	RequestStartedAt  time.Time
-	RequestFinishedAt time.Time
-	InputTokens       int
-	OutputTokens      int
-	InputBodyRef      string
-	OutputBodyRef     string
-	ErrorMessage      string
-	ProviderRequestID string
-	InputBody         []byte
-	OutputBody        []byte
-	RecordID          int64
-	CallReason        string
-	CallLoc           string
+	AccountID             string
+	ProfileID             string
+	ProfileName           string
+	Provider              ProviderID
+	BaseURL               string
+	APIKey                string
+	ModelName             string
+	PromptName            string
+	RequestStartedAt      time.Time
+	RequestFinishedAt     time.Time
+	InputTokens           int
+	OutputTokens          int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
+	InputBodyRef          string
+	OutputBodyRef         string
+	ErrorMessage          string
+	ProviderRequestID     string
+	InputBody             []byte
+	OutputBody            []byte
+	RecordID              int64
+	CallReason            string
+	CallLoc               string
 }
 
 type UsageCaptureRecord struct {
-	AccountID         string
-	ProfileID         string
-	ProfileName       string
-	Provider          ProviderID
-	BaseURL           string
-	APIKey            string
-	ModelName         string
-	PromptName        string
-	RequestStartedAt  time.Time
-	RequestFinishedAt time.Time
-	InputTokens       int
-	OutputTokens      int
-	TotalTokens       int
-	InputBodyRef      string
-	OutputBodyRef     string
-	ErrorMessage      string
-	ProviderRequestID string
-	InputBody         []byte
-	OutputBody        []byte
-	RecordID          int64
-	CallReason        string
-	CallLoc           string
+	AccountID             string
+	ProfileID             string
+	ProfileName           string
+	Provider              ProviderID
+	BaseURL               string
+	APIKey                string
+	ModelName             string
+	PromptName            string
+	RequestStartedAt      time.Time
+	RequestFinishedAt     time.Time
+	InputTokens           int
+	OutputTokens          int
+	TotalTokens           int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
+	InputBodyRef          string
+	OutputBodyRef         string
+	ErrorMessage          string
+	ProviderRequestID     string
+	InputBody             []byte
+	OutputBody            []byte
+	RecordID              int64
+	CallReason            string
+	CallLoc               string
 }
 
 func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 	promptName := EnsurePromptName(in.PromptName, in.CallReason, in.CallLoc, in.ModelName)
 	return UsageCaptureRecord{
-		AccountID:         in.AccountID,
-		ProfileID:         in.ProfileID,
-		ProfileName:       in.ProfileName,
-		Provider:          in.Provider,
-		BaseURL:           in.BaseURL,
-		APIKey:            in.APIKey,
-		ModelName:         in.ModelName,
-		PromptName:        promptName,
-		RequestStartedAt:  in.RequestStartedAt,
-		RequestFinishedAt: in.RequestFinishedAt,
-		InputTokens:       in.InputTokens,
-		OutputTokens:      in.OutputTokens,
-		TotalTokens:       in.InputTokens + in.OutputTokens,
-		InputBodyRef:      in.InputBodyRef,
-		OutputBodyRef:     in.OutputBodyRef,
-		ErrorMessage:      in.ErrorMessage,
-		ProviderRequestID: in.ProviderRequestID,
-		InputBody:         in.InputBody,
-		OutputBody:        in.OutputBody,
-		RecordID:          in.RecordID,
-		CallReason:        in.CallReason,
-		CallLoc:           in.CallLoc,
+		AccountID:             in.AccountID,
+		ProfileID:             in.ProfileID,
+		ProfileName:           in.ProfileName,
+		Provider:              in.Provider,
+		BaseURL:               in.BaseURL,
+		APIKey:                in.APIKey,
+		ModelName:             in.ModelName,
+		PromptName:            promptName,
+		RequestStartedAt:      in.RequestStartedAt,
+		RequestFinishedAt:     in.RequestFinishedAt,
+		InputTokens:           in.InputTokens,
+		OutputTokens:          in.OutputTokens,
+		TotalTokens:           in.InputTokens + in.OutputTokens,
+		PromptCacheHitTokens:  in.PromptCacheHitTokens,
+		PromptCacheMissTokens: in.PromptCacheMissTokens,
+		InputBodyRef:          in.InputBodyRef,
+		OutputBodyRef:         in.OutputBodyRef,
+		ErrorMessage:          in.ErrorMessage,
+		ProviderRequestID:     in.ProviderRequestID,
+		InputBody:             in.InputBody,
+		OutputBody:            in.OutputBody,
+		RecordID:              in.RecordID,
+		CallReason:            in.CallReason,
+		CallLoc:               in.CallLoc,
 	}
 }
 

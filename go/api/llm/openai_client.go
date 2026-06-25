@@ -18,13 +18,14 @@ import (
 )
 
 type JSONExtractionInput struct {
-	PromptName string
-	PromptText string
-	ModelName  string
-	InputText  string
-	RecordID   int64
-	CallReason string
-	CallLoc    string
+	PromptName    string
+	PromptText    string
+	ModelName     string
+	InputText     string
+	DocumentFirst bool
+	RecordID      int64
+	CallReason    string
+	CallLoc       string
 }
 
 type OpenAIJSONClient struct {
@@ -190,6 +191,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	if prompt == "" {
 		return "", errors.New("(MID_26050156) prompt text is empty")
 	}
+	c.ensureLogger()
 	// c.ensureLogger().Info("llm-call",
 	// 	"model", model,
 	// 	"estimated_tokens", estimateChatRequestTokensForModel(model, prompt, in.InputText))
@@ -205,7 +207,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	body := map[string]any{
 		"model":       model,
-		"messages":    buildMessages(prompt, in.InputText),
+		"messages":    buildMessages(prompt, in.InputText, in.DocumentFirst),
 		"temperature": 0,
 	}
 	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType == "enabled" {
@@ -217,14 +219,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	bs, err := json.Marshal(body)
 	if err != nil {
-		c.captureUsage(ctx, in, model, startedAt, nil, nil, "", "", 0, 0, err)
+		c.captureUsage(ctx, in, model, startedAt, nil, nil, "", "", 0, 0, 0, 0, err)
 		return "", fmt.Errorf("(MID_26050175) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildChatCompletionsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
-		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, err)
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, 0, 0, err)
 		return "", fmt.Errorf("(MID_26050176) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -233,14 +235,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	httpClient := c.httpClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, err)
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, 0, 0, err)
 		return "", fmt.Errorf("(MID_26050154) openai request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, readErr)
+		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, 0, 0, readErr)
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("(MID_26053001) caller_context_cancelled: %w", readErr)
 		}
@@ -259,61 +261,63 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	*/
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
-		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, fmt.Errorf("status %d", resp.StatusCode))
+		providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, fmt.Errorf("status %d", resp.StatusCode))
 		return "", fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	content, err := parseOpenAIContent(respBody)
 	if err != nil {
-		providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
-		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, err)
+		providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, err)
 		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
-	providerRequestID, inputTokens, outputTokens := parseOpenAIUsageMetadata(respBody)
-	c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, nil)
+	providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
+	c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, nil)
 	return content, nil
 }
 
-func (c *OpenAIJSONClient) captureUsage(ctx context.Context, in JSONExtractionInput, model string, startedAt time.Time, inputBody, outputBody []byte, providerRequestID string, outputContent string, inputTokens, outputTokens int, err error) {
+func (c *OpenAIJSONClient) captureUsage(ctx context.Context, in JSONExtractionInput, model string, startedAt time.Time, inputBody, outputBody []byte, providerRequestID string, outputContent string, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens int, err error) {
 	errorMessage := ""
 	if err != nil {
 		errorMessage = err.Error()
 	}
 	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
-		AccountID:         strings.TrimSpace(c.AccountID),
-		ProfileID:         strings.TrimSpace(c.ProfileID),
-		ProfileName:       strings.TrimSpace(c.ProfileName),
-		Provider:          normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
-		BaseURL:           strings.TrimSpace(c.BaseURL),
-		APIKey:            strings.TrimSpace(c.APIKey),
-		ModelName:         strings.TrimSpace(model),
-		PromptName:        strings.TrimSpace(in.PromptName),
-		RequestStartedAt:  startedAt,
-		RequestFinishedAt: time.Now().UTC(),
-		InputTokens:       inputTokens,
-		OutputTokens:      outputTokens,
-		ProviderRequestID: strings.TrimSpace(providerRequestID),
-		InputBody:         inputBody,
-		OutputBody:        outputBody,
-		ErrorMessage:      errorMessage,
-		RecordID:          in.RecordID,
-		CallReason:        strings.TrimSpace(in.CallReason),
-		CallLoc:           strings.TrimSpace(in.CallLoc),
+		AccountID:             strings.TrimSpace(c.AccountID),
+		ProfileID:             strings.TrimSpace(c.ProfileID),
+		ProfileName:           strings.TrimSpace(c.ProfileName),
+		Provider:              normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
+		BaseURL:               strings.TrimSpace(c.BaseURL),
+		APIKey:                strings.TrimSpace(c.APIKey),
+		ModelName:             strings.TrimSpace(model),
+		PromptName:            strings.TrimSpace(in.PromptName),
+		RequestStartedAt:      startedAt,
+		RequestFinishedAt:     time.Now().UTC(),
+		InputTokens:           inputTokens,
+		OutputTokens:          outputTokens,
+		PromptCacheHitTokens:  cacheHitTokens,
+		PromptCacheMissTokens: cacheMissTokens,
+		ProviderRequestID:     strings.TrimSpace(providerRequestID),
+		InputBody:             inputBody,
+		OutputBody:            outputBody,
+		ErrorMessage:          errorMessage,
+		RecordID:              in.RecordID,
+		CallReason:            strings.TrimSpace(in.CallReason),
+		CallLoc:               strings.TrimSpace(in.CallLoc),
 	})
 	_ = outputContent
 }
 
-func parseOpenAIUsageMetadata(respBody []byte) (providerRequestID string, inputTokens int, outputTokens int) {
+func parseOpenAIUsageMetadata(respBody []byte) (providerRequestID string, inputTokens int, outputTokens int, cacheHitTokens int, cacheMissTokens int) {
 	var out oaCompletion
 	if err := json.Unmarshal(respBody, &out); err != nil {
-		return "", 0, 0
+		return "", 0, 0, 0, 0
 	}
 	providerRequestID = strings.TrimSpace(out.ID)
 	if out.Usage == nil {
-		return providerRequestID, 0, 0
+		return providerRequestID, 0, 0, 0, 0
 	}
-	return providerRequestID, out.Usage.Prompt, out.Usage.Completion
+	return providerRequestID, out.Usage.Prompt, out.Usage.Completion, out.Usage.PromptCacheHitTokens, out.Usage.PromptCacheMissTokens
 }
 
 func normalizeOpenAIJSONProvider(provider ProviderID, baseURL string) ProviderID {
@@ -348,13 +352,19 @@ func buildChatCompletionsEndpoint(baseURL string) string {
 	return base + "/v1/chat/completions"
 }
 
-func buildMessages(prompt string, documentText string) []map[string]string {
+func buildMessages(prompt string, documentText string, documentFirst bool) []map[string]string {
 	const documentPlaceholder = "{{DOCUMENT_TEXT}}"
 	if strings.Contains(prompt, documentPlaceholder) {
 		systemPrompt := strings.ReplaceAll(prompt, documentPlaceholder, documentText)
 		return []map[string]string{
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": "Return JSON only."},
+		}
+	}
+	if documentFirst {
+		return []map[string]string{
+			{"role": "system", "content": "You are a document review engine. Return strict JSON only."},
+			{"role": "user", "content": "<DOCUMENT_INPUT>\n" + documentText + "\n</DOCUMENT_INPUT>\n\n<REVIEW_TASK>\n" + prompt + "\n</REVIEW_TASK>"},
 		}
 	}
 	return []map[string]string{

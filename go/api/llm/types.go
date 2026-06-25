@@ -88,9 +88,11 @@ type Message struct {
 
 // Usage carries token-count accounting when a provider supplies it.
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	InputTokens           int
+	OutputTokens          int
+	TotalTokens           int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
 }
 
 // Request describes one inference call.
