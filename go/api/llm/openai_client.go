@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -40,6 +41,8 @@ type OpenAIJSONClient struct {
 	EmbeddingDimensions int
 	HTTPClient          *http.Client
 	logger              ApiTypes.JimoLogger
+	usageMu             sync.Mutex
+	lastJSONUsage       *Usage
 }
 
 type OpenAIJSONClientConfig struct {
@@ -59,6 +62,34 @@ type OpenAIJSONClientConfig struct {
 	MaxRequestsPerMinute int
 	MaxTokensPerMinute   int
 	TokenReservePerCall  int
+}
+
+func (c *OpenAIJSONClient) LastJSONUsage() *Usage {
+	if c == nil {
+		return nil
+	}
+	c.usageMu.Lock()
+	defer c.usageMu.Unlock()
+	if c.lastJSONUsage == nil {
+		return nil
+	}
+	usage := *c.lastJSONUsage
+	return &usage
+}
+
+func (c *OpenAIJSONClient) setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens int) {
+	if c == nil {
+		return
+	}
+	c.usageMu.Lock()
+	c.lastJSONUsage = &Usage{
+		InputTokens:           inputTokens,
+		OutputTokens:          outputTokens,
+		TotalTokens:           inputTokens + outputTokens,
+		PromptCacheHitTokens:  cacheHitTokens,
+		PromptCacheMissTokens: cacheMissTokens,
+	}
+	c.usageMu.Unlock()
 }
 
 func (c *OpenAIJSONClient) ensureLogger() ApiTypes.JimoLogger {
@@ -273,6 +304,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
 	providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
+	c.setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens)
 	c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, nil)
 	return content, nil
 }

@@ -483,6 +483,46 @@ func TestExtractJSON_CapturesDeepSeekPromptCacheTokens(t *testing.T) {
 	}
 }
 
+func TestExtractJSON_ExposesLastUsageWithDeepSeekPromptCacheTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-cache",
+			"choices":[{"message":{"content":"{\"ok\":true}"}}],
+			"usage":{
+				"prompt_tokens":1200,
+				"completion_tokens":12,
+				"total_tokens":1212,
+				"prompt_cache_hit_tokens":900,
+				"prompt_cache_miss_tokens":300
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "deepseek-v4-flash",
+		HTTPClient: srv.Client(),
+	}
+
+	if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+		PromptText: "prompt",
+		InputText:  "input",
+	}); err != nil {
+		t.Fatalf("ExtractJSON returned error: %v", err)
+	}
+
+	usage := client.LastJSONUsage()
+	if usage == nil {
+		t.Fatal("LastJSONUsage() = nil, want usage")
+	}
+	if usage.PromptCacheHitTokens != 900 || usage.PromptCacheMissTokens != 300 {
+		t.Fatalf("cache usage hit/miss=%d/%d, want 900/300", usage.PromptCacheHitTokens, usage.PromptCacheMissTokens)
+	}
+}
+
 func TestExtractJSON_DefaultsLoggerWhenClientBuiltWithoutConstructor(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
