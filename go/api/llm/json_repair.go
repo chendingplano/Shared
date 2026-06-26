@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// repairLLMJSON applies conservative cleanup to malformed LLM JSON output.
+// RepairLLMJSON applies conservative cleanup to malformed LLM JSON output.
 // It only returns true when the repaired candidate is syntactically valid JSON.
-func repairLLMJSON(raw string) (string, bool) {
+func RepairLLMJSON(raw string) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", false

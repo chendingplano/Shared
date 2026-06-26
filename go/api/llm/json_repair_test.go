@@ -43,12 +43,12 @@ func TestRepairLLMJSON(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := repairLLMJSON(tc.input)
+			got, ok := RepairLLMJSON(tc.input)
 			if ok != tc.wantOK {
-				t.Fatalf("repairLLMJSON() ok = %v, want %v (got %q)", ok, tc.wantOK, got)
+				t.Fatalf("RepairLLMJSON() ok = %v, want %v (got %q)", ok, tc.wantOK, got)
 			}
 			if tc.wantOK && got != tc.want {
-				t.Fatalf("repairLLMJSON() = %q, want %q", got, tc.want)
+				t.Fatalf("RepairLLMJSON() = %q, want %q", got, tc.want)
 			}
 		})
 	}

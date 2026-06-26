@@ -467,7 +467,7 @@ func parseLLMJSONMap(content string) (map[string]any, error) {
 		return parsed, nil
 	}
 
-	if repaired, ok := repairLLMJSON(raw); ok {
+	if repaired, ok := RepairLLMJSON(raw); ok {
 		if parsed, err := tryDecode(repaired); err == nil {
 			return parsed, nil
 		}
