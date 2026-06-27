@@ -394,9 +394,13 @@ func buildMessages(prompt string, documentText string, documentFirst bool) []map
 		}
 	}
 	if documentFirst {
+		// Document-first layout for prompt caching: a constant system message and the
+		// repeated document/window text form a stable, cacheable prefix, with the
+		// per-call task instructions after it. Wording is workload-neutral so the same
+		// envelope serves doc reviewers and doc processors. See ADR 2026062501.
 		return []map[string]string{
-			{"role": "system", "content": "You are a document review engine. Return strict JSON only."},
-			{"role": "user", "content": "<DOCUMENT_INPUT>\n" + documentText + "\n</DOCUMENT_INPUT>\n\n<REVIEW_TASK>\n" + prompt + "\n</REVIEW_TASK>"},
+			{"role": "system", "content": "You are a document processing engine. Return strict JSON only."},
+			{"role": "user", "content": "<DOCUMENT_INPUT>\n" + documentText + "\n</DOCUMENT_INPUT>\n\n<TASK>\n" + prompt + "\n</TASK>"},
 		}
 	}
 	return []map[string]string{
