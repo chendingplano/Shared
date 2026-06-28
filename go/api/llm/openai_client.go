@@ -263,14 +263,9 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Sequence calls with the same canonical InputText prefix so they arrive at the
-	// provider back-to-back, maximising DeepSeek prompt-cache reuse. Only active when
-	// DocumentFirst is true (the InputText IS the cacheable prefix). See ADR 2026062701
-	// Phase 3 and openai_sequencer.go.
-	if in.DocumentFirst && globalInputTextSequencer != nil {
-		releaseSeq := globalInputTextSequencer.acquire(in.InputText)
-		defer releaseSeq()
-	}
+	// Note: cross-processor request sequencing for DeepSeek cache-locality has been
+	// moved to the application layer (doc-processing per-chunk batching coordinator).
+	// See ADR 2026062701 and the ChunkBatchProcessor coordinator in control.go.
 
 	httpClient := c.httpClient()
 	resp, err := httpClient.Do(req)
