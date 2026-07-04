@@ -241,6 +241,8 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		"messages":    buildMessages(prompt, in.InputText, in.DocumentFirst),
 		"temperature": 0,
 	}
+	// c.logger.Info("llm-call", "body", body)
+
 	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType == "enabled" {
 		body["thinking"] = map[string]string{"type": thinkingType}
 	}
@@ -411,6 +413,13 @@ func buildMessages(prompt string, documentText string, documentFirst bool) []map
 		{"role": "system", "content": prompt},
 		{"role": "user", "content": documentText},
 	}
+}
+
+// PreviewMessages renders the effective chat messages for a JSON extraction
+// request. It is intended for debugging/logging so callers can inspect the
+// real prompt layout rather than the raw JSONExtractionInput field order.
+func PreviewMessages(in JSONExtractionInput) []map[string]string {
+	return buildMessages(in.PromptText, in.InputText, in.DocumentFirst)
 }
 
 func normalizeThinkingType(raw string) string {
@@ -911,6 +920,7 @@ func (c *OpenAIJSONClient) acquireModelPermit(ctx context.Context, modelName str
 	return permit, nil
 }
 
+/*
 func estimateChatRequestTokensForModel(modelName string, promptText string, inputText string) int {
 	reservePerCall := defaultLLMTokenReservePerCall
 	cfg := llmRequestRateLimitConfigFromEnv()
@@ -927,3 +937,4 @@ func estimateChatRequestTokensForModel(modelName string, promptText string, inpu
 
 	return estimateLLMRequestTokens(promptText, inputText, reservePerCall)
 }
+*/

@@ -80,7 +80,7 @@ func TestProviderErrorMessage(t *testing.T) {
 
 func TestRequestSupportsPromptName(t *testing.T) {
 	req := Request{
-		Model:      "gpt-4o-mini",
+		// Model:      "gpt-4o-mini",
 		PromptName: "extract-products-v2",
 	}
 

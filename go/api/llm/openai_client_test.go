@@ -75,6 +75,27 @@ func TestBuildMessagesCanPlaceDocumentBeforeTaskForPromptCache(t *testing.T) {
 	}
 }
 
+func TestPreviewMessagesUsesEffectiveDocumentFirstLayout(t *testing.T) {
+	messages := PreviewMessages(JSONExtractionInput{
+		PromptText:    "Review grammar only.",
+		InputText:     `{"doc_context":"Spec","lines":[]}`,
+		DocumentFirst: true,
+	})
+
+	if len(messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(messages))
+	}
+	user := messages[1]["content"]
+	docPos := strings.Index(user, `{"doc_context":"Spec","lines":[]}`)
+	taskPos := strings.Index(user, "Review grammar only.")
+	if docPos < 0 || taskPos < 0 {
+		t.Fatalf("user message missing document or task: %q", user)
+	}
+	if docPos > taskPos {
+		t.Fatalf("document should precede task in preview: %q", user)
+	}
+}
+
 func TestExtractJSON_StripsMarkdownJSONFence(t *testing.T) {
 	const llmJSON = "```json\n{\n  \"title\": \"绿色建筑评价标准\",\n  \"doc_no\": \"GB/T 50378-2019\"\n}\n```"
 
