@@ -1,10 +1,35 @@
 package llm
 
 import (
+	"context"
+	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// recordingHandler is a minimal slog.Handler that captures emitted records so
+// tests can assert on warnings without depending on log output formatting.
+type recordingHandler struct {
+	records *[]slog.Record
+}
+
+func (h recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	*h.records = append(*h.records, r)
+	return nil
+}
+func (h recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+
+func withCapturedWarnings(t *testing.T) *[]slog.Record {
+	t.Helper()
+	records := &[]slog.Record{}
+	original := captureLogger
+	captureLogger = slog.New(recordingHandler{records: records})
+	t.Cleanup(func() { captureLogger = original })
+	return records
+}
 
 func TestWriteAndReadGzipFileRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -95,5 +120,72 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	}
 	if string(record.OutputBody) != string(outputBody) {
 		t.Fatalf("OutputBody = %q", string(record.OutputBody))
+	}
+}
+
+func TestNewUsageCaptureRecordPreservesMetadata(t *testing.T) {
+	record := NewUsageCaptureRecord(UsageCaptureInput{
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260706-0001",
+		Metadata:   map[string]any{"run_id": int64(123), "provision_id": "244-prv-2"},
+	})
+
+	if record.Metadata["run_id"] != int64(123) || record.Metadata["provision_id"] != "244-prv-2" {
+		t.Fatalf("Metadata = %+v, want run_id/provision_id preserved", record.Metadata)
+	}
+}
+
+func TestCaptureUsageRecordFallsBackToRequestCallFieldsAndMetadata(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	req := Request{
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260706-0001",
+		Metadata:   map[string]any{"run_id": int64(123)},
+		Capture:    &RequestCapture{Sink: sink},
+	}
+
+	captureUsageRecord(context.Background(), req, UsageCaptureInput{ModelName: "deepseek-chat"})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.CallReason != "review-provision" || got.CallLoc != "MID-20260706-0001" {
+		t.Fatalf("unexpected call fields: %+v", got)
+	}
+	if got.Metadata["run_id"] != int64(123) {
+		t.Fatalf("Metadata = %+v, want run_id fallback from request", got.Metadata)
+	}
+}
+
+func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
+	records := withCapturedWarnings(t)
+	sink := &testUsageCaptureSink{}
+
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		ModelName: "deepseek-chat",
+	})
+
+	if len(*records) != 1 {
+		t.Fatalf("warning count = %d, want 1", len(*records))
+	}
+	if (*records)[0].Level != slog.LevelWarn {
+		t.Fatalf("level = %v, want Warn", (*records)[0].Level)
+	}
+}
+
+func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) {
+	records := withCapturedWarnings(t)
+	sink := &testUsageCaptureSink{}
+
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260706-0001",
+	})
+
+	if len(*records) != 0 {
+		t.Fatalf("warning count = %d, want 0; got %+v", len(*records), *records)
 	}
 }

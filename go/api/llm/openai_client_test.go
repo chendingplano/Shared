@@ -454,6 +454,46 @@ func TestExtractJSON_CapturesUsageRecordWithLookupHints(t *testing.T) {
 	}
 }
 
+func TestExtractJSON_CapturesCallerSuppliedMetadata(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "deepseek-chat",
+		Provider:   ProviderOpenAICompatible,
+		HTTPClient: srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		_, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+			PromptName: "review-provision",
+			PromptText: "prompt",
+			InputText:  "text",
+			CallReason: "review-provision",
+			CallLoc:    "MID-20260706-0001",
+			Metadata:   map[string]any{"run_id": int64(123), "provision_id": "244-prv-2"},
+		})
+		if err != nil {
+			t.Fatalf("ExtractJSON error: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.Metadata["run_id"] != int64(123) || got.Metadata["provision_id"] != "244-prv-2" {
+		t.Fatalf("Metadata = %+v, want run_id/provision_id", got.Metadata)
+	}
+}
+
 func TestExtractJSON_CapturesDeepSeekPromptCacheTokens(t *testing.T) {
 	sink := &testUsageCaptureSink{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

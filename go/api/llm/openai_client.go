@@ -27,6 +27,7 @@ type JSONExtractionInput struct {
 	RecordID      int64
 	CallReason    string
 	CallLoc       string
+	Metadata      map[string]any
 }
 
 type OpenAIJSONClient struct {
@@ -342,6 +343,7 @@ func (c *OpenAIJSONClient) captureUsage(ctx context.Context, in JSONExtractionIn
 		RecordID:              in.RecordID,
 		CallReason:            strings.TrimSpace(in.CallReason),
 		CallLoc:               strings.TrimSpace(in.CallLoc),
+		Metadata:              in.Metadata,
 	})
 	_ = outputContent
 }

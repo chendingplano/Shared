@@ -62,7 +62,7 @@ func NewClient(cfg ProviderConfig) (Client, error) {
 		}
 		return newOpenAIClient(cfg, cfg.BaseURL), nil
 	case ProviderAnthropic:
-		return &notImplementedClient{provider: ProviderAnthropic}, nil
+		return newAnthropicClient(cfg), nil
 	case ProviderGemini:
 		return &notImplementedClient{provider: ProviderGemini}, nil
 	default:

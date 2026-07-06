@@ -37,11 +37,12 @@ const (
 
 // ProviderConfig is the input to NewClient.
 type ProviderConfig struct {
-	ID         ProviderID
-	BaseURL    string            // empty → adapter default
-	APIKey     string            // plaintext; never logged
-	HTTPClient *http.Client      // optional injection for tests
-	Extra      map[string]string // provider-specific knobs
+	ID          ProviderID
+	BaseURL     string            // empty → adapter default
+	APIKey      string            // plaintext; never logged
+	ProfileName string            // logical name for usage capture resolution
+	HTTPClient  *http.Client      // optional injection for tests
+	Extra       map[string]string // provider-specific knobs
 }
 
 // Role identifies the author of a chat message.
@@ -102,6 +103,7 @@ type Request struct {
 	RecordID    int64
 	CallReason  string
 	CallLoc     string
+	Metadata    map[string]any
 	Messages    []Message
 	Capture     *RequestCapture
 	Temperature *float64

@@ -196,7 +196,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
 			RequestStartedAt:  startedAt,
@@ -218,7 +221,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
 			RequestStartedAt:  startedAt,
@@ -237,7 +243,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
 			RequestStartedAt:  startedAt,
@@ -262,7 +271,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
 			RequestStartedAt:  startedAt,
@@ -302,9 +314,15 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 	captureUsageRecord(ctx, req, UsageCaptureInput{
 		AccountID:             captureAccountID(req),
 		ProfileID:             captureProfileID(req),
-		Provider:              c.cfg.ID,
+		Provider:              c.captureProvider(),
+		BaseURL:               c.baseURL,
+		APIKey:                c.cfg.APIKey,
+		ProfileName:           c.cfg.ProfileName,
 		ModelName:             req.Model,
 		PromptName:            req.PromptName,
+		RecordID:              req.RecordID,
+		CallReason:            req.CallReason,
+		CallLoc:               req.CallLoc,
 		RequestStartedAt:      startedAt,
 		RequestFinishedAt:     time.Now().UTC(),
 		InputTokens:           usageInputTokens(out.Usage),
@@ -336,9 +354,15 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			InputBodyRef:      captureInputBodyRef(req),
@@ -355,9 +379,15 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:         captureAccountID(req),
 			ProfileID:         captureProfileID(req),
-			Provider:          c.cfg.ID,
+			Provider:          c.captureProvider(),
+			BaseURL:           c.baseURL,
+			APIKey:            c.cfg.APIKey,
+			ProfileName:       c.cfg.ProfileName,
 			ModelName:         req.Model,
 			PromptName:        req.PromptName,
+			RecordID:          req.RecordID,
+			CallReason:        req.CallReason,
+			CallLoc:           req.CallLoc,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			InputBodyRef:      captureInputBodyRef(req),
@@ -382,9 +412,15 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			captureUsageRecord(ctx, req, UsageCaptureInput{
 				AccountID:             captureAccountID(req),
 				ProfileID:             captureProfileID(req),
-				Provider:              c.cfg.ID,
+				Provider:              c.captureProvider(),
+				BaseURL:               c.baseURL,
+				APIKey:                c.cfg.APIKey,
+				ProfileName:           c.cfg.ProfileName,
 				ModelName:             req.Model,
 				PromptName:            req.PromptName,
+				RecordID:              req.RecordID,
+				CallReason:            req.CallReason,
+				CallLoc:               req.CallLoc,
 				RequestStartedAt:      startedAt,
 				RequestFinishedAt:     time.Now().UTC(),
 				InputTokens:           usageInputTokens(lastUsage),
@@ -534,9 +570,15 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		captureUsageRecord(ctx, req, UsageCaptureInput{
 			AccountID:             captureAccountID(req),
 			ProfileID:             captureProfileID(req),
-			Provider:              c.cfg.ID,
+			Provider:              c.captureProvider(),
+			BaseURL:               c.baseURL,
+			APIKey:                c.cfg.APIKey,
+			ProfileName:           c.cfg.ProfileName,
 			ModelName:             req.Model,
 			PromptName:            req.PromptName,
+			RecordID:              req.RecordID,
+			CallReason:            req.CallReason,
+			CallLoc:               req.CallLoc,
 			RequestStartedAt:      startedAt,
 			RequestFinishedAt:     time.Now().UTC(),
 			InputTokens:           usageInputTokens(lastUsage),
@@ -555,9 +597,15 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 	captureUsageRecord(ctx, req, UsageCaptureInput{
 		AccountID:             captureAccountID(req),
 		ProfileID:             captureProfileID(req),
-		Provider:              c.cfg.ID,
+		Provider:              c.captureProvider(),
+		BaseURL:               c.baseURL,
+		APIKey:                c.cfg.APIKey,
+		ProfileName:           c.cfg.ProfileName,
 		ModelName:             req.Model,
 		PromptName:            req.PromptName,
+		RecordID:              req.RecordID,
+		CallReason:            req.CallReason,
+		CallLoc:               req.CallLoc,
 		RequestStartedAt:      startedAt,
 		RequestFinishedAt:     time.Now().UTC(),
 		InputTokens:           usageInputTokens(lastUsage),
@@ -570,6 +618,16 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		OutputBody:            []byte(output.String()),
 	})
 	return nil
+}
+
+// captureProvider returns the canonical provider ID for usage-capture resolution.
+// For ProviderOpenAICompatible it infers the actual provider from the base URL
+// (e.g. "deepseek", "qwen") so it matches the value stored in llm_account.provider.
+func (c *openaiClient) captureProvider() ProviderID {
+	if c.cfg.ID == ProviderOpenAICompatible {
+		return normalizeOpenAIJSONProvider("", c.baseURL)
+	}
+	return c.cfg.ID
 }
 
 func captureAccountID(req Request) string {

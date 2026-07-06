@@ -2,8 +2,11 @@ package llm
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
+
+var captureLogger = slog.Default()
 
 type UsageCaptureSink interface {
 	Capture(ctx context.Context, record UsageCaptureRecord) error
@@ -43,6 +46,7 @@ type UsageCaptureInput struct {
 	RecordID              int64
 	CallReason            string
 	CallLoc               string
+	Metadata              map[string]any
 }
 
 type UsageCaptureRecord struct {
@@ -70,6 +74,7 @@ type UsageCaptureRecord struct {
 	RecordID              int64
 	CallReason            string
 	CallLoc               string
+	Metadata              map[string]any
 }
 
 func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
@@ -99,6 +104,7 @@ func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 		RecordID:              in.RecordID,
 		CallReason:            in.CallReason,
 		CallLoc:               in.CallLoc,
+		Metadata:              in.Metadata,
 	}
 }
 
@@ -131,6 +137,14 @@ func captureUsageRecord(ctx context.Context, req Request, in UsageCaptureInput) 
 	if in.PromptName == "" {
 		in.PromptName = req.PromptName
 	}
+	if in.Metadata == nil {
+		in.Metadata = req.Metadata
+	}
+	if in.CallReason == "" || in.CallLoc == "" {
+		captureLogger.WarnContext(ctx, "llm usage event missing mandatory call_reason/call_loc",
+			"provider", string(in.Provider), "model", in.ModelName,
+			"call_reason", in.CallReason, "call_loc", in.CallLoc)
+	}
 	sink := DefaultUsageCaptureSink
 	if req.Capture != nil && req.Capture.Sink != nil {
 		sink = req.Capture.Sink
@@ -138,5 +152,8 @@ func captureUsageRecord(ctx context.Context, req Request, in UsageCaptureInput) 
 	if sink == nil {
 		return
 	}
-	_ = sink.Capture(ctx, NewUsageCaptureRecord(in))
+	if err := sink.Capture(ctx, NewUsageCaptureRecord(in)); err != nil {
+		captureLogger.ErrorContext(ctx, "llm usage capture failed", "error", err,
+			"provider", string(in.Provider), "model", in.ModelName, "call_loc", in.CallLoc)
+	}
 }
