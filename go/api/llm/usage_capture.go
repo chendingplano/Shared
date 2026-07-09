@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
 var captureLogger = slog.Default()
@@ -124,7 +126,11 @@ func EnsurePromptName(promptName, callReason, callLoc, modelName string) string 
 	return "missing_prompt_name"
 }
 
-func captureUsageRecord(ctx context.Context, req Request, in UsageCaptureInput) {
+func captureUsageRecord(
+	ctx context.Context, 
+	req Request, 
+	in UsageCaptureInput,
+	logger ApiTypes.JimoLogger) {
 	if in.RecordID == 0 {
 		in.RecordID = req.RecordID
 	}
@@ -141,9 +147,11 @@ func captureUsageRecord(ctx context.Context, req Request, in UsageCaptureInput) 
 		in.Metadata = req.Metadata
 	}
 	if in.CallReason == "" || in.CallLoc == "" {
-		captureLogger.WarnContext(ctx, "llm usage event missing mandatory call_reason/call_loc",
-			"provider", string(in.Provider), "model", in.ModelName,
-			"call_reason", in.CallReason, "call_loc", in.CallLoc)
+		logger.Warn("(MID-20260708-02) llm usage event missing mandatory call_reason/call_loc",
+			"provider", string(in.Provider), 
+			"model", in.ModelName,
+			"call_reason", in.CallReason, 
+			"call_loc", in.CallLoc)
 	}
 	sink := DefaultUsageCaptureSink
 	if req.Capture != nil && req.Capture.Sink != nil {
@@ -153,7 +161,10 @@ func captureUsageRecord(ctx context.Context, req Request, in UsageCaptureInput) 
 		return
 	}
 	if err := sink.Capture(ctx, NewUsageCaptureRecord(in)); err != nil {
-		captureLogger.ErrorContext(ctx, "llm usage capture failed", "error", err,
-			"provider", string(in.Provider), "model", in.ModelName, "call_loc", in.CallLoc)
+		logger.Error("llm usage capture failed", 
+			"error", err,
+			"provider", string(in.Provider), 
+			"model", in.ModelName, 
+			"call_loc", in.CallLoc)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type testUsageCaptureSink struct {
@@ -46,6 +48,7 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 }
 
 func TestOpenAICompleteHappyPath(t *testing.T) {
+	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
 	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-TESTVALUE1234" {
 			t.Errorf("Authorization header: got %q", got)
@@ -63,7 +66,7 @@ func TestOpenAICompleteHappyPath(t *testing.T) {
 
 	c, err := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +94,10 @@ func TestOpenAICompleteReturnsProviderErrorOn401(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
 	})
 
+	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, logger)
 	_, err := c.Complete(context.Background(), Request{
 		Model:    "gpt-4o-mini",
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -126,7 +130,7 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	_, err := c.Complete(context.Background(), Request{
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
@@ -178,7 +182,7 @@ func TestOpenAICompleteCapturesUsageRecordOnProviderError(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	_, err := c.Complete(context.Background(), Request{
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
@@ -218,7 +222,7 @@ func TestOpenAICompleteUsesDefaultCaptureSinkWhenRequestCaptureMissing(t *testin
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	withDefaultUsageCaptureSink(sink, func() {
 		_, err := c.Complete(context.Background(), Request{
@@ -260,7 +264,7 @@ func TestOpenAIStreamHappyPath(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	var gotDeltas []string
 	doneSeen := false
@@ -314,7 +318,7 @@ func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	err := c.Stream(context.Background(), Request{
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
@@ -369,7 +373,7 @@ func TestOpenAIStreamCapturesUsageRecordOnHandlerError(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	err := c.Stream(context.Background(), Request{
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
@@ -412,7 +416,7 @@ func TestOpenAIStreamRespectsContextCancel(t *testing.T) {
 
 	c, _ := NewClient(ProviderConfig{
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	ctx, cancel := context.WithCancel(context.Background())
 	var firstSeen bool
 	done := make(chan error, 1)

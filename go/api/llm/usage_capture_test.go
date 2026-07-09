@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 // recordingHandler is a minimal slog.Handler that captures emitted records so
@@ -144,7 +146,7 @@ func TestCaptureUsageRecordFallsBackToRequestCallFieldsAndMetadata(t *testing.T)
 		Capture:    &RequestCapture{Sink: sink},
 	}
 
-	captureUsageRecord(context.Background(), req, UsageCaptureInput{ModelName: "deepseek-chat"})
+	captureUsageRecord(context.Background(), req, UsageCaptureInput{ModelName: "deepseek-chat"}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	records := sink.Records()
 	if len(records) != 1 {
@@ -165,7 +167,7 @@ func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName: "deepseek-chat",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	if len(*records) != 1 {
 		t.Fatalf("warning count = %d, want 1", len(*records))
@@ -183,7 +185,7 @@ func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) 
 		ModelName:  "deepseek-chat",
 		CallReason: "review-provision",
 		CallLoc:    "MID-20260706-0001",
-	})
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	if len(*records) != 0 {
 		t.Fatalf("warning count = %d, want 0; got %+v", len(*records), *records)

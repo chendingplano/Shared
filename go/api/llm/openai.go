@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
 // openaiClient speaks the OpenAI Chat Completions REST API. It also powers
@@ -18,6 +20,7 @@ import (
 type openaiClient struct {
 	cfg     ProviderConfig
 	baseURL string // no trailing slash
+	logger  ApiTypes.JimoLogger
 }
 
 func newOpenAIClient(cfg ProviderConfig, baseURL string) *openaiClient {
@@ -211,7 +214,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
-		})
+		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
@@ -236,7 +239,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
-		})
+		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, HTTPStatus: resp.StatusCode, Err: err}
 	}
 	if resp.StatusCode >= 400 {
@@ -259,7 +262,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
-		})
+		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw),
@@ -287,7 +290,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
-		})
+		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw), Err: err,
@@ -334,7 +337,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		ProviderRequestID:     parsed.ID,
 		InputBody:             payload,
 		OutputBody:            raw,
-	})
+	}, c.logger)
 	return out, nil
 }
 
@@ -369,7 +372,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			OutputBodyRef:     captureOutputBodyRef(req),
 			ErrorMessage:      err.Error(),
 			InputBody:         payload,
-		})
+		}, c.logger)
 		return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
@@ -395,7 +398,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			ErrorMessage:      string(body),
 			InputBody:         payload,
 			OutputBody:        body,
-		})
+		}, c.logger)
 		return &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(body),
@@ -432,7 +435,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 				ErrorMessage:          ctx.Err().Error(),
 				InputBody:             payload,
 				OutputBody:            []byte(output.String()),
-			})
+			}, c.logger)
 			return ctx.Err()
 		}
 		line, rerr := reader.ReadString('\n')
@@ -459,7 +462,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						ErrorMessage:          ctx.Err().Error(),
 						InputBody:             payload,
 						OutputBody:            []byte(output.String()),
-					})
+					}, c.logger)
 					return ctx.Err()
 				}
 				captureUsageRecord(ctx, req, UsageCaptureInput{
@@ -479,7 +482,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 					ErrorMessage:          rerr.Error(),
 					InputBody:             payload,
 					OutputBody:            []byte(output.String()),
-				})
+				}, c.logger)
 				return &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: rerr}
 			}
 		}
@@ -524,7 +527,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						ErrorMessage:          herr.Error(),
 						InputBody:             payload,
 						OutputBody:            []byte(output.String()),
-					})
+					}, c.logger)
 					return herr
 				}
 			}
@@ -550,7 +553,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 						ErrorMessage:          herr.Error(),
 						InputBody:             payload,
 						OutputBody:            []byte(output.String()),
-					})
+					}, c.logger)
 					return herr
 				}
 			}
@@ -590,7 +593,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			ErrorMessage:          err.Error(),
 			InputBody:             payload,
 			OutputBody:            []byte(output.String()),
-		})
+		}, c.logger)
 		return err
 	}
 
@@ -616,7 +619,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		OutputBodyRef:         captureOutputBodyRef(req),
 		InputBody:             payload,
 		OutputBody:            []byte(output.String()),
-	})
+	}, c.logger)
 	return nil
 }
 

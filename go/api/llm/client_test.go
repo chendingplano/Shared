@@ -4,10 +4,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 func TestNewClientUnsupportedProvider(t *testing.T) {
-	_, err := NewClient(ProviderConfig{ID: "not-a-real-provider", APIKey: "k"})
+	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
+	_, err := NewClient(ProviderConfig{ID: "not-a-real-provider", APIKey: "k"}, logger)
 	if err == nil {
 		t.Fatal("expected error for unsupported provider")
 	}
@@ -17,7 +20,8 @@ func TestNewClientUnsupportedProvider(t *testing.T) {
 }
 
 func TestNewClientRequiresAPIKey(t *testing.T) {
-	_, err := NewClient(ProviderConfig{ID: ProviderOpenAI, APIKey: ""})
+	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
+	_, err := NewClient(ProviderConfig{ID: ProviderOpenAI, APIKey: ""}, logger)
 	if err == nil {
 		t.Fatal("expected error when APIKey is empty")
 	}
@@ -30,12 +34,14 @@ func TestNewClientAcceptsKnownProviders(t *testing.T) {
 		ProviderAnthropic,
 		ProviderGemini,
 	}
+
+	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
 	for _, p := range cases {
 		cfg := ProviderConfig{ID: p, APIKey: "sk-TESTVALUE1234"}
 		if p == ProviderOpenAICompatible {
 			cfg.BaseURL = "http://localhost:11434"
 		}
-		c, err := NewClient(cfg)
+		c, err := NewClient(cfg, logger)
 		if err != nil {
 			t.Fatalf("%s: unexpected error: %v", p, err)
 		}

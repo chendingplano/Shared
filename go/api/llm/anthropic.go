@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
 const (
@@ -19,14 +21,15 @@ const (
 type anthropicClient struct {
 	cfg     ProviderConfig
 	baseURL string
+	logger  ApiTypes.JimoLogger
 }
 
-func newAnthropicClient(cfg ProviderConfig) *anthropicClient {
+func newAnthropicClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) *anthropicClient {
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if baseURL == "" {
 		baseURL = anthropicDefaultBaseURL
 	}
-	return &anthropicClient{cfg: cfg, baseURL: baseURL}
+	return &anthropicClient{cfg: cfg, baseURL: baseURL, logger: logger}
 }
 
 func (c *anthropicClient) apiVersion() string {
@@ -39,20 +42,20 @@ func (c *anthropicClient) apiVersion() string {
 // Anthropic request/response types
 
 type anRequestBody struct {
-	Model     string       `json:"model"`
-	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []anMessage  `json:"messages"`
-	Tools     []anTool     `json:"tools,omitempty"`
-	ToolChoice *anToolChoice `json:"tool_choice,omitempty"`
-	Stream    bool         `json:"stream,omitempty"`
-	Temperature *float64  `json:"temperature,omitempty"`
-	TopP        *float64  `json:"top_p,omitempty"`
+	Model       string        `json:"model"`
+	MaxTokens   int           `json:"max_tokens"`
+	System      string        `json:"system,omitempty"`
+	Messages    []anMessage   `json:"messages"`
+	Tools       []anTool      `json:"tools,omitempty"`
+	ToolChoice  *anToolChoice `json:"tool_choice,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"`
+	TopP        *float64      `json:"top_p,omitempty"`
 }
 
 type anMessage struct {
-	Role    string    `json:"role"`
-	Content any       `json:"content"` // string or []anContentBlock
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string or []anContentBlock
 }
 
 type anContentBlock struct {
@@ -94,19 +97,19 @@ type anUsage struct {
 // SSE event types for streaming
 
 type anStreamEvent struct {
-	Type    string          `json:"type"`
-	Message *anResponse     `json:"message,omitempty"`
-	Index   int             `json:"index"`
-	Delta   *anStreamDelta  `json:"delta,omitempty"`
-	Usage   *anUsage        `json:"usage,omitempty"`
+	Type         string          `json:"type"`
+	Message      *anResponse     `json:"message,omitempty"`
+	Index        int             `json:"index"`
+	Delta        *anStreamDelta  `json:"delta,omitempty"`
+	Usage        *anUsage        `json:"usage,omitempty"`
 	ContentBlock *anContentBlock `json:"content_block,omitempty"`
 }
 
 type anStreamDelta struct {
-	Type         string `json:"type"`
-	Text         string `json:"text,omitempty"`
-	PartialJSON  string `json:"partial_json,omitempty"`
-	StopReason   string `json:"stop_reason,omitempty"`
+	Type        string `json:"type"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
 }
 
 func (c *anthropicClient) buildBody(req Request, stream bool) ([]byte, error) {
@@ -268,7 +271,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
 			InputBody:         payload,
-		})
+		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderAnthropic, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
@@ -291,7 +294,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
 			InputBody:         payload,
-		})
+		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderAnthropic, Model: req.Model, HTTPStatus: resp.StatusCode, Err: err}
 	}
 	if resp.StatusCode >= 400 {
@@ -312,7 +315,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			ErrorMessage:      string(raw),
 			InputBody:         payload,
 			OutputBody:        raw,
-		})
+		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderAnthropic, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw),
@@ -338,7 +341,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			ErrorMessage:      err.Error(),
 			InputBody:         payload,
 			OutputBody:        raw,
-		})
+		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderAnthropic, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(raw), Err: err,
@@ -379,7 +382,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 		ProviderRequestID:     parsed.ID,
 		InputBody:             payload,
 		OutputBody:            raw,
-	})
+	}, c.logger)
 	return out, nil
 }
 
@@ -411,7 +414,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
 			InputBody:         payload,
-		})
+		}, c.logger)
 		return &ProviderError{Provider: ProviderAnthropic, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
@@ -435,7 +438,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			ErrorMessage:      string(body),
 			InputBody:         payload,
 			OutputBody:        body,
-		})
+		}, c.logger)
 		return &ProviderError{
 			Provider: ProviderAnthropic, Model: req.Model,
 			HTTPStatus: resp.StatusCode, Body: string(body),
@@ -475,7 +478,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 				InputBody:             payload,
 				OutputBody:            []byte(output.String()),
 				ProviderRequestID:     messageID,
-			})
+			}, c.logger)
 			return ctx.Err()
 		}
 
@@ -501,7 +504,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 					InputBody:             payload,
 					OutputBody:            []byte(output.String()),
 					ProviderRequestID:     messageID,
-				})
+				}, c.logger)
 				return &ProviderError{Provider: ProviderAnthropic, Model: req.Model, Err: rerr}
 			}
 		}
@@ -560,7 +563,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 							InputBody:             payload,
 							OutputBody:            []byte(output.String()),
 							ProviderRequestID:     messageID,
-						})
+						}, c.logger)
 						return herr
 					}
 				}
@@ -594,7 +597,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 						InputBody:             payload,
 						OutputBody:            []byte(output.String()),
 						ProviderRequestID:     messageID,
-					})
+					}, c.logger)
 					return herr
 				}
 			}
@@ -639,7 +642,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			InputBody:             payload,
 			OutputBody:            []byte(output.String()),
 			ProviderRequestID:     messageID,
-		})
+		}, c.logger)
 		return herr
 	}
 
@@ -658,7 +661,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 		InputBody:             payload,
 		OutputBody:            []byte(output.String()),
 		ProviderRequestID:     messageID,
-	})
+	}, c.logger)
 	return nil
 }
 

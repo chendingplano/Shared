@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
 // Sentinel errors.
@@ -46,7 +48,7 @@ func (e *ProviderError) Unwrap() error { return e.Err }
 // return fully-working clients. Anthropic and Gemini return a client whose
 // Complete / Stream methods return ErrAdapterNotImplemented — this keeps the
 // factory exhaustive so later slices are purely additive.
-func NewClient(cfg ProviderConfig) (Client, error) {
+func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("%w (provider=%s)", ErrMissingAPIKey, cfg.ID)
 	}
@@ -62,7 +64,7 @@ func NewClient(cfg ProviderConfig) (Client, error) {
 		}
 		return newOpenAIClient(cfg, cfg.BaseURL), nil
 	case ProviderAnthropic:
-		return newAnthropicClient(cfg), nil
+		return newAnthropicClient(cfg, logger), nil
 	case ProviderGemini:
 		return &notImplementedClient{provider: ProviderGemini}, nil
 	default:
