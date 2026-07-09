@@ -19,7 +19,8 @@ fi
 
 # Step 2: Upload to remote machine
 echo "Uploading $TAR_FILE to remote machine..."
-scp -P 8822 "$TAR_FILE" cding@192.168.29.96:~/Backups/.
+# scp -P 8822 "$TAR_FILE" cding@192.168.29.96:~/Backups/.
+mv "$TAR_FILE" /Volumes/family/cding/Backups/.
 
 # Check if scp was successful
 if [ $? -ne 0 ]; then
