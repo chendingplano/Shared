@@ -153,6 +153,13 @@ func captureUsageRecord(
 	if in.Metadata == nil {
 		in.Metadata = req.Metadata
 	}
+	if in.PromptName == "" {
+		logger.Warn("(MID-20260710-01) llm usage event missing mandatory prompt_name",
+			"provider", string(in.Provider),
+			"model", in.ModelName,
+			"call_reason", in.CallReason,
+			"call_loc", in.CallLoc)
+	}
 	if in.CallReason == "" || in.CallLoc == "" {
 		logger.Warn("(MID-20260708-02) llm usage event missing mandatory call_reason/call_loc",
 			"provider", string(in.Provider), 

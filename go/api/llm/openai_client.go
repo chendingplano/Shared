@@ -906,6 +906,7 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 		BaseURL:           strings.TrimSpace(c.BaseURL),
 		APIKey:            strings.TrimSpace(c.APIKey),
 		ModelName:         strings.TrimSpace(model),
+		PromptName:        "embedding_no_prompt",
 		RequestStartedAt:  startedAt,
 		RequestFinishedAt: time.Now().UTC(),
 		InputTokens:       inputTokens,
