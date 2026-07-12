@@ -69,7 +69,6 @@ export PGTEST_DSN="postgres://${PG_USER_NAME}:${PG_PASSWORD}@${PG_HOST}:${PG_POR
 TEST_DIR="${TEST_DIR:-./go}"
 RECURSIVE="${RECURSIVE:-true}"
 RUN_FILTER="${RUN_FILTER:-}"
-TESTNAME="${TESTNAME:-goose_pg}"
 
 if [ "$RECURSIVE" = "true" ]; then
   PKG="${TEST_DIR}/..."
@@ -78,9 +77,9 @@ else
 fi
 
 if [ -n "$RUN_FILTER" ]; then
-  go test "$PKG" -run "$RUN_FILTER" -v -count=1 -args -testname "$TESTNAME"
+  go test "$PKG" -run "$RUN_FILTER" -v -count=1
 else
-  go test "$PKG" -v -count=1 -args -testname "$TESTNAME"
+  go test "$PKG" -v -count=1
 fi
 '''
-description = "Run Go tests in shared/go using PG env vars; always passes -testname via TESTNAME (default goose_pg). Set TEST_DIR, RECURSIVE, RUN_FILTER as needed"
+description = "Run Go tests in shared/go using PG env vars. Set TEST_DIR, RECURSIVE, RUN_FILTER as needed"

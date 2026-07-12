@@ -4,6 +4,11 @@
 **File:** `goose_pg_test.go`
 **Created:** 2026/03/24 by Claude Code and Chen Ding
 
+> **NOTE (2026/07/12):** `goose_pg_test.go` and its `-testname` flag no longer
+> exist in the tree, and `-testname` was removed from `mise.toml`/`README.md`
+> (it broke `go test ./...` for every other package). This document describes
+> the harness as it existed and is kept for when/if the suite is restored.
+
 ---
 
 ## Overview

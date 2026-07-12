@@ -3,7 +3,7 @@
 // It implements an update_builder that we can use to build
 // update entries (an array of UpdateDef).
 // Below are some examples of how to use it to build joins.
-// 
+//
 // Example 1: Single entry
 // const update_entry = update_builder
 //     .begin()
@@ -29,39 +29,36 @@
 // Created: 2025/12/15 by Chen Ding
 ///////////////////////////////////////////////////////
 
-import type { OrderbyDef } from "$lib/types/CommonTypes";
+import type { OrderbyDef } from '$lib/types/CommonTypes';
 
 // Base class for building joins
 class OrderbyBuilder {
-    protected orderbyDefs: OrderbyDef[] = [];
+	protected orderbyDefs: OrderbyDef[] = [];
 
-    constructor() {}
+	constructor() {}
 
-    orderby(fieldName: string, dataType: string, is_asc: boolean): this {
-        this.orderbyDefs.push({
-            field_name: fieldName,
-            is_asc: is_asc,
-            data_type: dataType
-        })
-        return this
-    }
+	orderby(fieldName: string, dataType: string, is_asc: boolean): this {
+		this.orderbyDefs.push({
+			field_name: fieldName,
+			is_asc: is_asc,
+			data_type: dataType
+		});
+		return this;
+	}
 
-    // Build the final join definition
-    build(): OrderbyDef[] {
-        return this.orderbyDefs;
-    }
+	// Build the final join definition
+	build(): OrderbyDef[] {
+		return this.orderbyDefs;
+	}
 }
 
 class OrderbyConstructor {
-    start(): OrderbyBuilder {
-        return new OrderbyBuilder()
-    }
+	start(): OrderbyBuilder {
+		return new OrderbyBuilder();
+	}
 }
 
 // Global instance for easy access
 const orderby_builder = new OrderbyConstructor();
 
-export { 
-    orderby_builder, 
-    OrderbyBuilder
-};
+export { orderby_builder, OrderbyBuilder };

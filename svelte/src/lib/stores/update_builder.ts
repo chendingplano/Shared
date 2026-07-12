@@ -3,7 +3,7 @@
 // It implements an update_builder that we can use to build
 // update entries (an array of UpdateDef).
 // Below are some examples of how to use it to build joins.
-// 
+//
 // Example 1: Single entry
 // const update_entry = update_builder
 //     .begin()
@@ -29,39 +29,36 @@
 // Created: 2025/12/15 by Chen Ding
 ///////////////////////////////////////////////////////
 
-import type { UpdateDef } from "$lib/types/CommonTypes";
+import type { UpdateDef } from '$lib/types/CommonTypes';
 
 // Base class for building joins
 class UpdateBuilder {
-    protected updateDefs: UpdateDef[] = [];
+	protected updateDefs: UpdateDef[] = [];
 
-    constructor() {}
+	constructor() {}
 
-    modify(fieldName: string, value: unknown, dataType: string): this {
-        this.updateDefs.push({
-            field_name: fieldName,
-            value: value,
-            data_type: dataType
-        })
-        return this
-    }
+	modify(fieldName: string, value: unknown, dataType: string): this {
+		this.updateDefs.push({
+			field_name: fieldName,
+			value: value,
+			data_type: dataType
+		});
+		return this;
+	}
 
-    // Build the final join definition
-    build(): UpdateDef[] {
-        return this.updateDefs;
-    }
+	// Build the final join definition
+	build(): UpdateDef[] {
+		return this.updateDefs;
+	}
 }
 
 class UpdateConstructor {
-    start(): UpdateBuilder {
-        return new UpdateBuilder()
-    }
+	start(): UpdateBuilder {
+		return new UpdateBuilder();
+	}
 }
 
 // Global instance for easy access
 const update_builder = new UpdateConstructor();
 
-export { 
-    update_builder, 
-    UpdateBuilder
-};
+export { update_builder, UpdateBuilder };

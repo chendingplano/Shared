@@ -1,36 +1,102 @@
 /**
- * Test and example usage of parseCondition function
+ * Tests for the parseCondition function
  */
 
+import { describe, it, expect } from 'vitest';
 import { parseCondition } from './cond_builder';
+import type { AtomicCondition, GroupCondition } from '../types/CommonTypes';
 
-// Example 1: Simple AND condition
-const cond1 = parseCondition("field1 = 'xxx' AND field2 > 100");
-console.log("Example 1:", JSON.stringify(cond1, null, 2));
-// Result: AND condition with two atomic conditions
+describe('parseCondition', () => {
+	it('parses a simple AND condition', () => {
+		const cond = parseCondition("field1 = 'xxx' AND field2 > 100") as GroupCondition;
 
-// Example 2: Simple OR condition
-const cond2 = parseCondition("status = 'active' OR status = 'pending'");
-console.log("Example 2:", JSON.stringify(cond2, null, 2));
+		expect(cond.type).toBe('and');
+		expect(cond.conditions).toHaveLength(2);
+		expect((cond.conditions[0] as AtomicCondition).field_name).toBe('field1');
+		expect((cond.conditions[1] as AtomicCondition).field_name).toBe('field2');
+	});
 
-// Example 3: Complex nested condition with parentheses
-const cond3 = parseCondition("field1 = 'xxx' AND (field2 > 100 OR field3 < 50)");
-console.log("Example 3:", JSON.stringify(cond3, null, 2));
+	it('parses a simple OR condition', () => {
+		const cond = parseCondition("status = 'active' OR status = 'pending'") as GroupCondition;
 
-// Example 4: Using different operators
-const cond4 = parseCondition("age >= 18 AND name CONTAINS 'John' AND score <= 100");
-console.log("Example 4:", JSON.stringify(cond4, null, 2));
+		expect(cond.type).toBe('or');
+		expect(cond.conditions).toHaveLength(2);
+	});
 
-// Example 5: Using && and || operators
-const cond5 = parseCondition("field1 == 'xxx' && field2 > 100 || field3 = 'yyy'");
-console.log("Example 5:", JSON.stringify(cond5, null, 2));
+	it('parses nested conditions with parentheses', () => {
+		const cond = parseCondition(
+			"field1 = 'xxx' AND (field2 > 100 OR field3 < 50)"
+		) as GroupCondition;
 
-// Example 6: Your specific example
-const cond6 = parseCondition("status = 'in_progress' AND app_type = 'tax_return' OR status = 'completed'");
-console.log("Example 6:", JSON.stringify(cond6, null, 2));
-// This creates: (status = 'in_progress' AND app_type = 'tax_return') OR (status = 'completed')
+		expect(cond.type).toBe('and');
+		expect(cond.conditions).toHaveLength(2);
+		expect(cond.conditions[0].type).toBe('atomic');
+		const nested = cond.conditions[1] as GroupCondition;
+		expect(nested.type).toBe('or');
+		expect(nested.conditions).toHaveLength(2);
+	});
 
-// Example 7: Explicit grouping for different precedence
-const cond7 = parseCondition("status = 'in_progress' AND (app_type = 'tax_return' OR status = 'completed')");
-console.log("Example 7:", JSON.stringify(cond7, null, 2));
-// This creates: status = 'in_progress' AND (app_type = 'tax_return' OR status = 'completed')
+	it('parses comparison and CONTAINS operators', () => {
+		const cond = parseCondition(
+			"age >= 18 AND name CONTAINS 'John' AND score <= 100"
+		) as GroupCondition;
+
+		expect(cond.type).toBe('and');
+		expect(cond.conditions).toHaveLength(3);
+		const fields = cond.conditions.map((c) => (c as AtomicCondition).field_name);
+		expect(fields).toEqual(['age', 'name', 'score']);
+	});
+
+	it('parses && and || operators', () => {
+		const cond = parseCondition(
+			"field1 == 'xxx' && field2 > 100 || field3 = 'yyy'"
+		) as GroupCondition;
+
+		// AND binds tighter than OR: (field1 == 'xxx' AND field2 > 100) OR field3 = 'yyy'
+		expect(cond.type).toBe('or');
+		expect(cond.conditions).toHaveLength(2);
+		const left = cond.conditions[0] as GroupCondition;
+		expect(left.type).toBe('and');
+		expect(left.conditions).toHaveLength(2);
+	});
+
+	it('gives AND precedence over OR without parentheses', () => {
+		const cond = parseCondition(
+			"status = 'in_progress' AND app_type = 'tax_return' OR status = 'completed'"
+		) as GroupCondition;
+
+		// (status = 'in_progress' AND app_type = 'tax_return') OR (status = 'completed')
+		expect(cond.type).toBe('or');
+		expect(cond.conditions).toHaveLength(2);
+		expect(cond.conditions[0].type).toBe('and');
+		expect(cond.conditions[1].type).toBe('atomic');
+	});
+
+	it('returns a bare atomic condition when there is no AND/OR', () => {
+		const cond = parseCondition("status = 'active'") as AtomicCondition;
+
+		expect(cond.type).toBe('atomic');
+		expect(cond.field_name).toBe('status');
+		expect(cond.value).toBe('active');
+	});
+
+	it('throws on empty input', () => {
+		expect(() => parseCondition('')).toThrow();
+	});
+
+	it('throws on unbalanced parentheses', () => {
+		expect(() => parseCondition("field1 = 'x' AND (field2 > 1")).toThrow();
+	});
+
+	it('respects explicit grouping over default precedence', () => {
+		const cond = parseCondition(
+			"status = 'in_progress' AND (app_type = 'tax_return' OR status = 'completed')"
+		) as GroupCondition;
+
+		// status = 'in_progress' AND (app_type = 'tax_return' OR status = 'completed')
+		expect(cond.type).toBe('and');
+		expect(cond.conditions).toHaveLength(2);
+		expect(cond.conditions[0].type).toBe('atomic');
+		expect(cond.conditions[1].type).toBe('or');
+	});
+});

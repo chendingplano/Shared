@@ -10,27 +10,43 @@ import (
 	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-// recordingHandler is a minimal slog.Handler that captures emitted records so
-// tests can assert on warnings without depending on log output formatting.
-type recordingHandler struct {
+// recordingJimoLogger is a minimal ApiTypes.JimoLogger that captures emitted
+// records so tests can assert on warnings without depending on log output
+// formatting.
+type recordingJimoLogger struct {
 	records *[]slog.Record
 }
 
-func (h recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
-func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	*h.records = append(*h.records, r)
-	return nil
+func (l recordingJimoLogger) log(level slog.Level, message string, args ...any) {
+	r := slog.NewRecord(time.Now(), level, message, 0)
+	r.Add(args...)
+	*l.records = append(*l.records, r)
 }
-func (h recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+func (l recordingJimoLogger) Debug(message string, args ...any) { l.log(slog.LevelDebug, message, args...) }
+func (l recordingJimoLogger) Line(message string, args ...any)  { l.log(slog.LevelInfo, message, args...) }
+func (l recordingJimoLogger) Info(message string, args ...any)  { l.log(slog.LevelInfo, message, args...) }
+func (l recordingJimoLogger) Warn(message string, args ...any)  { l.log(slog.LevelWarn, message, args...) }
+func (l recordingJimoLogger) Error(message string, args ...any) { l.log(slog.LevelError, message, args...) }
+func (l recordingJimoLogger) Trace(message string)              { l.log(slog.LevelDebug, message) }
+func (l recordingJimoLogger) Close()                            {}
 
-func withCapturedWarnings(t *testing.T) *[]slog.Record {
+// recordAttr returns the string value of the named attribute on a captured record.
+func recordAttr(r slog.Record, key string) string {
+	var val string
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == key {
+			val = a.Value.String()
+			return false
+		}
+		return true
+	})
+	return val
+}
+
+func withCapturedWarnings(t *testing.T) (*[]slog.Record, recordingJimoLogger) {
 	t.Helper()
 	records := &[]slog.Record{}
-	original := captureLogger
-	captureLogger = slog.New(recordingHandler{records: records})
-	t.Cleanup(func() { captureLogger = original })
-	return records
+	return records, recordingJimoLogger{records: records}
 }
 
 func TestWriteAndReadGzipFileRoundTrip(t *testing.T) {
@@ -162,12 +178,12 @@ func TestCaptureUsageRecordFallsBackToRequestCallFieldsAndMetadata(t *testing.T)
 }
 
 func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
-	records := withCapturedWarnings(t)
+	records, logger := withCapturedWarnings(t)
 	sink := &testUsageCaptureSink{}
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName: "deepseek-chat",
-	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
+	}, logger)
 
 	if len(*records) != 1 {
 		t.Fatalf("warning count = %d, want 1", len(*records))
@@ -175,17 +191,37 @@ func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
 	if (*records)[0].Level != slog.LevelWarn {
 		t.Fatalf("level = %v, want Warn", (*records)[0].Level)
 	}
+	if got := recordAttr((*records)[0], "model"); got != "deepseek-chat" {
+		t.Fatalf("model attr = %q, want deepseek-chat", got)
+	}
+}
+
+func TestCaptureUsageRecordNilLoggerFallsBack(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+
+	// Missing CallReason/CallLoc forces the warn path — the exact path that
+	// used to panic when a nil logger reached captureUsageRecord.
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		ModelName: "deepseek-chat",
+	}, nil)
+
+	if got := len(sink.Records()); got != 1 {
+		t.Fatalf("captured records = %d, want 1", got)
+	}
+	if fallbackCaptureLogger() != fallbackCaptureLogger() {
+		t.Fatal("fallbackCaptureLogger must return the same instance on every call")
+	}
 }
 
 func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) {
-	records := withCapturedWarnings(t)
+	records, logger := withCapturedWarnings(t)
 	sink := &testUsageCaptureSink{}
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName:  "deepseek-chat",
 		CallReason: "review-provision",
 		CallLoc:    "MID-20260706-0001",
-	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
+	}, logger)
 
 	if len(*records) != 0 {
 		t.Fatalf("warning count = %d, want 0; got %+v", len(*records), *records)

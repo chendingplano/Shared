@@ -23,10 +23,10 @@ import { query_builder, cond_builder, join_builder } from '@chendingplano/shared
 
 // Simple query
 const users = await query_builder
-    .select('id', 'userame', 'email')
-    .from('users')
-    .where(cond_builder.filter().condEq('status', 'active'))
-    .execute();
+	.select('id', 'userame', 'email')
+	.from('users')
+	.where(cond_builder.filter().condEq('status', 'active').build())
+	.execute();
 ```
 
 ## 1.3 Query Builder
@@ -35,16 +35,10 @@ const users = await query_builder
 
 ```typescript
 // Select all fields
-const results = await query_builder
-    .select()
-    .from('users')
-    .execute();
+const results = await query_builder.select().from('users').execute();
 
 // Select specific fields
-const results = await query_builder
-    .select('id', 'name', 'email')
-    .from('users')
-    .execute();
+const results = await query_builder.select('id', 'name', 'email').from('users').execute();
 ```
 
 ### 1.3.2 WHERE Conditions
@@ -52,40 +46,30 @@ const results = await query_builder
 ```typescript
 // Simple condition
 const results = await query_builder
-    .select()
-    .from('users')
-    .where(cond_builder.filter().condEq('status', 'active'))
-    .execute();
+	.select()
+	.from('users')
+	.where(cond_builder.filter().condEq('status', 'active').build())
+	.execute();
 
 // Multiple conditions with AND
 const results = await query_builder
-    .select()
-    .from('users')
-    .where(
-        cond_builder.and()
-            .condEq('status', 'active')
-            .condGt('age', 18)
-    )
-    .execute();
+	.select()
+	.from('users')
+	.where(cond_builder.and().condEq('status', 'active').condGt('age', 18).build())
+	.execute();
 
 // Complex nested conditions
 const results = await query_builder
-    .select()
-    .from('users')
-    .where(
-        cond_builder.or()
-            .addCond(
-                cond_builder.and()
-                    .condEq('status', 'active')
-                    .condGt('age', 18)
-            )
-            .addCond(
-                cond_builder.and()
-                    .condEq('role', 'admin')
-                    .condGt('level', 5)
-            )
-    )
-    .execute();
+	.select()
+	.from('users')
+	.where(
+		cond_builder
+			.or()
+			.addCond(cond_builder.and().condEq('status', 'active').condGt('age', 18))
+			.addCond(cond_builder.and().condEq('role', 'admin').condGt('level', 5))
+			.build()
+	)
+	.execute();
 ```
 
 ### 1.3.3 JOINs
@@ -93,39 +77,42 @@ const results = await query_builder
 ```typescript
 // LEFT JOIN
 const results = await query_builder
-    .select()
-    .from('posts')
-    .leftJoin(
-        join_builder.from('posts')
-            .join('users', 'left_join')
-            .on('posts.author_id', 'users.id', '=', 'string')
-            .select('username', 'email', 'avatar')
-            .embedAs('author')
-            .build()
-    )
-    .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('username', 'email', 'avatar')
+			.embedAs('author')
+			.build()
+	)
+	.execute();
 
 // Multiple JOINs
 const results = await query_builder
-    .select()
-    .from('posts')
-    .leftJoin(
-        join_builder.from('posts')
-            .join('users', 'left_join')
-            .on('posts.author_id', 'users.id', '=', 'string')
-            .select('username', 'email')
-            .embedAs('author')
-            .build()
-    )
-    .leftJoin(
-        join_builder.from('posts')
-            .join('categories', 'left_join')
-            .on('posts.category_id', 'categories.id', '=', 'string')
-            .select('category_name', 'slug')
-            .embedAs('category')
-            .build()
-    )
-    .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('username', 'email')
+			.embedAs('author')
+			.build()
+	)
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('categories', 'left_join')
+			.on('posts.category_id', 'categories.id', '=', 'string')
+			.select('category_name', 'slug')
+			.embedAs('category')
+			.build()
+	)
+	.execute();
 ```
 
 ### 1.3.4 Ordering
@@ -133,18 +120,18 @@ const results = await query_builder
 ```typescript
 // Single ORDER BY
 const results = await query_builder
-    .select()
-    .from('users')
-    .orderBy('created_at', false) // DESC
-    .execute();
+	.select()
+	.from('users')
+	.orderBy('created_at', false) // DESC
+	.execute();
 
 // Multiple ORDER BY
 const results = await query_builder
-    .select()
-    .from('posts')
-    .orderBy('view_count', false)  // DESC
-    .orderBy('created_at', false)  // DESC
-    .execute();
+	.select()
+	.from('posts')
+	.orderBy('view_count', false) // DESC
+	.orderBy('created_at', false) // DESC
+	.execute();
 ```
 
 ### 1.3.5 Pagination
@@ -152,20 +139,20 @@ const results = await query_builder
 ```typescript
 // Using limit and offset
 const results = await query_builder
-    .select()
-    .from('articles')
-    .orderBy('published_at', false)
-    .offset(20)
-    .limit(10)
-    .execute();
+	.select()
+	.from('articles')
+	.orderBy('published_at', false)
+	.offset(20)
+	.limit(10)
+	.execute();
 
 // Helper function for pagination
 function paginate(page: number, pageSize: number) {
-    return query_builder
-        .select()
-        .from('articles')
-        .offset((page - 1) * pageSize)
-        .limit(pageSize);
+	return query_builder
+		.select()
+		.from('articles')
+		.offset((page - 1) * pageSize)
+		.limit(pageSize);
 }
 ```
 
@@ -175,47 +162,44 @@ function paginate(page: number, pageSize: number) {
 import { z } from 'zod';
 
 const UserSchema = z.object({
-    id: z.string(),
-    username: z.string(),
-    email: z.string().email(),
-    status: z.enum(['active', 'inactive'])
+	id: z.string(),
+	username: z.string(),
+	email: z.string().email(),
+	status: z.enum(['active', 'inactive'])
 });
 
-const results = await query_builder
-    .select()
-    .from('users')
-    .withSchema(UserSchema)
-    .execute();
+const results = await query_builder.select().from('users').withSchema(UserSchema).execute();
 ```
 
 ### 1.3.7 Embedded Schema Validation
 
 ```typescript
 const PostSchema = z.object({
-    id: z.string(),
-    title: z.string(),
-    content: z.string()
+	id: z.string(),
+	title: z.string(),
+	content: z.string()
 });
 
 const AuthorSchema = z.object({
-    username: z.string(),
-    email: z.string().email()
+	username: z.string(),
+	email: z.string().email()
 });
 
 const results = await query_builder
-    .select()
-    .from('posts')
-    .leftJoin(
-        join_builder.from('posts')
-            .join('users', 'left_join')
-            .on('posts.author_id', 'users.id', '=', 'string')
-            .select('username', 'email')
-            .embedAs('author')
-            .build()
-    )
-    .withSchema(PostSchema)
-    .withEmbedSchema('author', AuthorSchema)
-    .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('username', 'email')
+			.embedAs('author')
+			.build()
+	)
+	.withSchema(PostSchema)
+	.withEmbedSchema('author', AuthorSchema)
+	.execute();
 ```
 
 ## 1.4 Condition Builder
@@ -224,28 +208,28 @@ The condition builder supports various operators:
 
 ```typescript
 // Equality
-cond_builder.filter().condEq('status', 'active', 'string')
+cond_builder.filter().condEq('status', 'active', 'string');
 
 // Inequality
-cond_builder.filter().condNe('role', 'guest', 'string')
+cond_builder.filter().condNe('role', 'guest', 'string');
 
 // Greater than
-cond_builder.filter().condGt('age', 18, 'number')
+cond_builder.filter().condGt('age', 18, 'number');
 
 // Greater than or equal
-cond_builder.filter().condGte('score', 100, 'number')
+cond_builder.filter().condGte('score', 100, 'number');
 
 // Less than
-cond_builder.filter().condLt('price', 50, 'number')
+cond_builder.filter().condLt('price', 50, 'number');
 
 // Less than or equal
-cond_builder.filter().condLte('quantity', 10, 'number')
+cond_builder.filter().condLte('quantity', 10, 'number');
 
 // Contains
-cond_builder.filter().condContains('name', 'John', 'string')
+cond_builder.filter().condContains('name', 'John', 'string');
 
 // Prefix (starts with)
-cond_builder.filter().condPrefix('email', 'admin', 'string')
+cond_builder.filter().condPrefix('email', 'admin', 'string');
 ```
 
 ### 1.4.1 String-based Condition Parser
@@ -257,23 +241,21 @@ import { parseCondition } from '$lib/stores';
 
 const condition = parseCondition("status = 'active' AND age > 18");
 
-const results = await query_builder
-    .select()
-    .from('users')
-    .where(condition)
-    .execute();
+const results = await query_builder.select().from('users').where(condition).execute();
 ```
 
 Supported syntax:
+
 - Operators: `=`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `CONTAINS`, `PREFIX`
 - Logical: `AND`, `&&`, `OR`, `||`
 - Grouping: `( )`
 
 Examples:
+
 ```typescript
-"status = 'active' AND age > 18"
-"name CONTAINS 'John' OR email PREFIX 'admin'"
-"(role = 'admin' AND level >= 5) OR status = 'superuser'"
+"status = 'active' AND age > 18";
+"name CONTAINS 'John' OR email PREFIX 'admin'";
+"(role = 'admin' AND level >= 5) OR status = 'superuser'";
 ```
 
 ## 1.5 Join Builder
@@ -281,25 +263,26 @@ Examples:
 ```typescript
 // Basic join
 const joinDef = join_builder
-    .from('posts')
-    .join('users', 'left_join')
-    .on('posts.author_id', 'users.id', '=', 'string')
-    .select('username', 'email', 'avatar')
-    .embedAs('author')
-    .build();
+	.from('posts')
+	.join('users', 'left_join')
+	.on('posts.author_id', 'users.id', '=', 'string')
+	.select('username', 'email', 'avatar')
+	.embedAs('author')
+	.build();
 
 // Join with multiple ON conditions
 const joinDef = join_builder
-    .from('orders')
-    .join('customers', 'left_join')
-    .on('orders.customer_id', 'customers.id', '=', 'string')
-    .on('orders.status', 'customers.default_status', '=', 'string')
-    .select('name', 'email')
-    .embedAs('customer')
-    .build();
+	.from('orders')
+	.join('customers', 'left_join')
+	.on('orders.customer_id', 'customers.id', '=', 'string')
+	.on('orders.status', 'customers.default_status', '=', 'string')
+	.select('name', 'email')
+	.embedAs('customer')
+	.build();
 ```
 
 Join types:
+
 - `'left_join'` - LEFT JOIN
 - `'right_join'` - RIGHT JOIN
 - `'inner_join'` - INNER JOIN
@@ -311,18 +294,15 @@ Join types:
 import { update_builder } from '$lib/stores';
 
 // Single field update
-const updates = update_builder
-    .start()
-    .modify('status', 'active', 'string')
-    .build();
+const updates = update_builder.start().modify('status', 'active', 'string').build();
 
 // Multiple field updates
 const updates = update_builder
-    .start()
-    .modify('order_num', 12345, 'int')
-    .modify('remarks', 'Updated order', 'string')
-    .modify('updated_at', new Date().toISOString(), 'timestamp')
-    .build();
+	.start()
+	.modify('order_num', 12345, 'int')
+	.modify('remarks', 'Updated order', 'string')
+	.modify('updated_at', new Date().toISOString(), 'timestamp')
+	.build();
 ```
 
 ## 1.7 Complete Examples
@@ -331,85 +311,92 @@ const updates = update_builder
 
 ```typescript
 const UserSchema = z.object({
-    id: z.string(),
-    username: z.string(),
-    email: z.string().email()
+	id: z.string(),
+	username: z.string(),
+	email: z.string().email()
 });
 
 const ProfileSchema = z.object({
-    bio: z.string(),
-    avatar: z.string().optional()
+	bio: z.string(),
+	avatar: z.string().optional()
 });
 
 const results = await query_builder
-    .select()
-    .from('users')
-    .leftJoin(
-        join_builder.from('users')
-            .join('profiles', 'left_join')
-            .on('users.id', 'profiles.user_id', '=', 'string')
-            .select('bio', 'avatar', 'location')
-            .embedAs('profile')
-            .build()
-    )
-    .where(cond_builder.filter().condEq('users.status', 'active'))
-    .withSchema(UserSchema)
-    .withEmbedSchema('profile', ProfileSchema)
-    .limit(50)
-    .execute();
+	.select()
+	.from('users')
+	.leftJoin(
+		join_builder
+			.from('users')
+			.join('profiles', 'left_join')
+			.on('users.id', 'profiles.user_id', '=', 'string')
+			.select('bio', 'avatar', 'location')
+			.embedAs('profile')
+			.build()
+	)
+	.where(cond_builder.filter().condEq('users.status', 'active').build())
+	.withSchema(UserSchema)
+	.withEmbedSchema('profile', ProfileSchema)
+	.limit(50)
+	.execute();
 ```
 
 ### 1.7.2 Example 2: Blog Posts with Author and Category
 
 ```typescript
 const results = await query_builder
-    .select()
-    .from('posts')
-    .leftJoin(
-        join_builder.from('posts')
-            .join('users', 'left_join')
-            .on('posts.author_id', 'users.id', '=', 'string')
-            .select('username', 'email', 'avatar')
-            .embedAs('author')
-            .build()
-    )
-    .leftJoin(
-        join_builder.from('posts')
-            .join('categories', 'left_join')
-            .on('posts.category_id', 'categories.id', '=', 'string')
-            .select('category_name', 'slug')
-            .embedAs('category')
-            .build()
-    )
-    .where(
-        cond_builder.and()
-            .condEq('posts.published', true, 'boolean')
-            .condGt('posts.view_count', 100, 'number')
-    )
-    .orderBy('posts.view_count', false)
-    .orderBy('posts.created_at', false)
-    .limit(20)
-    .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('username', 'email', 'avatar')
+			.embedAs('author')
+			.build()
+	)
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('categories', 'left_join')
+			.on('posts.category_id', 'categories.id', '=', 'string')
+			.select('category_name', 'slug')
+			.embedAs('category')
+			.build()
+	)
+	.where(
+		cond_builder
+			.and()
+			.condEq('posts.published', true, 'boolean')
+			.condGt('posts.view_count', 100, 'number')
+			.build()
+	)
+	.orderBy('posts.view_count', false)
+	.orderBy('posts.created_at', false)
+	.limit(20)
+	.execute();
 ```
 
 ### 1.7.3 Example 3: Search with Pagination
 
 ```typescript
 async function searchPosts(searchTerm: string, page: number = 1, pageSize: number = 10) {
-    const offset = (page - 1) * pageSize;
+	const offset = (page - 1) * pageSize;
 
-    return await query_builder
-        .select()
-        .from('posts')
-        .where(
-            cond_builder.or()
-                .condContains('title', searchTerm, 'string')
-                .condContains('content', searchTerm, 'string')
-        )
-        .orderBy('created_at', false)
-        .offset(offset)
-        .limit(pageSize)
-        .execute();
+	return await query_builder
+		.select()
+		.from('posts')
+		.where(
+			cond_builder
+				.or()
+				.condContains('title', searchTerm, 'string')
+				.condContains('content', searchTerm, 'string')
+				.build()
+		)
+		.orderBy('created_at', false)
+		.offset(offset)
+		.limit(pageSize)
+		.execute();
 }
 ```
 
@@ -417,38 +404,38 @@ async function searchPosts(searchTerm: string, page: number = 1, pageSize: numbe
 
 ### 1.8.1 QueryBuilder Methods
 
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `select(...fields)` | `fields: string[]` | Select specific fields (empty = all fields) |
-| `database(name)` | `name: string` | Set database name |
-| `from(table)` | `table: string` | Set table name |
-| `where(condition)` | `condition: CondDef` | Add WHERE clause |
-| `leftJoin(join)` | `join: JoinDef` | Add LEFT JOIN |
-| `rightJoin(join)` | `join: JoinDef` | Add RIGHT JOIN |
-| `innerJoin(join)` | `join: JoinDef` | Add INNER JOIN |
-| `join(join)` | `join: JoinDef` | Add generic JOIN |
-| `orderBy(field, asc, type)` | `field: string, asc: boolean, type: string` | Add ORDER BY |
-| `limit(n)` | `n: number` | Set LIMIT |
-| `offset(n)` | `n: number` | Set OFFSET |
-| `withSchema(schema)` | `schema: ZodType` | Set validation schema |
-| `withEmbedSchema(name, schema)` | `name: string, schema: ZodType` | Set embedded validation schema |
-| `location(loc)` | `loc: string` | Set location identifier |
-| `execute()` | - | Execute query and return results |
-| `reset()` | - | Reset builder to initial state |
+| Method                          | Parameters                                  | Description                                 |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| `select(...fields)`             | `fields: string[]`                          | Select specific fields (empty = all fields) |
+| `database(name)`                | `name: string`                              | Set database name                           |
+| `from(table)`                   | `table: string`                             | Set table name                              |
+| `where(condition)`              | `condition: CondDef`                        | Add WHERE clause                            |
+| `leftJoin(join)`                | `join: JoinDef`                             | Add LEFT JOIN                               |
+| `rightJoin(join)`               | `join: JoinDef`                             | Add RIGHT JOIN                              |
+| `innerJoin(join)`               | `join: JoinDef`                             | Add INNER JOIN                              |
+| `join(join)`                    | `join: JoinDef`                             | Add generic JOIN                            |
+| `orderBy(field, asc, type)`     | `field: string, asc: boolean, type: string` | Add ORDER BY                                |
+| `limit(n)`                      | `n: number`                                 | Set LIMIT                                   |
+| `offset(n)`                     | `n: number`                                 | Set OFFSET                                  |
+| `withSchema(schema)`            | `schema: ZodType`                           | Set validation schema                       |
+| `withEmbedSchema(name, schema)` | `name: string, schema: ZodType`             | Set embedded validation schema              |
+| `location(loc)`                 | `loc: string`                               | Set location identifier                     |
+| `execute()`                     | -                                           | Execute query and return results            |
+| `reset()`                       | -                                           | Reset builder to initial state              |
 
 ### 1.8.2 Condition Builder Methods
 
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `condEq(field, value, type)` | Field equals value |
-| `condNe(field, value, type)` | Field not equals value |
-| `condGt(field, value, type)` | Field greater than value |
-| `condGte(field, value, type)` | Field greater than or equal |
-| `condLt(field, value, type)` | Field less than value |
-| `condLte(field, value, type)` | Field less than or equal |
-| `condContains(field, value, type)` | Field contains value |
-| `condPrefix(field, value, type)` | Field starts with value |
-| `addCond(condition)` | Add nested condition |
+| Method                             | Parameters                  | Description |
+| ---------------------------------- | --------------------------- | ----------- |
+| `condEq(field, value, type)`       | Field equals value          |
+| `condNe(field, value, type)`       | Field not equals value      |
+| `condGt(field, value, type)`       | Field greater than value    |
+| `condGte(field, value, type)`      | Field greater than or equal |
+| `condLt(field, value, type)`       | Field less than value       |
+| `condLte(field, value, type)`      | Field less than or equal    |
+| `condContains(field, value, type)` | Field contains value        |
+| `condPrefix(field, value, type)`   | Field starts with value     |
+| `addCond(condition)`               | Add nested condition        |
 
 ## 1.9 See Also
 
@@ -456,8 +443,6 @@ async function searchPosts(searchTerm: string, page: number = 1, pageSize: numbe
 - [cond_builder.ts](./cond_builder.ts) - Condition builder implementation
 - [join_builder.ts](./join_builder.ts) - Join builder implementation
 - [update_builder.ts](./update_builder.ts) - Update builder implementation
-
-
 
 # 2. Query Builder Architecture
 
@@ -572,12 +557,13 @@ The query builder provides a fluent, type-safe interface for building database q
 
 ```typescript
 query_builder
-  .select('id', 'name')
-  .from('users')
-  .where(cond_builder.filter().condEq('status', 'active'))
+	.select('id', 'name')
+	.from('users')
+	.where(cond_builder.filter().condEq('status', 'active').build());
 ```
 
 Internal state being built:
+
 ```typescript
 {
   _tableName: 'users',
@@ -603,6 +589,7 @@ Internal state being built:
 ```
 
 Converts to:
+
 ```typescript
 db_store.retrieveRecords(
   '',              // db_name
@@ -656,16 +643,16 @@ fetch("/shared_api/v1/jimo_req", {
 
 ```typescript
 const UserSchema = z.object({
-  id: z.string(),
-  name: z.string()
+	id: z.string(),
+	name: z.string()
 });
 
 // Each record validated against schema
 for (const record of results) {
-  const result = UserSchema.safeParse(record);
-  if (result.success) {
-    valid_records.push(record);
-  }
+	const result = UserSchema.safeParse(record);
+	if (result.success) {
+		valid_records.push(record);
+	}
 }
 ```
 
@@ -703,34 +690,34 @@ const update_builder = new UpdateConstructor();
 ```
 
 Each method call returns `this` for fluent chaining:
+
 ```typescript
 class QueryBuilder {
-  select(...fields: string[]): this {
-    this._fieldNames = fields;
-    return this;  // ◄─── Enables chaining
-  }
+	select(...fields: string[]): this {
+		this._fieldNames = fields;
+		return this; // ◄─── Enables chaining
+	}
 
-  from(table: string): this {
-    this._tableName = table;
-    return this;  // ◄─── Enables chaining
-  }
+	from(table: string): this {
+		this._tableName = table;
+		return this; // ◄─── Enables chaining
+	}
 }
 ```
 
 ## 2.6 Condition Builder Tree Structure
 
 Example condition:
+
 ```typescript
-cond_builder.or()
-  .addCond(
-    cond_builder.and()
-      .condEq('status', 'active')
-      .condGt('age', 18)
-  )
-  .condEq('role', 'admin')
+cond_builder
+	.or()
+	.addCond(cond_builder.and().condEq('status', 'active').condGt('age', 18))
+	.condEq('role', 'admin');
 ```
 
 Builds this tree:
+
 ```
 OR
 ├── AND
@@ -740,6 +727,7 @@ OR
 ```
 
 Serialized as:
+
 ```typescript
 {
   type: 'or',
@@ -759,16 +747,19 @@ Serialized as:
 ## 2.7 Join Builder Structure
 
 Example join:
+
 ```typescript
-join_builder.from('posts')
-  .join('users', 'left_join')
-  .on('posts.author_id', 'users.id', '=', 'string')
-  .select('username', 'email')
-  .embedAs('author')
-  .build()
+join_builder
+	.from('posts')
+	.join('users', 'left_join')
+	.on('posts.author_id', 'users.id', '=', 'string')
+	.select('username', 'email')
+	.embedAs('author')
+	.build();
 ```
 
 Creates:
+
 ```typescript
 {
   from_table_name: 'posts',
@@ -790,6 +781,7 @@ Creates:
 ```
 
 Result structure:
+
 ```typescript
 {
   id: '1',
@@ -852,27 +844,25 @@ validate(validator: (query: QueryBuilder) => boolean): this {
 ## 2.10 Error Handling
 
 ```typescript
-const result = await query_builder
-  .select()
-  .from('users')
-  .execute();
+const result = await query_builder.select().from('users').execute();
 
 if (!result.status) {
-  console.error(`Query failed: ${result.error_msg}`);
-  console.error(`Error code: ${result.error_code}`);
-  console.error(`Location: ${result.loc}`);
+	console.error(`Query failed: ${result.error_msg}`);
+	console.error(`Error code: ${result.error_code}`);
+	console.error(`Location: ${result.loc}`);
 }
 ```
 
 ## 2.11 Debugging
 
 Use `.location()` to add identifiers:
+
 ```typescript
 query_builder
-  .select()
-  .from('users')
-  .location('UserList.loadUsers')  // ◄─── Appears in error messages
-  .execute();
+	.select()
+	.from('users')
+	.location('UserList.loadUsers') // ◄─── Appears in error messages
+	.execute();
 ```
 
 # 3 Query Builder vs Drizzle ORM - Comparison Guide
@@ -882,6 +872,7 @@ This document shows how the query builder API compares to Drizzle ORM, highlight
 ## 3.1 Basic Queries
 
 ### 3.1.1 Drizzle ORM
+
 ```typescript
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { users } from './schema';
@@ -893,223 +884,198 @@ const result = await db.select().from(users);
 
 // Select specific fields
 const result = await db
-  .select({
-    id: users.id,
-    name: users.name,
-    email: users.email
-  })
-  .from(users);
+	.select({
+		id: users.id,
+		name: users.name,
+		email: users.email
+	})
+	.from(users);
 ```
 
 ### 3.1.2 Our Query Builder
+
 ```typescript
 import { query_builder } from '$lib/stores';
 
 // Select all
-const result = await query_builder
-  .select()
-  .from('users')
-  .execute();
+const result = await query_builder.select().from('users').execute();
 
 // Select specific fields
-const result = await query_builder
-  .select('id', 'name', 'email')
-  .from('users')
-  .execute();
+const result = await query_builder.select('id', 'name', 'email').from('users').execute();
 ```
 
 ## 3.2 WHERE Clauses
 
 ### 3.2.1 Drizzle ORM
+
 ```typescript
 import { eq, and, or, gt, lt } from 'drizzle-orm';
 
 // Simple condition
-const result = await db
-  .select()
-  .from(users)
-  .where(eq(users.status, 'active'));
+const result = await db.select().from(users).where(eq(users.status, 'active'));
 
 // Multiple conditions (AND)
 const result = await db
-  .select()
-  .from(users)
-  .where(and(
-    eq(users.status, 'active'),
-    gt(users.age, 18)
-  ));
+	.select()
+	.from(users)
+	.where(and(eq(users.status, 'active'), gt(users.age, 18)));
 
 // Complex conditions (OR with nested AND)
 const result = await db
-  .select()
-  .from(users)
-  .where(or(
-    and(
-      eq(users.status, 'active'),
-      gt(users.age, 18)
-    ),
-    eq(users.role, 'admin')
-  ));
+	.select()
+	.from(users)
+	.where(or(and(eq(users.status, 'active'), gt(users.age, 18)), eq(users.role, 'admin')));
 ```
 
 ### 3.2.2 Our Query Builder
+
 ```typescript
 import { query_builder, cond_builder } from '$lib/stores';
 
 // Simple condition
 const result = await query_builder
-  .select()
-  .from('users')
-  .where(cond_builder.filter().condEq('status', 'active'))
-  .execute();
+	.select()
+	.from('users')
+	.where(cond_builder.filter().condEq('status', 'active').build())
+	.execute();
 
 // Multiple conditions (AND)
 const result = await query_builder
-  .select()
-  .from('users')
-  .where(
-    cond_builder.and()
-      .condEq('status', 'active', 'string')
-      .condGt('age', 18, 'number')
-  )
-  .execute();
+	.select()
+	.from('users')
+	.where(
+		cond_builder.and().condEq('status', 'active', 'string').condGt('age', 18, 'number').build()
+	)
+	.execute();
 
 // Complex conditions (OR with nested AND)
 const result = await query_builder
-  .select()
-  .from('users')
-  .where(
-    cond_builder.or()
-      .addCond(
-        cond_builder.and()
-          .condEq('status', 'active', 'string')
-          .condGt('age', 18, 'number')
-      )
-      .condEq('role', 'admin', 'string')
-  )
-  .execute();
+	.select()
+	.from('users')
+	.where(
+		cond_builder
+			.or()
+			.addCond(cond_builder.and().condEq('status', 'active', 'string').condGt('age', 18, 'number'))
+			.condEq('role', 'admin', 'string')
+			.build()
+	)
+	.execute();
 ```
 
 ## 3.3 JOINs
 
 ### 3.3.1 Drizzle ORM
+
 ```typescript
 // LEFT JOIN
 const result = await db
-  .select({
-    id: posts.id,
-    title: posts.title,
-    authorName: users.name,
-    authorEmail: users.email
-  })
-  .from(posts)
-  .leftJoin(users, eq(posts.authorId, users.id));
+	.select({
+		id: posts.id,
+		title: posts.title,
+		authorName: users.name,
+		authorEmail: users.email
+	})
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 
 // Multiple JOINs
 const result = await db
-  .select()
-  .from(posts)
-  .leftJoin(users, eq(posts.authorId, users.id))
-  .leftJoin(categories, eq(posts.categoryId, categories.id));
+	.select()
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id))
+	.leftJoin(categories, eq(posts.categoryId, categories.id));
 ```
 
 ### 3.3.2 Our Query Builder
+
 ```typescript
 import { query_builder, join_builder } from '$lib/stores';
 
 // LEFT JOIN
 const result = await query_builder
-  .select()
-  .from('posts')
-  .leftJoin(
-    join_builder.from('posts')
-      .join('users', 'left_join')
-      .on('posts.author_id', 'users.id', '=', 'string')
-      .select('name', 'email')
-      .embedAs('author')
-      .build()
-  )
-  .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('name', 'email')
+			.embedAs('author')
+			.build()
+	)
+	.execute();
 
 // Multiple JOINs
 const result = await query_builder
-  .select()
-  .from('posts')
-  .leftJoin(
-    join_builder.from('posts')
-      .join('users', 'left_join')
-      .on('posts.author_id', 'users.id', '=', 'string')
-      .select('name', 'email')
-      .embedAs('author')
-      .build()
-  )
-  .leftJoin(
-    join_builder.from('posts')
-      .join('categories', 'left_join')
-      .on('posts.category_id', 'categories.id', '=', 'string')
-      .select('category_name', 'slug')
-      .embedAs('category')
-      .build()
-  )
-  .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('name', 'email')
+			.embedAs('author')
+			.build()
+	)
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('categories', 'left_join')
+			.on('posts.category_id', 'categories.id', '=', 'string')
+			.select('category_name', 'slug')
+			.embedAs('category')
+			.build()
+	)
+	.execute();
 ```
 
 ## 3.4 ORDER BY
 
 ### 3.4.1 Drizzle ORM
+
 ```typescript
 import { asc, desc } from 'drizzle-orm';
 
 // Single ORDER BY
-const result = await db
-  .select()
-  .from(users)
-  .orderBy(desc(users.createdAt));
+const result = await db.select().from(users).orderBy(desc(users.createdAt));
 
 // Multiple ORDER BY
-const result = await db
-  .select()
-  .from(posts)
-  .orderBy(desc(posts.viewCount), desc(posts.createdAt));
+const result = await db.select().from(posts).orderBy(desc(posts.viewCount), desc(posts.createdAt));
 ```
 
 ### 3.4.2 Our Query Builder
+
 ```typescript
 // Single ORDER BY
 const result = await query_builder
-  .select()
-  .from('users')
-  .orderBy('created_at', false) // false = DESC
-  .execute();
+	.select()
+	.from('users')
+	.orderBy('created_at', false) // false = DESC
+	.execute();
 
 // Multiple ORDER BY
 const result = await query_builder
-  .select()
-  .from('posts')
-  .orderBy('view_count', false)  // DESC
-  .orderBy('created_at', false)  // DESC
-  .execute();
+	.select()
+	.from('posts')
+	.orderBy('view_count', false) // DESC
+	.orderBy('created_at', false) // DESC
+	.execute();
 ```
 
 ## 3.5 Pagination
 
 ### 3.5.1 Drizzle ORM
+
 ```typescript
-const result = await db
-  .select()
-  .from(users)
-  .limit(10)
-  .offset(20);
+const result = await db.select().from(users).limit(10).offset(20);
 ```
 
 ### 3.5.2 Our Query Builder
+
 ```typescript
-const result = await query_builder
-  .select()
-  .from('users')
-  .limit(10)
-  .offset(20)
-  .execute();
+const result = await query_builder.select().from('users').limit(10).offset(20).execute();
 ```
 
 ## 3.6 Key Differences
@@ -1117,17 +1083,19 @@ const result = await query_builder
 ### 3.6.1 Schema Definition
 
 **Drizzle:** Requires explicit schema definition
+
 ```typescript
 import { pgTable, serial, text, varchar } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  name: text('name'),
-  email: varchar('email', { length: 256 })
+	id: serial('id').primaryKey(),
+	name: text('name'),
+	email: varchar('email', { length: 256 })
 });
 ```
 
 **Our Builder:** No schema definition required, works with dynamic table/field names
+
 ```typescript
 // No schema definition needed - just use table and field names directly
 query_builder.select().from('users').execute();
@@ -1136,74 +1104,81 @@ query_builder.select().from('users').execute();
 ### 3.6.2 Type Safety
 
 **Drizzle:** Full TypeScript type inference from schema
+
 ```typescript
 // TypeScript knows the exact shape of the result
 const result: { id: number; name: string }[] = await db
-  .select({ id: users.id, name: users.name })
-  .from(users);
+	.select({ id: users.id, name: users.name })
+	.from(users);
 ```
 
 **Our Builder:** Uses Zod schemas for runtime validation
+
 ```typescript
 import { z } from 'zod';
 
 const UserSchema = z.object({
-  id: z.string(),
-  name: z.string()
+	id: z.string(),
+	name: z.string()
 });
 
 const result = await query_builder
-  .select('id', 'name')
-  .from('users')
-  .withSchema(UserSchema)  // Runtime validation
-  .execute();
+	.select('id', 'name')
+	.from('users')
+	.withSchema(UserSchema) // Runtime validation
+	.execute();
 ```
 
 ### 3.6.3 Data Types
 
 **Drizzle:** Types inferred from schema
+
 ```typescript
 // Type automatically known from schema
-where(eq(users.age, 18))  // age is number
+where(eq(users.age, 18)); // age is number
 ```
 
 **Our Builder:** Explicit data type specification
+
 ```typescript
 // Must specify data type
-where(cond_builder.filter().condEq('age', 18, 'number'))
+where(cond_builder.filter().condEq('age', 18, 'number').build());
 ```
 
 ### 3.6.4 Embedded Objects
 
 **Drizzle:** Flat result structure
+
 ```typescript
 const result = await db
-  .select({
-    postId: posts.id,
-    postTitle: posts.title,
-    authorName: users.name,
-    authorEmail: users.email
-  })
-  .from(posts)
-  .leftJoin(users, eq(posts.authorId, users.id));
+	.select({
+		postId: posts.id,
+		postTitle: posts.title,
+		authorName: users.name,
+		authorEmail: users.email
+	})
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 
 // Result: { postId, postTitle, authorName, authorEmail }
 ```
 
 **Our Builder:** Nested embedded objects
+
 ```typescript
 const result = await query_builder
-  .select()
-  .from('posts')
-  .leftJoin(
-    join_builder.from('posts')
-      .join('users', 'left_join')
-      .on('posts.author_id', 'users.id', '=', 'string')
-      .select('name', 'email')
-      .embedAs('author')  // Creates nested object
-      .build()
-  )
-  .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('name', 'email')
+			.embedAs('author') // Creates nested object
+			.build()
+	)
+	.execute();
 
 // Result: { id, title, author: { name, email } }
 ```
@@ -1211,17 +1186,16 @@ const result = await query_builder
 ### 3.6.5 Query Execution
 
 **Drizzle:** Direct database connection
+
 ```typescript
 const db = drizzle(postgres('connection-string'));
 const result = await db.select().from(users);
 ```
 
 **Our Builder:** Goes through DBStore abstraction
+
 ```typescript
-const result = await query_builder
-  .select()
-  .from('users')
-  .execute();  // Calls db_store.retrieveRecords internally
+const result = await query_builder.select().from('users').execute(); // Calls db_store.retrieveRecords internally
 ```
 
 ## 3.6 Advantages of Our Query Builder
@@ -1243,6 +1217,7 @@ const result = await query_builder
 ## 3.8 When to Use Each
 
 ### 3.8.1 Use Drizzle ORM when:
+
 - You have a fixed schema
 - You want compile-time type safety
 - You need database migrations
@@ -1250,6 +1225,7 @@ const result = await query_builder
 - You control the database structure
 
 ### 3.8.2 Use Our Query Builder when:
+
 - You have dynamic schemas
 - You need flexible runtime validation
 - You want embedded/nested result objects
@@ -1269,14 +1245,12 @@ If you want Drizzle-like syntax but using our builders:
 import { query_builder, cond_builder } from '$lib/stores';
 
 query_builder
-  .select()
-  .from('users')
-  .where(
-    cond_builder.and()
-      .condEq('status', 'active', 'string')
-      .condGt('age', 18, 'number')
-  )
-  .execute();
+	.select()
+	.from('users')
+	.where(
+		cond_builder.and().condEq('status', 'active', 'string').condGt('age', 18, 'number').build()
+	)
+	.execute();
 ```
 
 ## 3.10 Conclusion
@@ -1295,16 +1269,16 @@ import { query_builder, cond_builder, join_builder } from '$lib/stores';
 
 ```typescript
 await query_builder
-  .select('field1', 'field2')  // or .select() for all fields
-  .from('table_name')
-  .execute();
+	.select('field1', 'field2') // or .select() for all fields
+	.from('table_name')
+	.execute();
 ```
 
 ## 4.3 WHERE Conditions
 
 ```typescript
 // Single condition
-.where(cond_builder.filter().condEq('field', 'value'))
+.where(cond_builder.filter().condEq('field', 'value').build())
 
 // AND conditions
 .where(
@@ -1420,25 +1394,27 @@ const EmbedSchema = z.object({
 
 ```typescript
 const result = await query_builder
-  .select()
-  .from('posts')
-  .leftJoin(
-    join_builder.from('posts')
-      .join('users', 'left_join')
-      .on('posts.author_id', 'users.id', '=', 'string')
-      .select('username', 'email')
-      .embedAs('author')
-      .build()
-  )
-  .where(
-    cond_builder.and()
-      .condEq('posts.published', true, 'boolean')
-      .condGt('posts.views', 100, 'number')
-  )
-  .orderBy('posts.created_at', false)
-  .limit(20)
-  .offset(0)
-  .execute();
+	.select()
+	.from('posts')
+	.leftJoin(
+		join_builder
+			.from('posts')
+			.join('users', 'left_join')
+			.on('posts.author_id', 'users.id', '=', 'string')
+			.select('username', 'email')
+			.embedAs('author')
+			.build()
+	)
+	.where(
+		cond_builder
+			.and()
+			.condEq('posts.published', true, 'boolean')
+			.condGt('posts.views', 100, 'number')
+	)
+	.orderBy('posts.created_at', false)
+	.limit(20)
+	.offset(0)
+	.execute();
 ```
 
 ## 4.12 String-based Conditions
@@ -1468,6 +1444,7 @@ The typical order (all optional except `.execute()`):
 ## 4.14 Common Patterns
 
 ### 4.14.1 Search
+
 ```typescript
 .where(
   cond_builder.or()
@@ -1477,6 +1454,7 @@ The typical order (all optional except `.execute()`):
 ```
 
 ### 4.14.2 Date Range
+
 ```typescript
 .where(
   cond_builder.and()
@@ -1486,33 +1464,36 @@ The typical order (all optional except `.execute()`):
 ```
 
 ### 4.14.3 Active Records Only
+
 ```typescript
-.where(cond_builder.filter().condEq('status', 'active'))
+.where(cond_builder.filter().condEq('status', 'active').build())
 ```
 
 ### 4.14.4 Latest First
+
 ```typescript
 .orderBy('created_at', false)  // DESC
 ```
 
 ### 4.14.5 Exclude Deleted
+
 ```typescript
-.where(cond_builder.filter().condNe('deleted', true, 'boolean'))
+.where(cond_builder.filter().condNe('deleted', true, 'boolean').build())
 ```
 
 ## 4.5 Return Type
 
 ```typescript
 interface JimoResponse {
-  status: boolean;
-  error_msg: string;
-  error_code: number;
-  req_id?: string;
-  result_type: string;
-  table_name?: string;
-  num_records: number;
-  results: any;  // Array or object based on result_type
-  loc?: string;
+	status: boolean;
+	error_msg: string;
+	error_code: number;
+	req_id?: string;
+	result_type: string;
+	table_name?: string;
+	num_records: number;
+	results: any; // Array or object based on result_type
+	loc?: string;
 }
 ```
 
@@ -1534,12 +1515,14 @@ This document summarizes the query builder implementation that was added to comp
 ## 5.2 Files Created
 
 ### 5.2.1 Core Implementation
+
 1. **query_builder.ts** - Main query builder implementation
    - `QueryBuilder` class with fluent API
    - `QueryConstructor` for creating instances
    - Global `query_builder` instance
 
 ### 5.2.2 Documentation
+
 2. **README.md** - Comprehensive usage guide
 3. **QUICK_REFERENCE.md** - Quick lookup reference
 4. **DRIZZLE_COMPARISON.md** - Comparison with Drizzle ORM
@@ -1547,10 +1530,12 @@ This document summarizes the query builder implementation that was added to comp
 6. **CHANGELOG.md** - This file
 
 ### 5.2.3 Examples & Tests
+
 7. **query_builder_examples.ts** - 12 example usage patterns
 8. **query_builder.test.ts** - Unit tests for functionality
 
 ### 5.2.4 Integration
+
 9. **index.ts** - Central export point for all builders
 
 ## 5.2 Features Implemented
@@ -1558,41 +1543,50 @@ This document summarizes the query builder implementation that was added to comp
 ### 5.2.1 Query Builder Methods
 
 #### 5.2.1.1 Selection & Source
+
 - `select(...fields)` - Select specific fields or all fields
 - `from(tableName)` - Specify source table
 - `database(dbName)` - Specify database name
 
 #### 5.2.1.2 Filtering
+
 - `where(condition)` - Add WHERE clause using CondDef
 
 #### 5.2.1.3 Joins
+
 - `leftJoin(joinDef)` - Add LEFT JOIN
 - `rightJoin(joinDef)` - Add RIGHT JOIN
 - `innerJoin(joinDef)` - Add INNER JOIN
 - `join(joinDef)` - Add generic JOIN
 
 #### 5.2.1.4 Ordering & Pagination
+
 - `orderBy(field, ascending, dataType)` - Add ORDER BY
 - `orderByMultiple(orderDefs)` - Add multiple ORDER BY
 - `limit(n)` - Set LIMIT
 - `offset(n)` - Set OFFSET
 
 #### 5.2.1.5 Validation
+
 - `withSchema(schema)` - Set Zod schema for record validation
 - `withEmbedSchema(name, schema)` - Set Zod schema for embedded objects
 
 #### 5.2.1.6 Metadata
+
 - `fieldDefs(defs)` - Set field definitions
 - `location(loc)` - Set location identifier for debugging
 
 #### 5.2.1.7 Execution
+
 - `execute()` - Execute query via DBStore::retrieveRecords()
 - `reset()` - Reset builder to initial state for reuse
 
 ## 5.3 Design Principles
 
 ### 5.3.1. Drizzle-Inspired API
+
 The API design takes inspiration from Drizzle ORM's fluent interface:
+
 ```typescript
 // Similar to Drizzle's style
 query_builder
@@ -1603,21 +1597,27 @@ query_builder
 ```
 
 ### 5.3.2. Integration with Existing Builders
+
 Works seamlessly with existing builders:
+
 ```typescript
-.where(cond_builder.and().condEq(...))  // Uses cond_builder
+.where(cond_builder.and().condEq(...).build())  // Uses cond_builder
 .leftJoin(join_builder.from(...).build())  // Uses join_builder
 ```
 
 ### 5.3.3. Type Safety via Zod
+
 Runtime type validation using Zod schemas:
+
 ```typescript
 .withSchema(UserSchema)
 .withEmbedSchema('profile', ProfileSchema)
 ```
 
 ### 5.3.4. Fluent Method Chaining
+
 All methods return `this` for chainability:
+
 ```typescript
 query_builder
   .select()
@@ -1629,6 +1629,7 @@ query_builder
 ```
 
 ### 5.3.5. Conversion to DBStore Call
+
 The `.execute()` method converts the builder state to a `db_store.retrieveRecords()` call with all appropriate parameters.
 
 ## 5.4 Examples Provided
@@ -1649,7 +1650,9 @@ The `.execute()` method converts the builder state to a `db_store.retrieveRecord
 ## 5.5 Integration Points
 
 ### 5.5.1 DBStore
+
 Calls `db_store.retrieveRecords()` with:
+
 - Database name
 - Table name
 - Field names (from SELECT)
@@ -1662,14 +1665,18 @@ Calls `db_store.retrieveRecords()` with:
 - Pagination parameters
 
 ### 5.5.2 Condition Builder
+
 Uses `cond_builder` for WHERE clauses:
+
 - `cond_builder.and()` - AND conditions
 - `cond_builder.or()` - OR conditions
 - `cond_builder.filter()` - Single condition
 - `cond_builder.null()` - No condition
 
 ### 5.5.3 Join Builder
+
 Uses `join_builder` for JOIN operations:
+
 - `join_builder.from(table).join(other).on(...).build()`
 - Returns `JoinDef` objects
 - Supports embedding with `embedAs()`
@@ -1677,6 +1684,7 @@ Uses `join_builder` for JOIN operations:
 ## 5.4 Type Definitions Used
 
 From `CommonTypes.ts`:
+
 - `CondDef` - Condition definitions
 - `JoinDef` - Join definitions
 - `OrderbyDef` - Order by definitions
@@ -1685,34 +1693,33 @@ From `CommonTypes.ts`:
 ## 5.5 Advantages Over Direct DBStore Calls
 
 ### 5.5.1 Before (Direct DBStore)
+
 ```typescript
 await db_store.retrieveRecords(
-  '',                    // db_name
-  'users',              // table_name
-  ['id', 'name'],       // field_names
-  [],                   // field_defs
-  'loc',                // loc
-  cond,                 // conds
-  [],                   // join_def
-  [],                   // orderby_def
-  null,                 // record_schema
-  '',                   // embed_name
-  null,                 // embed_schema
-  0,                    // start
-  100                   // num_records
+	'', // db_name
+	'users', // table_name
+	['id', 'name'], // field_names
+	[], // field_defs
+	'loc', // loc
+	cond, // conds
+	[], // join_def
+	[], // orderby_def
+	null, // record_schema
+	'', // embed_name
+	null, // embed_schema
+	0, // start
+	100 // num_records
 );
 ```
 
 ### 5.5.2 After (Query Builder)
+
 ```typescript
-await query_builder
-  .select('id', 'name')
-  .from('users')
-  .where(cond)
-  .execute();
+await query_builder.select('id', 'name').from('users').where(cond).execute();
 ```
 
 Benefits:
+
 - More readable and maintainable
 - Self-documenting code
 - Type-safe method chaining
@@ -1729,6 +1736,7 @@ Benefits:
 ## 5.7 Future Enhancements
 
 Potential additions:
+
 1. **Delete Builder** - Complete delete_builder.ts implementation
 2. **Aggregate Functions** - COUNT, SUM, AVG, etc.
 3. **GROUP BY** - Grouping support
@@ -1743,6 +1751,7 @@ Potential additions:
 ## 5.8 Testing
 
 Included tests verify:
+
 - Basic query structure
 - WHERE clause construction
 - JOIN construction
@@ -1753,6 +1762,7 @@ Included tests verify:
 - Multiple joins
 
 Run tests:
+
 ```typescript
 import { runAllTests } from '$lib/stores/query_builder.test';
 runAllTests();
@@ -1772,15 +1782,19 @@ runAllTests();
 ## 5.10 Developer Experience
 
 ### 5.10.1 Import Once, Use Everywhere
+
 ```typescript
 import { query_builder, cond_builder, join_builder } from '$lib/stores';
 ```
 
 ### 5.10.2 IntelliSense Support
+
 All methods have JSDoc comments for editor autocomplete
 
 ### 5.10.3 Error Messages
+
 Location identifiers help trace errors:
+
 ```typescript
 .location('UserList.loadUsers')
 ```
@@ -1792,6 +1806,7 @@ The query builder provides a modern, type-safe, fluent API for database queries 
 # 6 Query Builder - To-Do List
 
 ## 6.1 Create Custom Filters
+
 1. Let users create custom query_name
 2. Need to support the ternary operator. When the condition is not true, it is 'undefined', which will not generate the condition at all.
 
@@ -1800,20 +1815,19 @@ Source: https://orm.drizzle.team/docs/guides/conditional-filters-in-query
 ```typescript
 // length less than
 const lenlt = (column: AnyColumn, value: number) => {
-  return sql`length(${column}) < ${value}`;
+	return sql`length(${column}) < ${value}`;
 };
 const searchPosts = async (maxLen = 0, views = 0) => {
-  await db
-    .select()
-    .from(posts)
-    .where(
-      and(
-        maxLen ? lenlt(posts.title, maxLen) : undefined,
-        views > 100 ? gt(posts.views, views) : undefined,
-      ),
-    );
+	await db
+		.select()
+		.from(posts)
+		.where(
+			and(
+				maxLen ? lenlt(posts.title, maxLen) : undefined,
+				views > 100 ? gt(posts.views, views) : undefined
+			)
+		);
 };
 await searchPosts(8);
 await searchPosts(8, 200);
 ```
-

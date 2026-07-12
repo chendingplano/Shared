@@ -2,13 +2,17 @@ package llm
 
 import (
 	"context"
-	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-var captureLogger = slog.Default()
+// fallbackCaptureLogger is only built if a caller passes a nil logger.
+var fallbackCaptureLogger = sync.OnceValue(func() ApiTypes.JimoLogger {
+	return loggerutil.CreateDefaultLogger("MID-20260712-01")
+})
 
 type UsageCaptureSink interface {
 	Capture(ctx context.Context, record UsageCaptureRecord) error
@@ -131,6 +135,9 @@ func captureUsageRecord(
 	req Request, 
 	in UsageCaptureInput,
 	logger ApiTypes.JimoLogger) {
+	if logger == nil {
+		logger = fallbackCaptureLogger()
+	}
 	if in.RecordID == 0 {
 		in.RecordID = req.RecordID
 	}

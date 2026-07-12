@@ -44,10 +44,10 @@ func (e *ProviderError) Unwrap() error { return e.Err }
 
 // NewClient dispatches to the correct adapter based on cfg.ID.
 //
-// For Slice 1 of the Prompt Optimizer feature, OpenAI and OpenAI-compatible
-// return fully-working clients. Anthropic and Gemini return a client whose
-// Complete / Stream methods return ErrAdapterNotImplemented — this keeps the
-// factory exhaustive so later slices are purely additive.
+// OpenAI, OpenAI-compatible, and Anthropic return fully-working clients.
+// Gemini returns a client whose Complete / Stream methods return
+// ErrAdapterNotImplemented — this keeps the factory exhaustive so later
+// adapters are purely additive.
 func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("%w (provider=%s)", ErrMissingAPIKey, cfg.ID)
@@ -57,12 +57,12 @@ func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 	}
 	switch cfg.ID {
 	case ProviderOpenAI:
-		return newOpenAIClient(cfg, "https://api.openai.com"), nil
+		return newOpenAIClient(cfg, "https://api.openai.com", logger), nil
 	case ProviderOpenAICompatible:
 		if cfg.BaseURL == "" {
 			return nil, ErrMissingBaseURL
 		}
-		return newOpenAIClient(cfg, cfg.BaseURL), nil
+		return newOpenAIClient(cfg, cfg.BaseURL, logger), nil
 	case ProviderAnthropic:
 		return newAnthropicClient(cfg, logger), nil
 	case ProviderGemini:

@@ -91,7 +91,7 @@ printf '{"page":1,"text":"hello"}' > "$out_dir/page_1.json"
 		t.Fatalf("NewService failed: %v", err)
 	}
 
-	rows := sqlmock.NewRows([]string{"id", "file_name", "status"}).AddRow(int64(1001), pdfName, "[]")
+	rows := sqlmock.NewRows([]string{"id", "name", "file_name", "status"}).AddRow(int64(1001), pdfName, pdfName, "[]")
 	mock.ExpectQuery(regexp.QuoteMeta(svc.queryPendingSQL)).WithArgs(10).WillReturnRows(rows)
 	mock.ExpectExec(regexp.QuoteMeta(svc.updateSuccessSQL)).
 		WithArgs(sqlmock.AnyArg(), "ocr_rslt_1001.json", sqlmock.AnyArg(), sqlmock.AnyArg(), int64(1001)).

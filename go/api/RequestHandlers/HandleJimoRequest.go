@@ -371,11 +371,11 @@ func HandleDBQuery(
 		for i, orderby_def := range orderby_defs {
 			var direction = "DESC"
 			if orderby_def.IsAsc {
-				direction = "ASCE"
+				direction = "ASC"
 			}
-			var bb = fmt.Sprintf("ORDER BY %s %s", orderby_def.FieldName, direction)
+			var bb = fmt.Sprintf("%s %s", orderby_def.FieldName, direction)
 			if i == 0 {
-				orderby_str = bb
+				orderby_str = "ORDER BY " + bb
 			} else {
 				orderby_str += ", " + bb
 			}

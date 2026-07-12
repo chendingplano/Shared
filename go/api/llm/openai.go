@@ -23,8 +23,8 @@ type openaiClient struct {
 	logger  ApiTypes.JimoLogger
 }
 
-func newOpenAIClient(cfg ProviderConfig, baseURL string) *openaiClient {
-	return &openaiClient{cfg: cfg, baseURL: strings.TrimRight(baseURL, "/")}
+func newOpenAIClient(cfg ProviderConfig, baseURL string, logger ApiTypes.JimoLogger) *openaiClient {
+	return &openaiClient{cfg: cfg, baseURL: strings.TrimRight(baseURL, "/"), logger: logger}
 }
 
 type oaRequestBody struct {
