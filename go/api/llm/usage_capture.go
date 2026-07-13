@@ -2,17 +2,13 @@ package llm
 
 import (
 	"context"
-	"sync"
+	"log/slog"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
-	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-// fallbackCaptureLogger is only built if a caller passes a nil logger.
-var fallbackCaptureLogger = sync.OnceValue(func() ApiTypes.JimoLogger {
-	return loggerutil.CreateDefaultLogger("MID-20260712-01")
-})
+var captureLogger = slog.Default()
 
 type UsageCaptureSink interface {
 	Capture(ctx context.Context, record UsageCaptureRecord) error
@@ -130,14 +126,33 @@ func EnsurePromptName(promptName, callReason, callLoc, modelName string) string 
 	return "missing_prompt_name"
 }
 
+func promptWarningLogFields(in UsageCaptureInput) []any {
+	fields := []any{
+		"provider", string(in.Provider),
+		"model", in.ModelName,
+		"call_reason", in.CallReason,
+		"call_loc", in.CallLoc,
+	}
+	if in.Metadata == nil {
+		return fields
+	}
+	if promptRef, ok := in.Metadata["prompt_ref"]; ok {
+		fields = append(fields, "prompt_ref", promptRef)
+	}
+	if promptEnvVar, ok := in.Metadata["prompt_dir_env_var"]; ok {
+		fields = append(fields, "prompt_dir_env_var", promptEnvVar)
+	}
+	if promptDir, ok := in.Metadata["prompt_dir"]; ok {
+		fields = append(fields, "prompt_dir", promptDir)
+	}
+	return fields
+}
+
 func captureUsageRecord(
 	ctx context.Context, 
 	req Request, 
 	in UsageCaptureInput,
 	logger ApiTypes.JimoLogger) {
-	if logger == nil {
-		logger = fallbackCaptureLogger()
-	}
 	if in.RecordID == 0 {
 		in.RecordID = req.RecordID
 	}
@@ -155,10 +170,7 @@ func captureUsageRecord(
 	}
 	if in.PromptName == "" {
 		logger.Warn("(MID-20260710-01) llm usage event missing mandatory prompt_name",
-			"provider", string(in.Provider),
-			"model", in.ModelName,
-			"call_reason", in.CallReason,
-			"call_loc", in.CallLoc)
+			promptWarningLogFields(in)...)
 	}
 	if in.CallReason == "" || in.CallLoc == "" {
 		logger.Warn("(MID-20260708-02) llm usage event missing mandatory call_reason/call_loc",

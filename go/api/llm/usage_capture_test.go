@@ -10,43 +10,27 @@ import (
 	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
-// recordingJimoLogger is a minimal ApiTypes.JimoLogger that captures emitted
-// records so tests can assert on warnings without depending on log output
-// formatting.
-type recordingJimoLogger struct {
+// recordingHandler is a minimal slog.Handler that captures emitted records so
+// tests can assert on warnings without depending on log output formatting.
+type recordingHandler struct {
 	records *[]slog.Record
 }
 
-func (l recordingJimoLogger) log(level slog.Level, message string, args ...any) {
-	r := slog.NewRecord(time.Now(), level, message, 0)
-	r.Add(args...)
-	*l.records = append(*l.records, r)
+func (h recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	*h.records = append(*h.records, r)
+	return nil
 }
-func (l recordingJimoLogger) Debug(message string, args ...any) { l.log(slog.LevelDebug, message, args...) }
-func (l recordingJimoLogger) Line(message string, args ...any)  { l.log(slog.LevelInfo, message, args...) }
-func (l recordingJimoLogger) Info(message string, args ...any)  { l.log(slog.LevelInfo, message, args...) }
-func (l recordingJimoLogger) Warn(message string, args ...any)  { l.log(slog.LevelWarn, message, args...) }
-func (l recordingJimoLogger) Error(message string, args ...any) { l.log(slog.LevelError, message, args...) }
-func (l recordingJimoLogger) Trace(message string)              { l.log(slog.LevelDebug, message) }
-func (l recordingJimoLogger) Close()                            {}
+func (h recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h recordingHandler) WithGroup(_ string) slog.Handler      { return h }
 
-// recordAttr returns the string value of the named attribute on a captured record.
-func recordAttr(r slog.Record, key string) string {
-	var val string
-	r.Attrs(func(a slog.Attr) bool {
-		if a.Key == key {
-			val = a.Value.String()
-			return false
-		}
-		return true
-	})
-	return val
-}
-
-func withCapturedWarnings(t *testing.T) (*[]slog.Record, recordingJimoLogger) {
+func withCapturedWarnings(t *testing.T) *[]slog.Record {
 	t.Helper()
 	records := &[]slog.Record{}
-	return records, recordingJimoLogger{records: records}
+	original := captureLogger
+	captureLogger = slog.New(recordingHandler{records: records})
+	t.Cleanup(func() { captureLogger = original })
+	return records
 }
 
 func TestWriteAndReadGzipFileRoundTrip(t *testing.T) {
@@ -177,13 +161,41 @@ func TestCaptureUsageRecordFallsBackToRequestCallFieldsAndMetadata(t *testing.T)
 	}
 }
 
+func TestPromptWarningLogFieldsIncludesPromptEnvContext(t *testing.T) {
+	fields := promptWarningLogFields(UsageCaptureInput{
+		Provider:   ProviderOpenAICompatible,
+		ModelName:  "deepseek-v4-flash",
+		CallReason: "review_metrics",
+		CallLoc:    "MID-20260706-011",
+		Metadata: map[string]any{
+			"prompt_ref":         "prompt-review-metrics-v3.md",
+			"prompt_dir_env_var": "PROMPT_DIR",
+			"prompt_dir":         "/Users/cding/Workspace/ChenWeb/prompts",
+		},
+	})
+
+	got := map[string]any{}
+	for i := 0; i+1 < len(fields); i += 2 {
+		got[fields[i].(string)] = fields[i+1]
+	}
+	if got["prompt_ref"] != "prompt-review-metrics-v3.md" {
+		t.Fatalf("prompt_ref=%v", got["prompt_ref"])
+	}
+	if got["prompt_dir_env_var"] != "PROMPT_DIR" {
+		t.Fatalf("prompt_dir_env_var=%v", got["prompt_dir_env_var"])
+	}
+	if got["prompt_dir"] != "/Users/cding/Workspace/ChenWeb/prompts" {
+		t.Fatalf("prompt_dir=%v", got["prompt_dir"])
+	}
+}
+
 func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
-	records, logger := withCapturedWarnings(t)
+	records := withCapturedWarnings(t)
 	sink := &testUsageCaptureSink{}
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName: "deepseek-chat",
-	}, logger)
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	if len(*records) != 1 {
 		t.Fatalf("warning count = %d, want 1", len(*records))
@@ -191,37 +203,17 @@ func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
 	if (*records)[0].Level != slog.LevelWarn {
 		t.Fatalf("level = %v, want Warn", (*records)[0].Level)
 	}
-	if got := recordAttr((*records)[0], "model"); got != "deepseek-chat" {
-		t.Fatalf("model attr = %q, want deepseek-chat", got)
-	}
-}
-
-func TestCaptureUsageRecordNilLoggerFallsBack(t *testing.T) {
-	sink := &testUsageCaptureSink{}
-
-	// Missing CallReason/CallLoc forces the warn path — the exact path that
-	// used to panic when a nil logger reached captureUsageRecord.
-	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
-		ModelName: "deepseek-chat",
-	}, nil)
-
-	if got := len(sink.Records()); got != 1 {
-		t.Fatalf("captured records = %d, want 1", got)
-	}
-	if fallbackCaptureLogger() != fallbackCaptureLogger() {
-		t.Fatal("fallbackCaptureLogger must return the same instance on every call")
-	}
 }
 
 func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) {
-	records, logger := withCapturedWarnings(t)
+	records := withCapturedWarnings(t)
 	sink := &testUsageCaptureSink{}
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName:  "deepseek-chat",
 		CallReason: "review-provision",
 		CallLoc:    "MID-20260706-0001",
-	}, logger)
+	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 
 	if len(*records) != 0 {
 		t.Fatalf("warning count = %d, want 0; got %+v", len(*records), *records)

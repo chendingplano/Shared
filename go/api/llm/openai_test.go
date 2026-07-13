@@ -172,6 +172,40 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 	}
 }
 
+func TestOpenAICompleteMissingPromptNameDoesNotPanic(t *testing.T) {
+	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "id":"req_missing_prompt","object":"chat.completion","model":"deepseek-v4-flash",
+		  "choices":[{"index":0,"message":{"role":"assistant","content":"hello world"},"finish_reason":"stop"}],
+		  "usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11}
+		}`))
+	})
+
+	c, err := NewClient(ProviderConfig{
+		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
+	}, loggerutil.CreateDefaultLogger("MID-20260712-01"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Complete panicked with missing PromptName: %v", r)
+		}
+	}()
+
+	_, err = c.Complete(context.Background(), Request{
+		Model:      "deepseek-v4-flash",
+		CallReason: "review_metrics",
+		CallLoc:    "MID-20260706-011",
+		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+}
+
 func TestOpenAICompleteCapturesUsageRecordOnProviderError(t *testing.T) {
 	sink := &testUsageCaptureSink{}
 	s := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
