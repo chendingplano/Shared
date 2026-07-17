@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,11 +19,11 @@ type testUsageCaptureSink struct {
 	records []UsageCaptureRecord
 }
 
-func (s *testUsageCaptureSink) Capture(_ context.Context, record UsageCaptureRecord) error {
+func (s *testUsageCaptureSink) Capture(_ context.Context, record UsageCaptureRecord) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.records = append(s.records, record)
-	return nil
+	return fmt.Sprintf("test-event-%d", len(s.records)), nil
 }
 
 func (s *testUsageCaptureSink) Records() []UsageCaptureRecord {

@@ -94,6 +94,12 @@ type Usage struct {
 	TotalTokens           int
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
+	// EventID is the public.llm_usage_event.id row this call was persisted as
+	// (empty when the capture sink is unset or the row was not persisted).
+	EventID string
+	// EventIDs collects EventID across every call folded into an aggregated
+	// Usage (e.g. a multi-turn tool-use conversation); unused on a per-call Usage.
+	EventIDs []string
 }
 
 // Request describes one inference call.
@@ -101,6 +107,7 @@ type Request struct {
 	Model       string
 	PromptName  string
 	RecordID    int64
+	RunID       int64
 	CallReason  string
 	CallLoc     string
 	Metadata    map[string]any

@@ -25,6 +25,7 @@ type JSONExtractionInput struct {
 	InputText     string
 	DocumentFirst bool
 	RecordID      int64
+	RunID         int64
 	CallReason    string
 	CallLoc       string
 	Metadata      map[string]any
@@ -78,7 +79,7 @@ func (c *OpenAIJSONClient) LastJSONUsage() *Usage {
 	return &usage
 }
 
-func (c *OpenAIJSONClient) setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens int) {
+func (c *OpenAIJSONClient) setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens int, eventID string) {
 	if c == nil {
 		return
 	}
@@ -89,6 +90,7 @@ func (c *OpenAIJSONClient) setLastJSONUsage(inputTokens, outputTokens, cacheHitT
 		TotalTokens:           inputTokens + outputTokens,
 		PromptCacheHitTokens:  cacheHitTokens,
 		PromptCacheMissTokens: cacheMissTokens,
+		EventID:               eventID,
 	}
 	c.usageMu.Unlock()
 }
@@ -311,8 +313,8 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
 	providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
-	c.setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens)
-	c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, nil)
+	eventID := c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, nil)
+	c.setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, eventID)
 	return content, nil
 }
 
@@ -329,12 +331,12 @@ func (c *OpenAIJSONClient) captureUsage(
 	outputTokens,
 	cacheHitTokens,
 	cacheMissTokens int,
-	err error) {
+	err error) string {
 	errorMessage := ""
 	if err != nil {
 		errorMessage = err.Error()
 	}
-	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
+	eventID := captureUsageRecord(ctx, Request{}, UsageCaptureInput{
 		AccountID:             strings.TrimSpace(c.AccountID),
 		ProfileID:             strings.TrimSpace(c.ProfileID),
 		ProfileName:           strings.TrimSpace(c.ProfileName),
@@ -354,11 +356,13 @@ func (c *OpenAIJSONClient) captureUsage(
 		OutputBody:            outputBody,
 		ErrorMessage:          errorMessage,
 		RecordID:              in.RecordID,
+		RunID:                 in.RunID,
 		CallReason:            strings.TrimSpace(in.CallReason),
 		CallLoc:               strings.TrimSpace(in.CallLoc),
 		Metadata:              in.Metadata,
 	}, c.logger)
 	_ = outputContent
+	return eventID
 }
 
 func parseOpenAIUsageMetadata(respBody []byte) (providerRequestID string, inputTokens int, outputTokens int, cacheHitTokens int, cacheMissTokens int) {

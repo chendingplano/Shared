@@ -103,12 +103,23 @@ type KratosErrorResponse struct {
 func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 	cookies := c.Request().Header.Get("Cookie")
 	ctx := context.Background()
+	k.logger.Info("ValidateSession: incoming cookie names",
+		"path", c.Request().URL.Path,
+		"cookie_names", cookieNamesPresent(cookies))
 
 	// --- Attempt 1: browser-flow cookies only (no X-Session-Token) ---
 	if cookies != "" {
 		req := k.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
 		session, resp, err := req.Execute()
 		if err == nil {
+			email := ""
+			if session.Identity != nil {
+				email = extractIdentityInfo(session.Identity).Email
+			}
+			k.logger.Info("ValidateSession: resolved via ory_kratos_session cookie (Attempt 1)",
+				"path", c.Request().URL.Path,
+				"email", email,
+				"session_id", session.Id)
 			return session, nil
 		}
 		// 403 means session exists but needs AAL2 — surface that immediately
@@ -132,6 +143,14 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 		req := k.client.FrontendAPI.ToSession(ctx).XSessionToken(sessionToken)
 		session, resp, err := req.Execute()
 		if err == nil {
+			email := ""
+			if session.Identity != nil {
+				email = extractIdentityInfo(session.Identity).Email
+			}
+			k.logger.Info("ValidateSession: resolved via session_token (Attempt 2)",
+				"path", c.Request().URL.Path,
+				"email", email,
+				"session_id", session.Id)
 			return session, nil
 		}
 		if resp != nil && resp.StatusCode == http.StatusForbidden {
@@ -393,6 +412,26 @@ func HandleEmailLoginKratosBase(
 		"aal", sessionAAL,
 		"session_id", session.Id)
 
+	// A stale "ory_kratos_session" cookie from an earlier browser-flow login
+	// (e.g. Google OIDC) may still be present and still valid. ValidateSession()
+	// checks that cookie before "session_token", so leaving it in place would
+	// silently keep authenticating requests as the old identity instead of the
+	// one that just logged in here. Domain MUST match how Kratos itself set it
+	// (see sessionCookieDomain doc) or this Set-Cookie creates a separate,
+	// harmless-looking entry instead of overwriting the stale one.
+	logger.Info("Clearing stale ory_kratos_session cookie after native login",
+		"incoming_cookie_names", cookieNamesPresent(c.Request().Header.Get("Cookie")),
+		"clear_domain", sessionCookieDomain())
+	c.SetCookie(&http.Cookie{
+		Name:     "ory_kratos_session",
+		Value:    "",
+		Path:     "/",
+		Domain:   sessionCookieDomain(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   shouldUseSecureCookies(c),
+	})
+
 	// Extract user info from Kratos identity
 	var email, firstName, lastName string
 	// Check for admin/owner in metadata
@@ -601,7 +640,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 	// Validate session with Kratos
 	session, err := kratosClient.ValidateSession(c)
 	if err != nil {
-		logger.Warn("user not logged in", "error", err)
+		logger.Info("+++++ user not logged in", "error", err)
 		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"authenticated": false,
 			"message":       "No valid session",
@@ -755,15 +794,23 @@ func HandleLogoutKratos(c echo.Context) error {
 	})
 }
 
-// clearSessionCookies clears all session-related cookies
+// clearSessionCookies clears all session-related cookies.
+// "ory_kratos_session" needs its Domain attribute to match how Kratos itself
+// set it (see sessionCookieDomain doc); "session_id"/"session_token" are set
+// host-only (no Domain) by this backend, so they're cleared the same way.
 func clearSessionCookies(c echo.Context) {
 	secure := shouldUseSecureCookies(c)
-	cookiesToClear := []string{"session_id", "session_token", "ory_kratos_session"}
-	for _, name := range cookiesToClear {
+	cookieDomains := map[string]string{
+		"session_id":         "",
+		"session_token":      "",
+		"ory_kratos_session": sessionCookieDomain(),
+	}
+	for name, domain := range cookieDomains {
 		cookie := &http.Cookie{
 			Name:     name,
 			Value:    "",
 			Path:     "/",
+			Domain:   domain,
 			MaxAge:   -1,
 			HttpOnly: true,
 			Secure:   secure,
@@ -946,6 +993,49 @@ func setSessionTokenCookie(c echo.Context, sessionToken string) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// sessionCookieDomain returns the Domain attribute to use when setting or
+// clearing the "ory_kratos_session" cookie, derived from APP_BASE_URL.
+//
+// This MUST match Kratos's own session.cookie.domain (SESSION_COOKIE_DOMAIN
+// env var on the Kratos side) exactly. A Set-Cookie with a different Domain
+// attribute (including a missing one, which browsers treat as host-only and
+// distinct from a domain-scoped cookie of the same name) does NOT overwrite
+// the original cookie — the browser ends up holding both, and the stale one
+// keeps being sent. Returns "" for localhost/unset so cookies stay host-only
+// in local dev, matching how they're set there.
+func sessionCookieDomain() string {
+	base := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+	if base == "" {
+		return ""
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	host := parsed.Hostname()
+	if host == "" || host == "localhost" || host == "127.0.0.1" {
+		return ""
+	}
+	return host
+}
+
+// cookieNamesPresent extracts just the cookie names (not values) from a raw
+// Cookie header, for diagnostic logging without leaking session credentials.
+func cookieNamesPresent(cookieHeader string) []string {
+	if cookieHeader == "" {
+		return nil
+	}
+	parts := strings.Split(cookieHeader, ";")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		name, _, found := strings.Cut(strings.TrimSpace(p), "=")
+		if found && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // shouldUseSecureCookies returns whether auth cookies should be marked Secure.
@@ -1553,6 +1643,9 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	cookies := req.Header.Get("Cookie")
 	sessionToken := req.Header.Get("X-Session-Token")
 	ctx := context.Background()
+	logger.Info("IsAuthenticatedKratosFromRC: incoming cookie names",
+		"path", req.URL.Path,
+		"cookie_names", cookieNamesPresent(cookies))
 
 	// Attempt 1: validate via browser cookies only.
 	// Do not send X-Session-Token in this request because Kratos prioritizes it
@@ -1561,6 +1654,14 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		cookieReq := kratosClient.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
 		session, _, err := cookieReq.Execute()
 		if err == nil {
+			email := ""
+			if session.Identity != nil {
+				email = extractIdentityInfo(session.Identity).Email
+			}
+			logger.Info("IsAuthenticatedKratosFromRC: resolved via ory_kratos_session cookie (Attempt 1)",
+				"path", req.URL.Path,
+				"email", email,
+				"session_id", session.Id)
 			return buildUserInfoFromKratosSession(logger, session)
 		}
 		logger.Debug("Kratos cookie-based session validation failed (RC), falling back to session token", "error", err)
@@ -1589,6 +1690,12 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		return nil, err
 	}
 
+	if session.Identity != nil {
+		logger.Info("IsAuthenticatedKratosFromRC: resolved via session_token (Attempt 2)",
+			"path", req.URL.Path,
+			"email", extractIdentityInfo(session.Identity).Email,
+			"session_id", session.Id)
+	}
 	return buildUserInfoFromKratosSession(logger, session)
 }
 

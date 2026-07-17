@@ -11,7 +11,9 @@ import (
 var captureLogger = slog.Default()
 
 type UsageCaptureSink interface {
-	Capture(ctx context.Context, record UsageCaptureRecord) error
+	// Capture persists one llm_usage_event row and returns its id (empty on
+	// failure or when the sink does not persist, e.g. no DB configured).
+	Capture(ctx context.Context, record UsageCaptureRecord) (string, error)
 }
 
 var DefaultUsageCaptureSink UsageCaptureSink
@@ -46,6 +48,7 @@ type UsageCaptureInput struct {
 	InputBody             []byte
 	OutputBody            []byte
 	RecordID              int64
+	RunID                 int64
 	CallReason            string
 	CallLoc               string
 	Metadata              map[string]any
@@ -74,6 +77,7 @@ type UsageCaptureRecord struct {
 	InputBody             []byte
 	OutputBody            []byte
 	RecordID              int64
+	RunID                 int64
 	CallReason            string
 	CallLoc               string
 	Metadata              map[string]any
@@ -104,6 +108,7 @@ func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 		InputBody:             in.InputBody,
 		OutputBody:            in.OutputBody,
 		RecordID:              in.RecordID,
+		RunID:                 in.RunID,
 		CallReason:            in.CallReason,
 		CallLoc:               in.CallLoc,
 		Metadata:              in.Metadata,
@@ -149,12 +154,15 @@ func promptWarningLogFields(in UsageCaptureInput) []any {
 }
 
 func captureUsageRecord(
-	ctx context.Context, 
-	req Request, 
+	ctx context.Context,
+	req Request,
 	in UsageCaptureInput,
-	logger ApiTypes.JimoLogger) {
+	logger ApiTypes.JimoLogger) string {
 	if in.RecordID == 0 {
 		in.RecordID = req.RecordID
+	}
+	if in.RunID == 0 {
+		in.RunID = req.RunID
 	}
 	if in.CallReason == "" {
 		in.CallReason = req.CallReason
@@ -184,13 +192,15 @@ func captureUsageRecord(
 		sink = req.Capture.Sink
 	}
 	if sink == nil {
-		return
+		return ""
 	}
-	if err := sink.Capture(ctx, NewUsageCaptureRecord(in)); err != nil {
-		logger.Error("llm usage capture failed", 
+	eventID, err := sink.Capture(ctx, NewUsageCaptureRecord(in))
+	if err != nil {
+		logger.Error("llm usage capture failed",
 			"error", err,
-			"provider", string(in.Provider), 
-			"model", in.ModelName, 
+			"provider", string(in.Provider),
+			"model", in.ModelName,
 			"call_loc", in.CallLoc)
 	}
+	return eventID
 }

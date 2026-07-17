@@ -267,6 +267,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
@@ -290,6 +291,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
@@ -310,6 +312,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      string(raw),
@@ -336,6 +339,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
@@ -367,7 +371,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 	}
 
 	usage := out.Usage
-	captureUsageRecord(ctx, req, UsageCaptureInput{
+	eventID := captureUsageRecord(ctx, req, UsageCaptureInput{
 		AccountID:             captureAccountID(req),
 		ProfileID:             captureProfileID(req),
 		Provider:              c.cfg.ID,
@@ -383,6 +387,12 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 		InputBody:             payload,
 		OutputBody:            raw,
 	}, c.logger)
+	if eventID != "" {
+		if out.Usage == nil {
+			out.Usage = &Usage{}
+		}
+		out.Usage.EventID = eventID
+	}
 	return out, nil
 }
 
@@ -410,6 +420,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      err.Error(),
@@ -433,6 +444,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			ErrorMessage:      string(body),
@@ -632,6 +644,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 			RecordID:              req.RecordID,
 			CallReason:            req.CallReason,
 			CallLoc:               req.CallLoc,
+			RunID:                 req.RunID,
 			RequestStartedAt:      startedAt,
 			RequestFinishedAt:     time.Now().UTC(),
 			InputTokens:           finalUsage.InputTokens,

@@ -222,6 +222,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, Err: err}
 	}
@@ -247,6 +248,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 		}, c.logger)
 		return nil, &ProviderError{Provider: ProviderOpenAI, Model: req.Model, HTTPStatus: resp.StatusCode, Err: err}
 	}
@@ -270,6 +272,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
@@ -298,6 +301,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 		}, c.logger)
 		return nil, &ProviderError{
 			Provider: ProviderOpenAI, Model: req.Model,
@@ -322,7 +326,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
 		}
 	}
-	captureUsageRecord(ctx, req, UsageCaptureInput{
+	eventID := captureUsageRecord(ctx, req, UsageCaptureInput{
 		AccountID:             captureAccountID(req),
 		ProfileID:             captureProfileID(req),
 		Provider:              c.captureProvider(),
@@ -334,6 +338,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		RecordID:              req.RecordID,
 		CallReason:            req.CallReason,
 		CallLoc:               req.CallLoc,
+		RunID:                 req.RunID,
 		RequestStartedAt:      startedAt,
 		RequestFinishedAt:     time.Now().UTC(),
 		InputTokens:           usageInputTokens(out.Usage),
@@ -346,6 +351,12 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 		InputBody:             payload,
 		OutputBody:            raw,
 	}, c.logger)
+	if eventID != "" {
+		if out.Usage == nil {
+			out.Usage = &Usage{}
+		}
+		out.Usage.EventID = eventID
+	}
 	return out, nil
 }
 
@@ -374,6 +385,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			InputBodyRef:      captureInputBodyRef(req),
@@ -399,6 +411,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			RecordID:          req.RecordID,
 			CallReason:        req.CallReason,
 			CallLoc:           req.CallLoc,
+			RunID:             req.RunID,
 			RequestStartedAt:  startedAt,
 			RequestFinishedAt: time.Now().UTC(),
 			InputBodyRef:      captureInputBodyRef(req),
@@ -432,6 +445,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 				RecordID:              req.RecordID,
 				CallReason:            req.CallReason,
 				CallLoc:               req.CallLoc,
+				RunID:                 req.RunID,
 				RequestStartedAt:      startedAt,
 				RequestFinishedAt:     time.Now().UTC(),
 				InputTokens:           usageInputTokens(lastUsage),
@@ -590,6 +604,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			RecordID:              req.RecordID,
 			CallReason:            req.CallReason,
 			CallLoc:               req.CallLoc,
+			RunID:                 req.RunID,
 			RequestStartedAt:      startedAt,
 			RequestFinishedAt:     time.Now().UTC(),
 			InputTokens:           usageInputTokens(lastUsage),
@@ -617,6 +632,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		RecordID:              req.RecordID,
 		CallReason:            req.CallReason,
 		CallLoc:               req.CallLoc,
+		RunID:                 req.RunID,
 		RequestStartedAt:      startedAt,
 		RequestFinishedAt:     time.Now().UTC(),
 		InputTokens:           usageInputTokens(lastUsage),
