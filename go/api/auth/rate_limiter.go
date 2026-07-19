@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/labstack/echo/v4"
 )
 
@@ -26,7 +27,7 @@ type RateLimitConfig struct {
 // DefaultRateLimitConfig returns sensible defaults for auth endpoints
 func DefaultRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
-		MaxAttempts:    5,               // 5 attempts
+		MaxAttempts:    5,                // 5 attempts
 		WindowDuration: 15 * time.Minute, // per 15 minutes
 		BlockDuration:  15 * time.Minute, // block for 15 minutes after exceeding
 		KeyFunc:        defaultKeyFunc,
@@ -36,7 +37,7 @@ func DefaultRateLimitConfig() RateLimitConfig {
 // StrictRateLimitConfig returns stricter limits for sensitive endpoints
 func StrictRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
-		MaxAttempts:    3,               // 3 attempts
+		MaxAttempts:    3,                // 3 attempts
 		WindowDuration: 15 * time.Minute, // per 15 minutes
 		BlockDuration:  30 * time.Minute, // block for 30 minutes
 		KeyFunc:        defaultKeyFunc,
@@ -45,19 +46,8 @@ func StrictRateLimitConfig() RateLimitConfig {
 
 // defaultKeyFunc uses IP address as the rate limit key
 func defaultKeyFunc(c echo.Context) string {
-	// Try X-Forwarded-For first (for proxied requests)
-	// SECURITY: X-Forwarded-For can contain multiple IPs when there are multiple proxies.
-	// Format: "client, proxy1, proxy2, ..." - we want only the first (client) IP.
-	xff := c.Request().Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Extract only the first IP (the original client)
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	// Fall back to remote address
-	return c.RealIP()
+	ip, _ := ApiUtils.ResolveRequestIP(c.Request())
+	return ip
 }
 
 // rateLimitEntry tracks attempts for a single key
@@ -176,7 +166,7 @@ func initRateLimiters() {
 	rateLimiterOnce.Do(func() {
 		loginRateLimiter = NewRateLimiter(DefaultRateLimitConfig())
 		signupRateLimiter = NewRateLimiter(RateLimitConfig{
-			MaxAttempts:    10,              // More lenient for signup
+			MaxAttempts:    10, // More lenient for signup
 			WindowDuration: 1 * time.Hour,
 			BlockDuration:  1 * time.Hour,
 			KeyFunc:        defaultKeyFunc,

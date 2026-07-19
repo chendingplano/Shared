@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/EchoFactory"
 	"github.com/labstack/echo/v4"
 )
@@ -45,14 +46,15 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		// 🔍 Debug: Log full request details to identify who is calling /api/v1/events
+		/*
 		userAgent := c.Request().Header.Get("User-Agent")
 		origin := c.Request().Header.Get("Origin")
 		referer := c.Request().Header.Get("Referer")
 		authorization := c.Request().Header.Get("Authorization")
 		cookieHeader := c.Request().Header.Get("Cookie")
-		clientIP := c.RealIP()
+		clientIP, clientIPSource := ApiUtils.ResolveRequestIP(c.Request())
 		method := c.Request().Method
-		
+
 		logger.Info("incoming request",
 			"path", path,
 			"method", method,
@@ -61,22 +63,35 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			"referer", referer,
 			"has_cookie_header", cookieHeader != "",
 			"has_auth_header", authorization != "",
-			"client_ip", clientIP)
+			"client_ip", clientIP,
+			"client_ip_source", clientIPSource,
+			"remote_addr", c.Request().RemoteAddr,
+			"x_forwarded_for", c.Request().Header.Get("X-Forwarded-For"),
+			"x_real_ip", c.Request().Header.Get("X-Real-IP"))
+		*/
 		user_info, err := IsAuthenticated(rc)
 		if err != nil || user_info == nil {
-			clientIP := c.RealIP()
+			clientIP, clientIPSource := ApiUtils.ResolveRequestIP(c.Request())
 			if IsHTMLRequest(c) {
 				logger.Warn("auth failed, redirect",
 					"error", err,
 					"path", path,
-					"ip", clientIP)
+					"ip", clientIP,
+					"ip_source", clientIPSource,
+					"remote_addr", c.Request().RemoteAddr,
+					"x_forwarded_for", c.Request().Header.Get("X-Forwarded-For"),
+					"x_real_ip", c.Request().Header.Get("X-Real-IP"))
 				return c.Redirect(http.StatusFound, "/")
 			}
 
-			logger.Warn("auth failed, unauthorized API call",
+			logger.Info("+++++ auth failed, unauthorized API call",
 				"error", err,
 				"path", path,
 				"ip", clientIP,
+				"ip_source", clientIPSource,
+				"remote_addr", c.Request().RemoteAddr,
+				"x_forwarded_for", c.Request().Header.Get("X-Forwarded-For"),
+				"x_real_ip", c.Request().Header.Get("X-Real-IP"),
 				"method", c.Request().Method)
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"error": "Authentication required",
@@ -101,7 +116,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user_name := user_info.UserName
 		ctx = context.WithValue(c.Request().Context(), ApiTypes.UserContextKey, user_name)
 		c.SetRequest(c.Request().WithContext(ctx))
-		logger.Info("User authenticated, proceed", "path", path)
+		// logger.Info("User authenticated, proceed", "path", path)
 		return next(c)
 	}
 }
@@ -141,7 +156,7 @@ func isStaticAsset(path string) bool {
 //   - (user_info, nil) on success
 //   - (nil, error) when auth fails or no valid session exists
 func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
-	logger := rc.GetLogger()
+	// logger := rc.GetLogger()
 
 	// Clean up any stale legacy session_id cookies from before Kratos migration
 	if cookie := rc.GetCookie("session_id"); cookie != "" {
@@ -152,7 +167,7 @@ func IsAuthenticated(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo, error) {
 	if KratosAuthenticator != nil {
 		user_info, err := KratosAuthenticator(rc)
 		if err != nil {
-			logger.Warn("Kratos auth failed", "error", err)
+			// logger.Warn("Kratos auth failed", "error", err)
 			return nil, fmt.Errorf("kratos auth error: %w", err)
 		}
 		if user_info != nil {

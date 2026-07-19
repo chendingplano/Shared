@@ -939,9 +939,9 @@ func kratosAdminVerifyEmail(logger ApiTypes.JimoLogger, identityID string, email
 			putResp.StatusCode, string(body))
 	}
 
-	logger.Info("Auto-verified email via OIDC login",
-		"identity_id", identityID,
-		"email", email)
+	// logger.Info("Auto-verified email via OIDC login",
+	// 	"identity_id", identityID,
+	// 	"email", email)
 	return nil
 }
 
@@ -1643,9 +1643,9 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	cookies := req.Header.Get("Cookie")
 	sessionToken := req.Header.Get("X-Session-Token")
 	ctx := context.Background()
-	logger.Info("IsAuthenticatedKratosFromRC: incoming cookie names",
-		"path", req.URL.Path,
-		"cookie_names", cookieNamesPresent(cookies))
+	// logger.Info("IsAuthenticatedKratosFromRC: incoming cookie names",
+	// 	"path", req.URL.Path,
+	// 	"cookie_names", cookieNamesPresent(cookies))
 
 	// Attempt 1: validate via browser cookies only.
 	// Do not send X-Session-Token in this request because Kratos prioritizes it
@@ -1654,14 +1654,14 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		cookieReq := kratosClient.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
 		session, _, err := cookieReq.Execute()
 		if err == nil {
-			email := ""
-			if session.Identity != nil {
-				email = extractIdentityInfo(session.Identity).Email
-			}
-			logger.Info("IsAuthenticatedKratosFromRC: resolved via ory_kratos_session cookie (Attempt 1)",
-				"path", req.URL.Path,
-				"email", email,
-				"session_id", session.Id)
+			// email := ""
+			// if session.Identity != nil {
+			// 	email = extractIdentityInfo(session.Identity).Email
+			// }
+			// logger.Info("IsAuthenticatedKratosFromRC: resolved via ory_kratos_session cookie (Attempt 1)",
+			// 	"path", req.URL.Path,
+			// 	"email", email,
+			// 	"session_id", session.Id)
 			return buildUserInfoFromKratosSession(logger, session)
 		}
 		logger.Debug("Kratos cookie-based session validation failed (RC), falling back to session token", "error", err)
@@ -1708,9 +1708,9 @@ func buildUserInfoFromKratosSession(logger ApiTypes.JimoLogger, session *ory.Ses
 	// OIDC providers (e.g. Google) already verify email, so we auto-verify
 	// the Kratos identity if needed.
 	if !verified && isSessionAuthenticatedViaOIDC(session) {
-		logger.Info("OIDC user with unverified email in session auth path, auto-verifying",
-			"email", info.Email,
-			"identity_id", identity.Id)
+		// logger.Info("OIDC user with unverified email in session auth path, auto-verifying",
+		// 	"email", info.Email,
+		// 	"identity_id", identity.Id)
 		if err := kratosAdminVerifyEmail(logger, identity.Id, info.Email); err != nil {
 			logger.Error("Failed to auto-verify OIDC user email in session auth path",
 				"email", info.Email,
