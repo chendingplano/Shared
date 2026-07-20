@@ -2969,6 +2969,16 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 		if avatar, ok := mp["avatar"].(string); ok {
 			userInfo.Avatar = avatar
 		}
+		if rawRoles, ok := mp["roles"]; ok {
+			userInfo.Roles = normalizeKratosRoles(rawRoles)
+		}
+	}
+
+	if userInfo.Admin && !containsKratosRole(userInfo.Roles, "admin") {
+		userInfo.Roles = append([]string{"admin"}, userInfo.Roles...)
+	}
+	if containsKratosRole(userInfo.Roles, "admin") {
+		userInfo.Admin = true
 	}
 
 	// Extract state → user_status
@@ -2991,6 +3001,58 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 	}
 
 	return userInfo
+}
+
+func normalizeKratosRoles(raw any) []string {
+	switch roles := raw.(type) {
+	case []string:
+		return normalizeRoleStrings(roles)
+	case []interface{}:
+		values := make([]string, 0, len(roles))
+		for _, role := range roles {
+			if text, ok := role.(string); ok {
+				values = append(values, text)
+			}
+		}
+		return normalizeRoleStrings(values)
+	case string:
+		return normalizeRoleStrings([]string{roles})
+	default:
+		return nil
+	}
+}
+
+func normalizeRoleStrings(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(raw))
+	normalized := make([]string, 0, len(raw))
+	for _, role := range raw {
+		role = strings.TrimSpace(strings.ToLower(role))
+		if role == "" {
+			continue
+		}
+		if _, exists := seen[role]; exists {
+			continue
+		}
+		seen[role] = struct{}{}
+		normalized = append(normalized, role)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func containsKratosRole(roles []string, target string) bool {
+	target = strings.TrimSpace(strings.ToLower(target))
+	for _, role := range roles {
+		if strings.TrimSpace(strings.ToLower(role)) == target {
+			return true
+		}
+	}
+	return false
 }
 
 // KratosListAllIdentities lists all Kratos identities via the Admin API
