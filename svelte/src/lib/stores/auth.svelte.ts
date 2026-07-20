@@ -27,6 +27,7 @@ interface KratosIdentity {
 	};
 	metadata_public?: {
 		admin?: boolean;
+		roles?: string[];
 		is_owner?: boolean;
 		avatar?: string;
 	};
@@ -146,6 +147,7 @@ function mapKratosIdentityToUserInfo(identity: KratosIdentity): UserInfo {
 		name: traits.name ? `${traits.name.first ?? ''} ${traits.name.last ?? ''}`.trim() : undefined,
 		user_status: identity.state ?? 'active',
 		admin: metadata.admin ?? false,
+		roles: metadata.roles ?? [],
 		is_owner: metadata.is_owner ?? false,
 		avatar: metadata.avatar as FileNameString | undefined,
 		verified: true, // If we have a session, email is verified (per Kratos config)

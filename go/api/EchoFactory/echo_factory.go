@@ -635,7 +635,12 @@ func (e *echoContext) UpsertUser(
 		}
 
 		// Update metadata_public (admin, is_owner, avatar, etc.)
-		if admin != user_info_found.Admin {
+		resolvedRoles := resolveUpdatedRoles(user_info_found.Roles, user_info.Roles, admin)
+		if !rolesEqual(resolvedRoles, user_info_found.Roles) {
+			metadataPublic["roles"] = resolvedRoles
+			isDirty = true
+		}
+		if admin != user_info_found.Admin || !rolesEqual(resolvedRoles, user_info_found.Roles) {
 			metadataPublic["admin"] = admin
 			isDirty = true
 		}
@@ -663,6 +668,7 @@ func (e *echoContext) UpsertUser(
 
 		if !isDirty {
 			logger.Info("No changes for user", "email", user_info.Email)
+			user_info_found.Roles = resolvedRoles
 			e.user_info = user_info_found
 			return e.user_info, nil
 		}

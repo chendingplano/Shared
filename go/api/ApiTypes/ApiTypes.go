@@ -441,6 +441,7 @@ type UserInfo struct {
 	UserAddress           string    `json:"user_address"`
 	Verified              bool      `json:"verified"`
 	Admin                 bool      `json:"admin"`
+	Roles                 []string  `json:"roles"`
 	IsOwner               bool      `json:"is_owner"`
 	Roles                 []string  `json:"roles,omitempty"`
 	EmailVisibility       bool      `json:"email_visibility"`

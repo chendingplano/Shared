@@ -202,6 +202,7 @@ export type UserInfo = {
 	user_address?: string;
 	verified?: boolean;
 	admin?: boolean;
+	roles?: string[];
 	is_owner?: boolean;
 	email_visibility?: boolean;
 	auth_type?: string;

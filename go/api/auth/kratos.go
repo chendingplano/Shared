@@ -615,6 +615,7 @@ func HandleEmailLoginKratosBase(
 				},
 				"metadata_public": map[string]interface{}{
 					"admin":    isAdmin,
+					"roles":    info.Roles,
 					"is_owner": isOwner,
 					"avatar":   avatar,
 				},
@@ -705,6 +706,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 				},
 				"metadata_public": map[string]interface{}{
 					"admin":    info.IsAdmin,
+					"roles":    info.Roles,
 					"is_owner": info.IsOwner,
 					"avatar":   info.Avatar,
 				},
@@ -838,6 +840,7 @@ type identityInfo struct {
 	FirstName string
 	LastName  string
 	IsAdmin   bool
+	Roles     []string
 	IsOwner   bool
 	Roles     []string
 	Avatar    string
@@ -980,9 +983,12 @@ func extractIdentityInfo(identity *ory.Identity) identityInfo {
 		}
 	}
 	if identity.MetadataPublic != nil {
+		roles := normalizeRolesFromValue(identity.MetadataPublic["roles"])
+		roles, info.IsAdmin = projectRolesAndAdmin(roles, false)
 		if admin, ok := identity.MetadataPublic["admin"].(bool); ok {
-			info.IsAdmin = admin
+			roles, info.IsAdmin = projectRolesAndAdmin(roles, admin)
 		}
+		info.Roles = roles
 		if owner, ok := identity.MetadataPublic["is_owner"].(bool); ok {
 			info.IsOwner = owner
 		}
@@ -1014,6 +1020,13 @@ func setSessionTokenCookie(c echo.Context, sessionToken string) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func projectSignupRoles(isAdmin bool) []string {
+	if isAdmin {
+		return []string{"admin"}
+	}
+	return []string{}
 }
 
 // sessionCookieDomain returns the Domain attribute to use when setting or
@@ -1566,6 +1579,7 @@ func HandleEmailSignupKratosBase(
 					},
 					"metadata_public": map[string]interface{}{
 						"admin":    regInfo.IsAdmin,
+						"roles":    projectSignupRoles(regInfo.IsAdmin),
 						"is_owner": regInfo.IsOwner,
 					},
 					"created_at": identity.CreatedAt,
@@ -1629,6 +1643,7 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 		FirstName:  info.FirstName,
 		LastName:   info.LastName,
 		Admin:      info.IsAdmin,
+		Roles:      info.Roles,
 		IsOwner:    info.IsOwner,
 		Roles:      append([]string(nil), info.Roles...),
 		Avatar:     info.Avatar,
@@ -1755,6 +1770,7 @@ func buildUserInfoFromKratosSession(logger ApiTypes.JimoLogger, session *ory.Ses
 		FirstName:  info.FirstName,
 		LastName:   info.LastName,
 		Admin:      info.IsAdmin,
+		Roles:      info.Roles,
 		IsOwner:    info.IsOwner,
 		Roles:      append([]string(nil), info.Roles...),
 		Avatar:     info.Avatar,
@@ -2148,6 +2164,7 @@ func HandleTOTPVerifyKratos(c echo.Context) error {
 				},
 				"metadata_public": map[string]interface{}{
 					"admin":    info.IsAdmin,
+					"roles":    info.Roles,
 					"is_owner": info.IsOwner,
 				},
 			},
@@ -2928,7 +2945,7 @@ func HandleSettingsSubmitKratos(c echo.Context) error {
 // Only non-nil fields are applied (merged into the existing identity).
 type KratosIdentityUpdate struct {
 	Traits         map[string]interface{} // e.g. {"email": "...", "name": {"first": "...", "last": "..."}}
-	MetadataPublic map[string]interface{} // e.g. {"admin": true, "avatar": "file.jpg"}
+	MetadataPublic map[string]interface{} // e.g. {"admin": true, "roles": []string{"admin"}, "avatar": "file.jpg"}
 	State          *string                // "active" or "inactive"
 }
 
@@ -2983,9 +3000,12 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 
 	// Extract metadata_public
 	if mp, ok := identity["metadata_public"].(map[string]interface{}); ok {
+		roles := normalizeRolesFromValue(mp["roles"])
+		roles, userInfo.Admin = projectRolesAndAdmin(roles, false)
 		if admin, ok := mp["admin"].(bool); ok {
-			userInfo.Admin = admin
+			roles, userInfo.Admin = projectRolesAndAdmin(roles, admin)
 		}
+		userInfo.Roles = roles
 		if owner, ok := mp["is_owner"].(bool); ok {
 			userInfo.IsOwner = owner
 		}
