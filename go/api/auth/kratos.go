@@ -869,6 +869,17 @@ func isSessionAuthenticatedViaOIDC(session *ory.Session) bool {
 			return true
 		}
 	}
+	if session.Identity == nil || session.Identity.Credentials == nil {
+		return false
+	}
+	for credentialType, cred := range *session.Identity.Credentials {
+		if strings.EqualFold(strings.TrimSpace(credentialType), "oidc") {
+			return true
+		}
+		if cred.Type != nil && strings.EqualFold(strings.TrimSpace(*cred.Type), "oidc") {
+			return true
+		}
+	}
 	return false
 }
 
