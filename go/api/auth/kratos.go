@@ -3482,6 +3482,42 @@ func KratosDeleteIdentitySessions(logger ApiTypes.JimoLogger, identityID string)
 	return nil
 }
 
+// KratosDeleteIdentity deletes a Kratos identity via the Admin API.
+// It first attempts to revoke active sessions, then removes the identity.
+func KratosDeleteIdentity(logger ApiTypes.JimoLogger, identityID string) error {
+	if err := KratosDeleteIdentitySessions(logger, identityID); err != nil {
+		logger.Warn("failed to revoke sessions before deleting identity", "identity_id", identityID, "error", err)
+	}
+
+	adminURL := getKratosAdminURL()
+	ctx := context.Background()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE",
+		fmt.Sprintf("%s/admin/identities/%s", adminURL, identityID), nil)
+	if err != nil {
+		logger.Error("Failed to create delete identity request", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to create delete identity request (SHD_KAH_063): %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to delete identity from Kratos", "error", err, "identity_id", identityID)
+		return fmt.Errorf("failed to delete identity (SHD_KAH_064): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		logger.Error("Kratos Admin API error deleting identity",
+			"status", resp.StatusCode, "body", string(body), "identity_id", identityID)
+		return fmt.Errorf("kratos error deleting identity (SHD_KAH_065): status %d", resp.StatusCode)
+	}
+
+	logger.Info("Deleted Kratos identity", "identity_id", identityID)
+	return nil
+}
+
 // KratosMarkUserVerified marks a user as verified by setting their identity state to "active".
 // This is used for admin override or manual verification.
 // With Kratos, email verification is normally handled by Kratos flows automatically.
