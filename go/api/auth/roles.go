@@ -59,6 +59,7 @@ func ensureRole(roles []string, wanted string) []string {
 	return normalizeRoles(append(append([]string{}, roles...), wanted))
 }
 
+/*
 func removeRole(roles []string, unwanted string) []string {
 	filtered := make([]string, 0, len(roles))
 	for _, role := range roles {
@@ -68,6 +69,7 @@ func removeRole(roles []string, unwanted string) []string {
 	}
 	return normalizeRoles(filtered)
 }
+*/
 
 func projectRolesAndAdmin(roles []string, legacyAdmin bool) ([]string, bool) {
 	normalized := normalizeRoles(roles)

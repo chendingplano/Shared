@@ -889,7 +889,7 @@ func isSessionAuthenticatedViaOIDC(session *ory.Session) bool {
 // kratosAdminVerifyEmail marks an identity's email as verified via the Kratos
 // Admin API. This uses the GET-then-PUT pattern: fetch the identity, set the
 // verifiable address to verified, and PUT it back.
-func kratosAdminVerifyEmail(logger ApiTypes.JimoLogger, identityID string, email string) error {
+func kratosAdminVerifyEmail(_ ApiTypes.JimoLogger, identityID string, email string) error {
 	adminURL := getKratosAdminURL()
 	if adminURL == "" {
 		return fmt.Errorf("KRATOS_ADMIN_URL not set (SHD_0404225800)")
@@ -3031,6 +3031,7 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 	return userInfo
 }
 
+/*
 func normalizeKratosRoles(raw any) []string {
 	switch roles := raw.(type) {
 	case []string:
@@ -3072,6 +3073,7 @@ func normalizeRoleStrings(raw []string) []string {
 	}
 	return normalized
 }
+*/
 
 func containsKratosRole(roles []string, target string) bool {
 	target = strings.TrimSpace(strings.ToLower(target))
