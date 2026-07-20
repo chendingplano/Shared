@@ -3,6 +3,7 @@ package auth
 import (
 	"testing"
 
+	"github.com/chendingplano/shared/go/api/loggerutil"
 	ory "github.com/ory/client-go"
 )
 
@@ -49,5 +50,35 @@ func TestIsSessionAuthenticatedViaOIDCFalseWithoutOIDCSignals(t *testing.T) {
 
 	if isSessionAuthenticatedViaOIDC(session) {
 		t.Fatalf("expected non-oidc session to return false")
+	}
+}
+
+func TestBuildUserInfoFromKratosSessionTreatsAdminRoleAsAdmin(t *testing.T) {
+	session := &ory.Session{
+		Id: "sess-1",
+		Identity: &ory.Identity{
+			Id: "identity-1",
+			Traits: map[string]interface{}{
+				"email": "admin@example.com",
+				"name": map[string]interface{}{
+					"first": "Admin",
+					"last":  "User",
+				},
+			},
+			MetadataPublic: map[string]interface{}{
+				"roles": []interface{}{"admin", "dev"},
+			},
+		},
+	}
+
+	userInfo, err := buildUserInfoFromKratosSession(loggerutil.CreateDefaultLogger("SHD_TEST_OIDC_001"), session)
+	if err != nil {
+		t.Fatalf("buildUserInfoFromKratosSession returned error: %v", err)
+	}
+	if !userInfo.Admin {
+		t.Fatalf("expected admin role to set userInfo.Admin=true")
+	}
+	if len(userInfo.Roles) != 2 || userInfo.Roles[0] != "admin" || userInfo.Roles[1] != "dev" {
+		t.Fatalf("unexpected roles: %#v", userInfo.Roles)
 	}
 }
