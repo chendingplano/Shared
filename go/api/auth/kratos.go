@@ -842,7 +842,6 @@ type identityInfo struct {
 	IsAdmin   bool
 	Roles     []string
 	IsOwner   bool
-	Roles     []string
 	Avatar    string
 }
 
@@ -995,15 +994,6 @@ func extractIdentityInfo(identity *ory.Identity) identityInfo {
 		if av, ok := identity.MetadataPublic["avatar"].(string); ok {
 			info.Avatar = av
 		}
-		if rawRoles, ok := identity.MetadataPublic["roles"]; ok {
-			info.Roles = normalizeKratosRoles(rawRoles)
-		}
-	}
-	if info.IsAdmin && !containsKratosRole(info.Roles, "admin") {
-		info.Roles = append([]string{"admin"}, info.Roles...)
-	}
-	if containsKratosRole(info.Roles, "admin") {
-		info.IsAdmin = true
 	}
 	return info
 }
@@ -1643,7 +1633,6 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 		FirstName:  info.FirstName,
 		LastName:   info.LastName,
 		Admin:      info.IsAdmin,
-		Roles:      info.Roles,
 		IsOwner:    info.IsOwner,
 		Roles:      append([]string(nil), info.Roles...),
 		Avatar:     info.Avatar,
@@ -1770,7 +1759,6 @@ func buildUserInfoFromKratosSession(logger ApiTypes.JimoLogger, session *ory.Ses
 		FirstName:  info.FirstName,
 		LastName:   info.LastName,
 		Admin:      info.IsAdmin,
-		Roles:      info.Roles,
 		IsOwner:    info.IsOwner,
 		Roles:      append([]string(nil), info.Roles...),
 		Avatar:     info.Avatar,
@@ -3011,9 +2999,6 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 		}
 		if avatar, ok := mp["avatar"].(string); ok {
 			userInfo.Avatar = avatar
-		}
-		if rawRoles, ok := mp["roles"]; ok {
-			userInfo.Roles = normalizeKratosRoles(rawRoles)
 		}
 	}
 
