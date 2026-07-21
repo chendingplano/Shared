@@ -1716,12 +1716,14 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 		return nil, err
 	}
 
+	/*
 	if session.Identity != nil {
 		logger.Info("IsAuthenticatedKratosFromRC: resolved via session_token (Attempt 2)",
 			"path", req.URL.Path,
 			"email", extractIdentityInfo(session.Identity).Email,
 			"session_id", session.Id)
 	}
+	*/
 	return buildUserInfoFromKratosSession(logger, session)
 }
 
