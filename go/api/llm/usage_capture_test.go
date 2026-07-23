@@ -2,35 +2,45 @@ package llm
 
 import (
 	"context"
-	"log/slog"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/chendingplano/shared/go/api/loggerutil"
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
-// recordingHandler is a minimal slog.Handler that captures emitted records so
-// tests can assert on warnings without depending on log output formatting.
-type recordingHandler struct {
-	records *[]slog.Record
+type recordingLogger struct {
+	mu       sync.Mutex
+	warnings []logEntry
 }
 
-func (h recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
-func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	*h.records = append(*h.records, r)
-	return nil
+type logEntry struct {
+	message string
+	args    []any
 }
-func (h recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h recordingHandler) WithGroup(_ string) slog.Handler      { return h }
 
-func withCapturedWarnings(t *testing.T) *[]slog.Record {
-	t.Helper()
-	records := &[]slog.Record{}
-	original := captureLogger
-	captureLogger = slog.New(recordingHandler{records: records})
-	t.Cleanup(func() { captureLogger = original })
-	return records
+func (l *recordingLogger) Debug(string, ...any) {}
+func (l *recordingLogger) Line(string, ...any)  {}
+func (l *recordingLogger) Info(string, ...any)  {}
+func (l *recordingLogger) Trace(string)         {}
+func (l *recordingLogger) Close()               {}
+
+func (l *recordingLogger) Warn(message string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.warnings = append(l.warnings, logEntry{message: message, args: append([]any(nil), args...)})
+}
+
+func (l *recordingLogger) Error(string, ...any) {}
+
+func (l *recordingLogger) Warnings() []logEntry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]logEntry, len(l.warnings))
+	copy(out, l.warnings)
+	return out
 }
 
 func TestWriteAndReadGzipFileRoundTrip(t *testing.T) {
@@ -146,7 +156,7 @@ func TestCaptureUsageRecordFallsBackToRequestCallFieldsAndMetadata(t *testing.T)
 		Capture:    &RequestCapture{Sink: sink},
 	}
 
-	captureUsageRecord(context.Background(), req, UsageCaptureInput{ModelName: "deepseek-chat"}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
+	captureUsageRecord(context.Background(), req, UsageCaptureInput{ModelName: "deepseek-chat"}, &recordingLogger{})
 
 	records := sink.Records()
 	if len(records) != 1 {
@@ -190,32 +200,65 @@ func TestPromptWarningLogFieldsIncludesPromptEnvContext(t *testing.T) {
 }
 
 func TestCaptureUsageRecordWarnsWhenCallLocOrCallReasonMissing(t *testing.T) {
-	records := withCapturedWarnings(t)
-	sink := &testUsageCaptureSink{}
-
-	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
-		ModelName: "deepseek-chat",
-	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
-
-	if len(*records) != 1 {
-		t.Fatalf("warning count = %d, want 1", len(*records))
-	}
-	if (*records)[0].Level != slog.LevelWarn {
-		t.Fatalf("level = %v, want Warn", (*records)[0].Level)
-	}
-}
-
-func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) {
-	records := withCapturedWarnings(t)
+	logger := &recordingLogger{}
 	sink := &testUsageCaptureSink{}
 
 	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
 		ModelName:  "deepseek-chat",
-		CallReason: "review-provision",
-		CallLoc:    "MID-20260706-0001",
-	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
+		PromptName: "extract-products-v2",
+	}, logger)
 
-	if len(*records) != 0 {
-		t.Fatalf("warning count = %d, want 0; got %+v", len(*records), *records)
+	warnings := logger.Warnings()
+	if len(warnings) != 1 {
+		t.Fatalf("warning count = %d, want 1", len(warnings))
 	}
 }
+
+func TestCaptureUsageRecordDoesNotWarnWhenCallLocAndCallReasonSet(t *testing.T) {
+	logger := &recordingLogger{}
+	sink := &testUsageCaptureSink{}
+
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260706-0001",
+	}, logger)
+
+	if got := logger.Warnings(); len(got) != 0 {
+		t.Fatalf("warning count = %d, want 0; got %+v", len(got), got)
+	}
+}
+
+type contextCheckingUsageCaptureSink struct {
+	ctxErr error
+}
+
+func (s *contextCheckingUsageCaptureSink) Capture(ctx context.Context, _ UsageCaptureRecord) (string, error) {
+	s.ctxErr = ctx.Err()
+	if s.ctxErr != nil {
+		return "", s.ctxErr
+	}
+	return "evt-test", nil
+}
+
+func TestCaptureUsageRecordDetachesSinkFromCanceledCallerContext(t *testing.T) {
+	sink := &contextCheckingUsageCaptureSink{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	eventID := captureUsageRecord(ctx, Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260706-0001",
+	}, &recordingLogger{})
+
+	if eventID != "evt-test" {
+		t.Fatalf("eventID = %q, want evt-test", eventID)
+	}
+	if errors.Is(sink.ctxErr, context.Canceled) {
+		t.Fatalf("sink received canceled context")
+	}
+}
+
+var _ ApiTypes.JimoLogger = (*recordingLogger)(nil)

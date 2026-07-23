@@ -10,6 +10,8 @@ import (
 
 var captureLogger = slog.Default()
 
+const usageCaptureTimeout = 5 * time.Second
+
 type UsageCaptureSink interface {
 	// Capture persists one llm_usage_event row and returns its id (empty on
 	// failure or when the sink does not persist, e.g. no DB configured).
@@ -182,9 +184,9 @@ func captureUsageRecord(
 	}
 	if in.CallReason == "" || in.CallLoc == "" {
 		logger.Warn("(MID-20260708-02) llm usage event missing mandatory call_reason/call_loc",
-			"provider", string(in.Provider), 
+			"provider", string(in.Provider),
 			"model", in.ModelName,
-			"call_reason", in.CallReason, 
+			"call_reason", in.CallReason,
 			"call_loc", in.CallLoc)
 	}
 	sink := DefaultUsageCaptureSink
@@ -194,7 +196,9 @@ func captureUsageRecord(
 	if sink == nil {
 		return ""
 	}
-	eventID, err := sink.Capture(ctx, NewUsageCaptureRecord(in))
+	captureCtx, cancel := newUsageCaptureContext(ctx)
+	defer cancel()
+	eventID, err := sink.Capture(captureCtx, NewUsageCaptureRecord(in))
 	if err != nil {
 		logger.Error("llm usage capture failed",
 			"error", err,
@@ -203,4 +207,11 @@ func captureUsageRecord(
 			"call_loc", in.CallLoc)
 	}
 	return eventID
+}
+
+func newUsageCaptureContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(context.WithoutCancel(parent), usageCaptureTimeout)
 }
