@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/chendingplano/shared/go/api/ApiUtils"
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/sysdatastores"
 )
@@ -33,16 +34,15 @@ func GetRedirectURL(
 		return home_domain
 	}
 
-	// var redirect_url string = fmt.Sprintf("%s/", home_domain)
-	var redirect_url string = home_domain
+	var redirectRoute string
 	if is_admin {
 		default_admin_app := os.Getenv("VITE_DEFAULT_ADMIN_ROUTE")
 		if default_admin_app != "" {
-			redirect_url += default_admin_app
+			redirectRoute = default_admin_app
 		} else {
-			redirect_url += "admin/dashboard"
+			redirectRoute = "/admin/dashboard"
 			error_msg := fmt.Sprintf("missing VITE_DEFAULT_ADMIN_ROUTE env var, email:%s, default to:%s",
-				email, redirect_url)
+				email, ApiUtils.JoinBaseURLAndRoute(home_domain, redirectRoute))
 			logger.Error("missing VITE_DEFAULT_ADMIN_ROUTE")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -56,11 +56,11 @@ func GetRedirectURL(
 	} else {
 		default_app := os.Getenv("VITE_DEFAULT_NORM_ROUTE")
 		if default_app != "" {
-			redirect_url += default_app
+			redirectRoute = default_app
 		} else {
-			redirect_url += "dashboard"
+			redirectRoute = "/dashboard"
 			error_msg := fmt.Sprintf("missing VITE_DEFAULT_NORM_ROUTE env var, email:%s, default to:%s",
-				email, redirect_url)
+				email, ApiUtils.JoinBaseURLAndRoute(home_domain, redirectRoute))
 			logger.Error("missing VITE_DEFAULT_NORM_ROUTE")
 
 			sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
@@ -73,6 +73,7 @@ func GetRedirectURL(
 		}
 	}
 
+	redirect_url := ApiUtils.JoinBaseURLAndRoute(home_domain, redirectRoute)
 	logger.Info("get redirect_url", "redirect_url", redirect_url)
 	return redirect_url
 }

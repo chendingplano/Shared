@@ -296,8 +296,23 @@ func GenerateRequestID(key string) string {
 	return key + "-" + hex.EncodeToString(bytes)
 }
 
+func JoinBaseURLAndRoute(baseURL, route string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	route = strings.TrimSpace(route)
+	if route == "" {
+		return baseURL
+	}
+	if !strings.HasPrefix(route, "/") {
+		route = "/" + route
+	}
+	return baseURL + route
+}
+
 func GetDefaultHomeURL() string {
-	return fmt.Sprintf("%s/%s", os.Getenv("APP_BASE_URL"), os.Getenv("VITE_DEFAULT_NORM_ROUTE"))
+	return JoinBaseURLAndRoute(
+		os.Getenv("APP_BASE_URL"),
+		os.Getenv("VITE_DEFAULT_NORM_ROUTE"),
+	)
 }
 
 // GeneratePassword creates a cryptographically secure random password
@@ -1158,4 +1173,3 @@ func NormalizeLang(lang string) string {
 	}
 	return lower_lang
 }
-
