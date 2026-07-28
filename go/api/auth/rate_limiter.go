@@ -158,7 +158,12 @@ var (
 	// Even if an attacker uses multiple IPs, they can only attempt a limited number
 	// of logins per account.
 	accountLockoutRateLimiter *RateLimiter
-	rateLimiterOnce           sync.Once
+	// smsRateLimiter throttles SMS-code send requests per phone number, since
+	// each send costs money via Aliyun and the bzton reference implementation
+	// this feature is modeled on has no server-side protection against a
+	// phone number being used to trigger repeated paid sends.
+	smsRateLimiter  *RateLimiter
+	rateLimiterOnce sync.Once
 )
 
 // initRateLimiters initializes the global rate limiters
@@ -180,6 +185,12 @@ func initRateLimiters() {
 			WindowDuration: 30 * time.Minute, // within 30 minutes
 			BlockDuration:  30 * time.Minute, // lock account for 30 minutes
 			KeyFunc:        defaultKeyFunc,   // Not used for account lockout (uses email directly)
+		})
+		smsRateLimiter = NewRateLimiter(RateLimitConfig{
+			MaxAttempts:    5,                // 5 codes per phone number...
+			WindowDuration: 1 * time.Hour,    // ...per hour...
+			BlockDuration:  1 * time.Hour,    // ...then blocked for an hour
+			KeyFunc:        defaultKeyFunc,   // Not used directly (keyed by phone, not IP)
 		})
 	})
 }
@@ -250,6 +261,13 @@ func ResetAccountLockout(email string) {
 	initRateLimiters()
 	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
 	accountLockoutRateLimiter.Reset(normalizedEmail)
+}
+
+// CheckSMSSendRateLimit checks if an SMS-code send request for a given phone
+// number is allowed. Returns (allowed, remainingAttempts, retryAfterDuration).
+func CheckSMSSendRateLimit(phone string) (bool, int, time.Duration) {
+	initRateLimiters()
+	return smsRateLimiter.Allow(strings.TrimSpace(phone))
 }
 
 // CheckLoginRateLimits checks both IP-based and account-based rate limits.

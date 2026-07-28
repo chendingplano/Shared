@@ -92,3 +92,23 @@ func TestKratosIdentityToUserInfoReadsRolesAndProjectsAdmin(t *testing.T) {
 		t.Fatalf("unexpected roles: got %v want %v", userInfo.Roles, wantRoles)
 	}
 }
+
+func TestProjectSignupRolesDefaultsGuestForNonAdmin(t *testing.T) {
+	got := projectSignupRoles(false)
+	want := []string{"guest"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected signup roles: got %v want %v", got, want)
+	}
+}
+
+func TestSignupMetadataPublicUsesProvisionedRoles(t *testing.T) {
+	got := signupMetadataPublic(false, true)
+	want := map[string]interface{}{
+		"admin":    false,
+		"roles":    []string{"guest"},
+		"is_owner": true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected signup metadata_public: got %#v want %#v", got, want)
+	}
+}

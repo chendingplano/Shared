@@ -69,6 +69,8 @@ func RegisterRoutes(e *echo.Echo) {
 
 	// Kratos-only routes
 	if useKratos {
+		e.POST("/auth/phone/send-code", auth.HandlePhoneSendCodeKratos)
+		e.POST("/auth/phone/verify", auth.HandlePhoneVerifyCodeKratos)
 		e.POST("/auth/logout", auth.HandleLogoutKratos)
 		e.POST("/auth/totp/verify", auth.HandleTOTPVerifyKratos)
 		e.GET("/auth/verification/flow", auth.HandleVerificationFlowKratos)
@@ -76,6 +78,18 @@ func RegisterRoutes(e *echo.Echo) {
 		e.POST("/auth/recovery", auth.HandleRecoverySubmitKratos)
 		e.GET("/auth/recovery/settings", auth.HandleSettingsFlowKratos)
 		e.POST("/auth/recovery/settings", auth.HandleSettingsSubmitKratos)
+	}
+
+	// SMS courier relay (called by Kratos's "sms" courier channel, not by end
+	// users - see shared/go/api/auth/sms_relay.go for the shared-secret auth).
+	// Must live under "/auth" - ChenWeb's frontend-catch-all middleware
+	// (server/api/routes.go) only exempts "/api", "/auth", "/shared_api",
+	// "/ws" from its session-auth gate; anything else (e.g. the originally
+	// used "/internal/..." path) gets treated as a protected frontend route
+	// and rejected with 401 before reaching this handler at all (confirmed
+	// live 2026-07-28).
+	if useKratos {
+		e.POST("/auth/internal/sms-courier/send", auth.HandleSMSCourierRelay)
 	}
 
 	// Shared API

@@ -837,6 +837,7 @@ func getMapKeys(m map[string]interface{}) []string {
 // identityInfo holds extracted user fields from a Kratos identity.
 type identityInfo struct {
 	Email     string
+	Phone     string
 	FirstName string
 	LastName  string
 	IsAdmin   bool
@@ -971,6 +972,9 @@ func extractIdentityInfo(identity *ory.Identity) identityInfo {
 			if email, ok := traits["email"].(string); ok {
 				info.Email = email
 			}
+			if phone, ok := traits["phone"].(string); ok {
+				info.Phone = phone
+			}
 			if name, ok := traits["name"].(map[string]interface{}); ok {
 				if first, ok := name["first"].(string); ok {
 					info.FirstName = first
@@ -1016,7 +1020,28 @@ func projectSignupRoles(isAdmin bool) []string {
 	if isAdmin {
 		return []string{"admin"}
 	}
-	return []string{}
+	return []string{"guest"}
+}
+
+func signupMetadataPublic(isAdmin bool, isOwner bool) map[string]interface{} {
+	return map[string]interface{}{
+		"admin":    isAdmin,
+		"roles":    projectSignupRoles(isAdmin),
+		"is_owner": isOwner,
+	}
+}
+
+func ensureSignupIdentityMetadata(
+	logger ApiTypes.JimoLogger,
+	identityID string,
+	isAdmin bool,
+	isOwner bool) error {
+
+	if strings.TrimSpace(identityID) == "" {
+		return fmt.Errorf("signup identity id is empty (SHD_0211103021M)")
+	}
+
+	return KratosUpdateIdentityWrapper(logger, identityID, nil, signupMetadataPublic(isAdmin, isOwner), nil)
 }
 
 // sessionCookieDomain returns the Domain attribute to use when setting or
@@ -1246,6 +1271,7 @@ type KratosSignupResponse struct {
 	RedirectURL        string                 `json:"redirect_url,omitempty"`
 	Session            map[string]interface{} `json:"session,omitempty"`
 	VerificationFlowID string                 `json:"verification_flow_id,omitempty"`
+	Verified           bool                   `json:"verified"`
 	LOC                string                 `json:"loc"`
 }
 
@@ -1496,6 +1522,18 @@ func HandleEmailSignupKratosBase(
 		identity := session.Identity
 		regInfo := extractIdentityInfo(identity)
 
+		if err := ensureSignupIdentityMetadata(logger, identity.Id, regInfo.IsAdmin, regInfo.IsOwner); err != nil {
+			logger.Error("Failed to persist signup identity metadata",
+				"error", err,
+				"email", email,
+				"identity_id", identity.Id)
+			return http.StatusInternalServerError, KratosSignupResponse{
+				Status:  "error",
+				Message: "Registration completed but account provisioning failed. Please contact support.",
+				LOC:     "SHD_0211103021M",
+			}
+		}
+
 		// Set the session token as a cookie (using custom cookie name for native flow tokens)
 		if successfulReg.SessionToken != nil {
 			sessionToken := *successfulReg.SessionToken
@@ -1535,8 +1573,6 @@ func HandleEmailSignupKratosBase(
 			"identity_id", identity.Id,
 			"session_id", session.Id)
 
-		redirectURL := GetRedirectURL(rc, email, regInfo.IsAdmin, false)
-
 		// Extract verification flow ID from Kratos continue_with
 		var verificationFlowID string
 		for _, cw := range successfulReg.ContinueWith {
@@ -1547,11 +1583,30 @@ func HandleEmailSignupKratosBase(
 			}
 		}
 
+		verified := isIdentityEmailVerified(identity)
+		if !verified {
+			logger.Warn("Kratos signup returned session for unverified identity",
+				"email", email,
+				"identity_id", identity.Id,
+				"session_id", session.Id,
+				"verification_flow_id", verificationFlowID)
+			return http.StatusOK, KratosSignupResponse{
+				Status:             "ok",
+				Message:            "Registration successful! Please verify your email to continue.",
+				VerificationFlowID: verificationFlowID,
+				Verified:           false,
+				LOC:                "SHD_0211103021A",
+			}
+		}
+
+		redirectURL := GetRedirectURL(rc, email, regInfo.IsAdmin, false)
+
 		return http.StatusOK, KratosSignupResponse{
 			Status:             "ok",
 			Message:            "Registration successful",
 			RedirectURL:        redirectURL,
 			VerificationFlowID: verificationFlowID,
+			Verified:           true,
 			LOC:                "SHD_0211103021",
 			Session: map[string]interface{}{
 				"id":               session.Id,
@@ -1567,13 +1622,9 @@ func HandleEmailSignupKratosBase(
 							"last":  regInfo.LastName,
 						},
 					},
-					"metadata_public": map[string]interface{}{
-						"admin":    regInfo.IsAdmin,
-						"roles":    projectSignupRoles(regInfo.IsAdmin),
-						"is_owner": regInfo.IsOwner,
-					},
-					"created_at": identity.CreatedAt,
-					"updated_at": identity.UpdatedAt,
+					"metadata_public": signupMetadataPublic(regInfo.IsAdmin, regInfo.IsOwner),
+					"created_at":      identity.CreatedAt,
+					"updated_at":      identity.UpdatedAt,
 				},
 			},
 		}
@@ -1596,10 +1647,23 @@ func HandleEmailSignupKratosBase(
 		"email", email,
 		"identity_id", successfulReg.Identity.Id)
 
+	if err := ensureSignupIdentityMetadata(logger, successfulReg.Identity.Id, false, false); err != nil {
+		logger.Error("Failed to persist signup identity metadata",
+			"error", err,
+			"email", email,
+			"identity_id", successfulReg.Identity.Id)
+		return http.StatusInternalServerError, KratosSignupResponse{
+			Status:  "error",
+			Message: "Registration completed but account provisioning failed. Please contact support.",
+			LOC:     "SHD_0207180101M",
+		}
+	}
+
 	return http.StatusOK, KratosSignupResponse{
-		Status:  "ok",
-		Message: "Registration successful! Please check your email to verify your account.",
-		LOC:     "SHD_0207180101",
+		Status:   "ok",
+		Message:  "Registration successful! Please check your email to verify your account.",
+		Verified: false,
+		LOC:      "SHD_0207180101",
 	}
 }
 
@@ -1717,12 +1781,12 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	}
 
 	/*
-	if session.Identity != nil {
-		logger.Info("IsAuthenticatedKratosFromRC: resolved via session_token (Attempt 2)",
-			"path", req.URL.Path,
-			"email", extractIdentityInfo(session.Identity).Email,
-			"session_id", session.Id)
-	}
+		if session.Identity != nil {
+			logger.Info("IsAuthenticatedKratosFromRC: resolved via session_token (Attempt 2)",
+				"path", req.URL.Path,
+				"email", extractIdentityInfo(session.Identity).Email,
+				"session_id", session.Id)
+		}
 	*/
 	return buildUserInfoFromKratosSession(logger, session)
 }

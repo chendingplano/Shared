@@ -66,6 +66,7 @@ interface SignupResponse {
 	session?: KratosSession;
 	message?: string;
 	redirect_url?: string;
+	verification_flow_id?: string;
 }
 
 // Response format from backend /auth/verify-status endpoint
@@ -539,6 +540,13 @@ function createAuthStore(): AuthStore {
 
 			if (res.ok) {
 				const data = (await res.json()) as SignupResponse;
+
+				if (data.verification_flow_id) {
+					if (typeof window !== 'undefined') {
+						window.location.href = `/verification?flow=${encodeURIComponent(data.verification_flow_id)}`;
+					}
+					return;
+				}
 
 				// Kratos may auto-login after registration (configured via hooks)
 				if (data.session) {
