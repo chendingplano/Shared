@@ -651,7 +651,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 
 	identity := session.Identity
 	info := extractIdentityInfo(identity)
-	verified := isIdentityEmailVerified(identity)
+	verified := isIdentityVerified(identity)
 
 	// If the user logged in via OIDC (e.g. Google) and their email isn't marked
 	// verified in Kratos, auto-verify it. The OIDC provider already verified the
@@ -859,6 +859,39 @@ func isIdentityEmailVerified(identity *ory.Identity) bool {
 		}
 	}
 	return false
+}
+
+// identityPhoneProvenByCode reports whether this identity owns a phone number
+// that was proven via the SMS "code" flow. Completing an SMS one-time code is
+// itself proof of phone ownership - the same trust basis as OIDC email
+// verification - so such an identity should pass the "verified" gate. Kratos
+// records no verified verifiable address for phone-code identities (its admin
+// API silently refuses to set verifiable_addresses[].verified, and code
+// registration never populates one), so isIdentityEmailVerified alone would
+// leave every phone-login user permanently blocked.
+//
+// A `phone` trait is only ever written by HandlePhoneSendCodeKratos's
+// registration flow, which cannot complete without a valid SMS code, so the
+// presence of the trait is sufficient. We can't inspect identity.Credentials
+// here: Kratos omits credentials from the /sessions/whoami identity, which is
+// what every caller of this function has.
+func identityPhoneProvenByCode(identity *ory.Identity) bool {
+	if identity == nil {
+		return false
+	}
+	traits, ok := identity.Traits.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	phone, _ := traits["phone"].(string)
+	return cnMobileE164Pattern.MatchString(strings.TrimSpace(phone))
+}
+
+// isIdentityVerified is the gate used to decide whether a Kratos-authenticated
+// user may access protected routes: a verified email/verifiable address, OR a
+// phone number proven via SMS code.
+func isIdentityVerified(identity *ory.Identity) bool {
+	return isIdentityEmailVerified(identity) || identityPhoneProvenByCode(identity)
 }
 
 // isSessionAuthenticatedViaOIDC checks whether the session was authenticated
@@ -1701,7 +1734,7 @@ func IsAuthenticatedKratos(rc ApiTypes.RequestContext, c echo.Context) (*ApiType
 		Roles:      append([]string(nil), info.Roles...),
 		Avatar:     info.Avatar,
 		UserStatus: userStatus,
-		Verified:   isIdentityEmailVerified(identity),
+		Verified:   isIdentityVerified(identity),
 		AuthType:   "kratos",
 	}
 
@@ -1794,7 +1827,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 func buildUserInfoFromKratosSession(logger ApiTypes.JimoLogger, session *ory.Session) (*ApiTypes.UserInfo, error) {
 	identity := session.Identity
 	info := extractIdentityInfo(identity)
-	verified := isIdentityEmailVerified(identity)
+	verified := isIdentityVerified(identity)
 
 	// Keep middleware/session checks consistent with /auth/me behavior:
 	// OIDC providers (e.g. Google) already verify email, so we auto-verify
