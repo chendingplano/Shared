@@ -3075,6 +3075,9 @@ func KratosIdentityToUserInfo(identity map[string]interface{}) *ApiTypes.UserInf
 			userInfo.Email = email
 			userInfo.UserName = email
 		}
+		if phone, ok := traits["phone"].(string); ok {
+			userInfo.UserMobile = phone
+		}
 		if name, ok := traits["name"].(map[string]interface{}); ok {
 			if first, ok := name["first"].(string); ok {
 				userInfo.FirstName = first
