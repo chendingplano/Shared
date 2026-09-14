@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -65,9 +67,22 @@ type VerifyResponse struct {
 	Loc         string `json:"loc,omitempty"`
 }
 
-const (
-	cookie_timeout_hours = 72
-)
+// defaultCookieTimeoutHours is used when COOKIE_TIMEOUT_HOURS is unset or
+// invalid.
+const defaultCookieTimeoutHours = 72
+
+// cookieTimeoutHours returns the login cookie/session TTL, read from the
+// COOKIE_TIMEOUT_HOURS env var (falls back to defaultCookieTimeoutHours if
+// unset, non-numeric, or <= 0).
+func cookieTimeoutHours() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("COOKIE_TIMEOUT_HOURS"))
+	if raw != "" {
+		if hours, err := strconv.Atoi(raw); err == nil && hours > 0 {
+			return time.Duration(hours) * time.Hour
+		}
+	}
+	return defaultCookieTimeoutHours * time.Hour
+}
 
 func isValidEmail(email string) bool {
 	_, err := mail.ParseAddress(email)
@@ -267,7 +282,7 @@ func HandleEmailLoginBase(
 
 	// Generate a secure random session ID for logging purposes
 	sessionID := ApiUtils.GenerateSecureToken(32)
-	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
+	expired_time := time.Now().Add(cookieTimeoutHours())
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
 
@@ -625,7 +640,7 @@ func HandleEmailVerifyBase(
 
 	// Generate a secure random session ID for logging purposes
 	sessionID := ApiUtils.GenerateSecureToken(32)
-	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
+	expired_time := time.Now().Add(cookieTimeoutHours())
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
 

@@ -296,7 +296,7 @@ func HandleGoogleCallbackBase(
 	sessionID := ApiUtils.GenerateSecureToken(32) // e.g., 256-bit random string
 
 	// Save session in DB/cache: map sessionID → user_email (or user_id)
-	expired_time := time.Now().Add(cookie_timeout_hours * time.Hour)
+	expired_time := time.Now().Add(cookieTimeoutHours())
 	customLayout := "2006-01-02 15:04:05"
 	expired_time_str := expired_time.Format(customLayout)
 

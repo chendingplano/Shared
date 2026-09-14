@@ -54,10 +54,12 @@ type phoneSendCodeRequest struct {
 }
 
 type phoneVerifyRequest struct {
-	Phone    string `json:"phone"`
-	Code     string `json:"code"`
-	FlowID   string `json:"flow_id"`
-	FlowType string `json:"flow_type"` // "login" or "registration"
+	Phone     string `json:"phone"`
+	Code      string `json:"code"`
+	FlowID    string `json:"flow_id"`
+	FlowType  string `json:"flow_type"` // "login" or "registration"
+	FirstName string `json:"first_name,omitempty"` // required when FlowType == "registration"
+	LastName  string `json:"last_name,omitempty"`  // required when FlowType == "registration"
 }
 
 // HandlePhoneSendCodeKratos handles POST /auth/phone/send-code: validates a
@@ -188,12 +190,20 @@ func HandlePhoneVerifyCodeKratos(c echo.Context) error {
 
 	switch req.FlowType {
 	case "registration":
+		if nameResult := ValidateNameFields(req.FirstName, req.LastName); !nameResult.Valid {
+			logger.Warn("phone registration missing name", "phone", req.Phone, "error", nameResult.Errors[0])
+			return c.JSON(http.StatusBadRequest, KratosErrorResponse{Status: "error", Message: nameResult.Errors[0], LOC: "SHD_PHN_072818"})
+		}
+
 		result, resp, err := kratosClient.client.FrontendAPI.UpdateRegistrationFlow(ctx).
 			Flow(req.FlowID).
 			UpdateRegistrationFlowBody(ory.UpdateRegistrationFlowWithCodeMethodAsUpdateRegistrationFlowBody(&ory.UpdateRegistrationFlowWithCodeMethod{
 				Method: "code",
 				Code:   &req.Code,
-				Traits: map[string]any{"phone": e164Phone},
+				Traits: map[string]any{
+					"phone": e164Phone,
+					"name":  map[string]any{"first": req.FirstName, "last": req.LastName},
+				},
 			})).
 			Execute()
 		if err != nil {
@@ -244,7 +254,7 @@ func HandlePhoneVerifyCodeKratos(c echo.Context) error {
 		identityID = identity.Id
 	}
 	customLayout := "2006-01-02 15:04:05"
-	expiredTimeStr := time.Now().Add(cookie_timeout_hours * time.Hour).Format(customLayout)
+	expiredTimeStr := time.Now().Add(cookieTimeoutHours()).Format(customLayout)
 	sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
 		LoginMethod:  "kratos_phone_" + req.FlowType,
 		SessionID:    session.Id,

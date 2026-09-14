@@ -539,7 +539,7 @@ func HandleEmailLoginKratosBase(
 
 		// Also log the session
 		customLayout := "2006-01-02 15:04:05"
-		expiredTimeStr := time.Now().Add(cookie_timeout_hours * time.Hour).Format(customLayout)
+		expiredTimeStr := time.Now().Add(cookieTimeoutHours()).Format(customLayout)
 
 		sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
 			LoginMethod:  "kratos_login",
@@ -1042,7 +1042,7 @@ func setSessionTokenCookie(c echo.Context, sessionToken string) {
 		Name:     "session_token",
 		Value:    sessionToken,
 		Path:     "/",
-		Expires:  time.Now().Add(cookie_timeout_hours * time.Hour),
+		Expires:  time.Now().Add(cookieTimeoutHours()),
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
@@ -1435,6 +1435,27 @@ func HandleEmailSignupKratosBase(
 		}
 	}
 
+	// Validate first/last name (mandatory for new accounts)
+	if nameResult := ValidateNameFields(firstName, lastName); !nameResult.Valid {
+		errorMsg := nameResult.Errors[0]
+		logger.Warn("name validation failed", "email", email, "error", errorMsg)
+
+		sysdatastores.AddActivityLog(ApiTypes.ActivityLogDef{
+			ActivityName: ApiTypes.ActivityName_Auth,
+			ActivityType: ApiTypes.ActivityType_BadRequest,
+			AppName:      ApiTypes.AppName_Auth,
+			ModuleName:   ApiTypes.ModuleName_EmailAuth,
+			ActivityMsg:  &errorMsg,
+			CallerLoc:    "SHD_0211103021",
+		})
+
+		return http.StatusBadRequest, KratosSignupResponse{
+			Status:  "error",
+			Message: errorMsg,
+			LOC:     "SHD_0211103021",
+		}
+	}
+
 	// SECURITY: Validate password strength (using existing validation)
 	passwordResult := ValidatePasswordDefault(req.Password)
 	if !passwordResult.Valid {
@@ -1574,7 +1595,7 @@ func HandleEmailSignupKratosBase(
 
 			// Log the session
 			customLayout := "2006-01-02 15:04:05"
-			expiredTimeStr := time.Now().Add(cookie_timeout_hours * time.Hour).Format(customLayout)
+			expiredTimeStr := time.Now().Add(cookieTimeoutHours()).Format(customLayout)
 
 			sysdatastores.AddSessionLog(sysdatastores.SessionLogDef{
 				LoginMethod:  "kratos_signup",
