@@ -14,6 +14,7 @@ import (
 type recordingLogger struct {
 	mu       sync.Mutex
 	warnings []logEntry
+	errors   []logEntry
 }
 
 type logEntry struct {
@@ -33,13 +34,25 @@ func (l *recordingLogger) Warn(message string, args ...any) {
 	l.warnings = append(l.warnings, logEntry{message: message, args: append([]any(nil), args...)})
 }
 
-func (l *recordingLogger) Error(string, ...any) {}
+func (l *recordingLogger) Error(message string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.errors = append(l.errors, logEntry{message: message, args: append([]any(nil), args...)})
+}
 
 func (l *recordingLogger) Warnings() []logEntry {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	out := make([]logEntry, len(l.warnings))
 	copy(out, l.warnings)
+	return out
+}
+
+func (l *recordingLogger) Errors() []logEntry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]logEntry, len(l.errors))
+	copy(out, l.errors)
 	return out
 }
 
@@ -69,6 +82,7 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	outputBody := []byte(`{"content":"world"}`)
 
 	record := NewUsageCaptureRecord(UsageCaptureInput{
+		UserID:                "usr_30",
 		AccountID:             "acct_10",
 		ProfileID:             "prof_20",
 		Provider:              ProviderOpenAICompatible,
@@ -96,6 +110,9 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	}
 	if record.ProfileID != "prof_20" {
 		t.Fatalf("ProfileID = %q, want prof_20", record.ProfileID)
+	}
+	if record.UserID != "usr_30" {
+		t.Fatalf("UserID = %q, want usr_30", record.UserID)
 	}
 	if record.Provider != ProviderOpenAICompatible {
 		t.Fatalf("Provider = %q, want %q", record.Provider, ProviderOpenAICompatible)
@@ -132,6 +149,139 @@ func TestNewUsageCaptureRecordPreservesPromptTokensRefsAndErrors(t *testing.T) {
 	}
 	if string(record.OutputBody) != string(outputBody) {
 		t.Fatalf("OutputBody = %q", string(record.OutputBody))
+	}
+}
+
+func TestCaptureUsageRecordPropagatesRequestUserIDToSink(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{
+		UserID:  "usr_40",
+		Capture: &RequestCapture{Sink: sink},
+	}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-001",
+	}, &recordingLogger{})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0].UserID; got != "usr_40" {
+		t.Fatalf("UserID = %q, want usr_40", got)
+	}
+}
+
+func TestCaptureUsageRecordFallsBackToCaptureUserID(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{
+		Capture: &RequestCapture{UserID: "usr_41", Sink: sink},
+	}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-003",
+	}, &recordingLogger{})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0].UserID; got != "usr_41" {
+		t.Fatalf("UserID = %q, want usr_41", got)
+	}
+}
+
+func TestCaptureUsageRecordIgnoresWhitespaceInputUserIDForRequestFallback(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{
+		UserID:  "usr_request",
+		Capture: &RequestCapture{Sink: sink},
+	}, UsageCaptureInput{
+		UserID:     " \t\n ",
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-004",
+	}, &recordingLogger{})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0].UserID; got != "usr_request" {
+		t.Fatalf("UserID = %q, want usr_request", got)
+	}
+}
+
+func TestCaptureUsageRecordIgnoresWhitespaceRequestUserIDForCaptureFallback(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{
+		UserID:  " \t\n ",
+		Capture: &RequestCapture{UserID: "usr_capture", Sink: sink},
+	}, UsageCaptureInput{
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-005",
+	}, &recordingLogger{})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0].UserID; got != "usr_capture" {
+		t.Fatalf("UserID = %q, want usr_capture", got)
+	}
+}
+
+func TestCaptureUsageRecordTrimsUserIDBeforePersistence(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		UserID:     "  usr_trimmed \t",
+		ModelName:  "deepseek-chat",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-006",
+	}, &recordingLogger{})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0].UserID; got != "usr_trimmed" {
+		t.Fatalf("UserID = %q, want usr_trimmed", got)
+	}
+}
+
+func TestCaptureUsageRecordLogsMissingUserIDAndStillCaptures(t *testing.T) {
+	logger := &recordingLogger{}
+	sink := &testUsageCaptureSink{}
+	captureUsageRecord(context.Background(), Request{Capture: &RequestCapture{Sink: sink}}, UsageCaptureInput{
+		Provider:   ProviderOpenAI,
+		ModelName:  "gpt-test",
+		PromptName: "review-provision",
+		CallReason: "review-provision",
+		CallLoc:    "MID-20260920-002",
+	}, logger)
+
+	if got := len(sink.Records()); got != 1 {
+		t.Fatalf("captured records = %d, want 1", got)
+	}
+	errors := logger.Errors()
+	if len(errors) != 1 {
+		t.Fatalf("error count = %d, want 1", len(errors))
+	}
+	if errors[0].message != "llm usage event missing mandatory user_id" {
+		t.Fatalf("error message = %q", errors[0].message)
+	}
+	fields := map[string]any{}
+	for i := 0; i+1 < len(errors[0].args); i += 2 {
+		fields[errors[0].args[i].(string)] = errors[0].args[i+1]
+	}
+	if fields["provider"] != "openai" || fields["model"] != "gpt-test" || fields["call_loc"] != "MID-20260920-002" {
+		t.Fatalf("error fields = %+v", fields)
 	}
 }
 

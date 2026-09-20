@@ -133,6 +133,7 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
 	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	_, err := c.Complete(context.Background(), Request{
+		UserID:     "usr_chat_complete",
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
@@ -155,6 +156,9 @@ func TestOpenAICompleteCapturesUsageRecordOnSuccess(t *testing.T) {
 	got := records[0]
 	if got.AccountID != "acct_10" || got.ProfileID != "prof_20" {
 		t.Fatalf("unexpected account/profile ids: %+v", got)
+	}
+	if got.UserID != "usr_chat_complete" {
+		t.Fatalf("UserID = %q, want usr_chat_complete", got.UserID)
 	}
 	if got.PromptName != "extract-products-v2" || got.ModelName != "deepseek-v4-flash" {
 		t.Fatalf("unexpected prompt/model: %+v", got)
@@ -355,6 +359,7 @@ func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
 		ID: ProviderOpenAICompatible, BaseURL: s.URL, APIKey: "sk-TESTVALUE1234",
 	}, loggerutil.CreateDefaultLogger("MID-20260708-04"))
 	err := c.Stream(context.Background(), Request{
+		UserID:     "usr_chat_stream",
 		Model:      "deepseek-v4-flash",
 		PromptName: "extract-products-v2",
 		Messages:   []Message{{Role: RoleUser, Content: "hi"}},
@@ -378,6 +383,9 @@ func TestOpenAIStreamCapturesUsageRecordOnCompletion(t *testing.T) {
 		t.Fatalf("captured records = %d, want 1", len(records))
 	}
 	got := records[0]
+	if got.UserID != "usr_chat_stream" {
+		t.Fatalf("UserID = %q, want usr_chat_stream", got.UserID)
+	}
 	if got.InputTokens != 9 || got.OutputTokens != 2 || got.TotalTokens != 11 {
 		t.Fatalf("unexpected tokens: %+v", got)
 	}

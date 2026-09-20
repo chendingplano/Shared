@@ -19,6 +19,7 @@ import (
 )
 
 type JSONExtractionInput struct {
+	UserID        string
 	PromptName    string
 	PromptText    string
 	ModelName     string
@@ -337,6 +338,7 @@ func (c *OpenAIJSONClient) captureUsage(
 		errorMessage = err.Error()
 	}
 	eventID := captureUsageRecord(ctx, Request{}, UsageCaptureInput{
+		UserID:                strings.TrimSpace(in.UserID),
 		AccountID:             strings.TrimSpace(c.AccountID),
 		ProfileID:             strings.TrimSpace(c.ProfileID),
 		ProfileName:           strings.TrimSpace(c.ProfileName),
@@ -697,6 +699,7 @@ func parsePositiveInt(raw string) (int, error) {
 
 // EmbedInput holds parameters for a single embedding call.
 type EmbedInput struct {
+	UserID     string
 	ModelName  string
 	InputText  string
 	Dimensions int
@@ -706,6 +709,7 @@ type EmbedInput struct {
 
 // EmbedBatchInput holds parameters for a batched embedding call.
 type EmbedBatchInput struct {
+	UserID     string
 	ModelName  string
 	InputTexts []string
 	Dimensions int
@@ -758,7 +762,7 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	vecs, err := c.embedRequest(ctx, body, model, startedAt, in.CallReason, in.CallLoc)
+	vecs, err := c.embedRequest(ctx, body, model, startedAt, in.UserID, in.CallReason, in.CallLoc)
 	if err != nil {
 		return nil, err
 	}
@@ -812,7 +816,7 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	return c.embedRequest(ctx, body, model, startedAt, in.CallReason, in.CallLoc)
+	return c.embedRequest(ctx, body, model, startedAt, in.UserID, in.CallReason, in.CallLoc)
 }
 
 func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int {
@@ -830,19 +834,20 @@ func (c *OpenAIJSONClient) embedRequest(
 	body map[string]any,
 	modelName string,
 	startedAt time.Time,
+	userID string,
 	callReason string,
 	callLoc string) ([][]float64, error) {
 	// c.ensureLogger().Info("llm-call embed", "model", modelName)
 	bs, err := json.Marshal(body)
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, nil, nil, 0, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, nil, nil, 0, userID, callReason, callLoc, err)
 		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildEmbeddingsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, err)
 		return nil, fmt.Errorf("(MID_26050181) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -850,33 +855,33 @@ func (c *OpenAIJSONClient) embedRequest(
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, err)
 		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, modelName)
 	}
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, callReason, callLoc, readErr)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, readErr)
 		return nil, fmt.Errorf("(MID_26052902) failed reading embedding response body: %w", readErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody,
 			parseEmbeddingInputTokens(respBody),
-			callReason, callLoc,
+			userID, callReason, callLoc,
 			fmt.Errorf("status %d", resp.StatusCode))
 		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var payload embeddingResponsePayload
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, 0, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, 0, userID, callReason, callLoc, err)
 		return nil, fmt.Errorf("(MID_26050148) decode embedding response: %w", err)
 	}
 	if len(payload.Data) == 0 {
 		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody,
 			parseEmbeddingUsageInputTokens(payload.Usage),
-			callReason, callLoc,
+			userID, callReason, callLoc,
 			errors.New("(MID_26050163) embedding response has no data"))
 		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
@@ -884,7 +889,7 @@ func (c *OpenAIJSONClient) embedRequest(
 	for _, item := range payload.Data {
 		out = append(out, item.Embedding)
 	}
-	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), callReason, callLoc, nil)
+	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), userID, callReason, callLoc, nil)
 	return out, nil
 }
 
@@ -895,6 +900,7 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 	inputBody,
 	outputBody []byte,
 	inputTokens int,
+	userID string,
 	callReason string,
 	callLoc string,
 	err error) {
@@ -903,6 +909,7 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 		errorMessage = err.Error()
 	}
 	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
+		UserID:            strings.TrimSpace(userID),
 		AccountID:         strings.TrimSpace(c.AccountID),
 		ProfileID:         strings.TrimSpace(c.ProfileID),
 		ProfileName:       strings.TrimSpace(c.ProfileName),

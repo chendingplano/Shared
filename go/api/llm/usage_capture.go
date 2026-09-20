@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -21,6 +22,7 @@ type UsageCaptureSink interface {
 var DefaultUsageCaptureSink UsageCaptureSink
 
 type RequestCapture struct {
+	UserID        string
 	AccountID     string
 	ProfileID     string
 	InputBodyRef  string
@@ -29,6 +31,7 @@ type RequestCapture struct {
 }
 
 type UsageCaptureInput struct {
+	UserID                string
 	AccountID             string
 	ProfileID             string
 	ProfileName           string
@@ -57,6 +60,7 @@ type UsageCaptureInput struct {
 }
 
 type UsageCaptureRecord struct {
+	UserID                string
 	AccountID             string
 	ProfileID             string
 	ProfileName           string
@@ -88,6 +92,7 @@ type UsageCaptureRecord struct {
 func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 	promptName := EnsurePromptName(in.PromptName, in.CallReason, in.CallLoc, in.ModelName)
 	return UsageCaptureRecord{
+		UserID:                in.UserID,
 		AccountID:             in.AccountID,
 		ProfileID:             in.ProfileID,
 		ProfileName:           in.ProfileName,
@@ -160,8 +165,15 @@ func captureUsageRecord(
 	req Request,
 	in UsageCaptureInput,
 	logger ApiTypes.JimoLogger) string {
+	in.UserID = strings.TrimSpace(in.UserID)
 	if in.RecordID == 0 {
 		in.RecordID = req.RecordID
+	}
+	if in.UserID == "" {
+		in.UserID = strings.TrimSpace(req.UserID)
+	}
+	if in.UserID == "" && req.Capture != nil {
+		in.UserID = strings.TrimSpace(req.Capture.UserID)
 	}
 	if in.RunID == 0 {
 		in.RunID = req.RunID
@@ -184,6 +196,13 @@ func captureUsageRecord(
 	}
 	if in.CallReason == "" || in.CallLoc == "" {
 		logger.Warn("(MID-20260708-02) llm usage event missing mandatory call_reason/call_loc",
+			"provider", string(in.Provider),
+			"model", in.ModelName,
+			"call_reason", in.CallReason,
+			"call_loc", in.CallLoc)
+	}
+	if strings.TrimSpace(in.UserID) == "" {
+		logger.Error("llm usage event missing mandatory user_id",
 			"provider", string(in.Provider),
 			"model", in.ModelName,
 			"call_reason", in.CallReason,

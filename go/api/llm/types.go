@@ -104,6 +104,7 @@ type Usage struct {
 
 // Request describes one inference call.
 type Request struct {
+	UserID      string
 	Model       string
 	PromptName  string
 	RecordID    int64

@@ -417,6 +417,7 @@ func TestExtractJSON_CapturesUsageRecordWithLookupHints(t *testing.T) {
 
 	withDefaultUsageCaptureSink(sink, func() {
 		_, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+			UserID:     "usr_structured_output",
 			PromptName: "extract-products-v2",
 			PromptText: "prompt",
 			InputText:  "text",
@@ -431,6 +432,9 @@ func TestExtractJSON_CapturesUsageRecordWithLookupHints(t *testing.T) {
 		t.Fatalf("captured records = %d, want 1", len(records))
 	}
 	got := records[0]
+	if got.UserID != "usr_structured_output" {
+		t.Fatalf("UserID=%q, want usr_structured_output", got.UserID)
+	}
 	if got.PromptName != "extract-products-v2" {
 		t.Fatalf("PromptName=%q", got.PromptName)
 	}
@@ -665,6 +669,7 @@ func TestEmbed_CapturesUsageRecordWithLookupHints(t *testing.T) {
 
 	withDefaultUsageCaptureSink(sink, func() {
 		_, err := client.Embed(context.Background(), EmbedInput{
+			UserID:    "usr_embedding",
 			InputText: "test input",
 		})
 		if err != nil {
@@ -677,6 +682,9 @@ func TestEmbed_CapturesUsageRecordWithLookupHints(t *testing.T) {
 		t.Fatalf("captured records = %d, want 1", len(records))
 	}
 	got := records[0]
+	if got.UserID != "usr_embedding" {
+		t.Fatalf("UserID=%q, want usr_embedding", got.UserID)
+	}
 	if got.ProfileName != "embedding-prod" {
 		t.Fatalf("ProfileName=%q", got.ProfileName)
 	}
