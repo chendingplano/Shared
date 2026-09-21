@@ -263,7 +263,7 @@ func TestExtractJSON_IncludesThinkingWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestExtractJSON_OmitsThinkingWhenDisabled(t *testing.T) {
+func TestExtractJSON_SendsThinkingWhenDisabled(t *testing.T) {
 	const llmJSON = `{"status":"ok"}`
 
 	client := &OpenAIJSONClient{
@@ -276,8 +276,12 @@ func TestExtractJSON_OmitsThinkingWhenDisabled(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode request body: %v", err)
 			}
-			if _, ok := body["thinking"]; ok {
-				t.Fatalf("did not expect thinking field in request body when disabled")
+			thinking, ok := body["thinking"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected thinking object in request body when disabled, got %T", body["thinking"])
+			}
+			if got := thinking["type"]; got != "disabled" {
+				t.Fatalf("thinking.type=%v, want disabled", got)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,

@@ -247,7 +247,14 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	}
 	// c.logger.Info("llm-call", "body", body)
 
-	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType == "enabled" {
+	// Both "enabled" and "disabled" are sent on the wire: providers whose
+	// hybrid-reasoning models think by default (DeepSeek's deepseek-flash /
+	// deepseek-v4-pro, verified 2026-09-22) only stop when explicitly told to,
+	// so omitting the field for "disabled" silently left thinking on. An empty
+	// ThinkingType still sends nothing, which keeps endpoints that reject the
+	// field (local llama.cpp/ollama hosts) working as long as they leave
+	// thinking_type unset in .models.toml.
+	if thinkingType := normalizeThinkingType(c.ThinkingType); thinkingType != "" {
 		body["thinking"] = map[string]string{"type": thinkingType}
 	}
 	if jsonResponse {
@@ -700,6 +707,8 @@ func parsePositiveInt(raw string) (int, error) {
 // EmbedInput holds parameters for a single embedding call.
 type EmbedInput struct {
 	UserID     string
+	RecordID   int64
+	RunID      int64
 	ModelName  string
 	InputText  string
 	Dimensions int
@@ -710,6 +719,8 @@ type EmbedInput struct {
 // EmbedBatchInput holds parameters for a batched embedding call.
 type EmbedBatchInput struct {
 	UserID     string
+	RecordID   int64
+	RunID      int64
 	ModelName  string
 	InputTexts []string
 	Dimensions int
@@ -762,7 +773,9 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	vecs, err := c.embedRequest(ctx, body, model, startedAt, in.UserID, in.CallReason, in.CallLoc)
+	vecs, err := c.embedRequest(ctx, body, model, startedAt, embedCallIdentity{
+		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -816,7 +829,9 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	return c.embedRequest(ctx, body, model, startedAt, in.UserID, in.CallReason, in.CallLoc)
+	return c.embedRequest(ctx, body, model, startedAt, embedCallIdentity{
+		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
+	})
 }
 
 func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int {
@@ -829,25 +844,35 @@ func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int
 	return 0
 }
 
+// embedCallIdentity carries the attribution fields (who/what/which run) for
+// one embedding call across embedRequest/captureEmbeddingUsage -- grouped
+// into a struct rather than more positional params since embedRequest
+// already has several call sites per branch.
+type embedCallIdentity struct {
+	UserID     string
+	RecordID   int64
+	RunID      int64
+	CallReason string
+	CallLoc    string
+}
+
 func (c *OpenAIJSONClient) embedRequest(
 	ctx context.Context,
 	body map[string]any,
 	modelName string,
 	startedAt time.Time,
-	userID string,
-	callReason string,
-	callLoc string) ([][]float64, error) {
+	identity embedCallIdentity) ([][]float64, error) {
 	// c.ensureLogger().Info("llm-call embed", "model", modelName)
 	bs, err := json.Marshal(body)
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, nil, nil, 0, userID, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, nil, nil, 0, identity, err)
 		return nil, fmt.Errorf("(MID_26050180) failed resolveScopedString, error:%w", err)
 	}
 
 	endpoint := buildEmbeddingsEndpoint(c.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bs))
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, identity, err)
 		return nil, fmt.Errorf("(MID_26050181) failed resolveScopedString, error:%w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -855,33 +880,33 @@ func (c *OpenAIJSONClient) embedRequest(
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, identity, err)
 		return nil, fmt.Errorf("(MID_26050146) embedding request failed: %w, model-name:%s", err, modelName)
 	}
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, userID, callReason, callLoc, readErr)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, nil, 0, identity, readErr)
 		return nil, fmt.Errorf("(MID_26052902) failed reading embedding response body: %w", readErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody,
 			parseEmbeddingInputTokens(respBody),
-			userID, callReason, callLoc,
+			identity,
 			fmt.Errorf("status %d", resp.StatusCode))
 		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var payload embeddingResponsePayload
 	if err := json.Unmarshal(respBody, &payload); err != nil {
-		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, 0, userID, callReason, callLoc, err)
+		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, 0, identity, err)
 		return nil, fmt.Errorf("(MID_26050148) decode embedding response: %w", err)
 	}
 	if len(payload.Data) == 0 {
 		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody,
 			parseEmbeddingUsageInputTokens(payload.Usage),
-			userID, callReason, callLoc,
+			identity,
 			errors.New("(MID_26050163) embedding response has no data"))
 		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
@@ -889,7 +914,7 @@ func (c *OpenAIJSONClient) embedRequest(
 	for _, item := range payload.Data {
 		out = append(out, item.Embedding)
 	}
-	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), userID, callReason, callLoc, nil)
+	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), identity, nil)
 	return out, nil
 }
 
@@ -900,16 +925,14 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 	inputBody,
 	outputBody []byte,
 	inputTokens int,
-	userID string,
-	callReason string,
-	callLoc string,
+	identity embedCallIdentity,
 	err error) {
 	errorMessage := ""
 	if err != nil {
 		errorMessage = err.Error()
 	}
 	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
-		UserID:            strings.TrimSpace(userID),
+		UserID:            strings.TrimSpace(identity.UserID),
 		AccountID:         strings.TrimSpace(c.AccountID),
 		ProfileID:         strings.TrimSpace(c.ProfileID),
 		ProfileName:       strings.TrimSpace(c.ProfileName),
@@ -925,8 +948,10 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 		InputBody:         inputBody,
 		OutputBody:        outputBody,
 		ErrorMessage:      errorMessage,
-		CallReason:        callReason,
-		CallLoc:           callLoc,
+		RecordID:          identity.RecordID,
+		RunID:             identity.RunID,
+		CallReason:        identity.CallReason,
+		CallLoc:           identity.CallLoc,
 	}, c.logger)
 }
 
