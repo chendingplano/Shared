@@ -2,14 +2,13 @@ package llm
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
 )
 
-var captureLogger = slog.Default()
+// var captureLogger = slog.Default()
 
 const usageCaptureTimeout = 5 * time.Second
 
@@ -49,14 +48,19 @@ type UsageCaptureInput struct {
 	InputBodyRef          string
 	OutputBodyRef         string
 	ErrorMessage          string
-	ProviderRequestID     string
-	InputBody             []byte
-	OutputBody            []byte
-	RecordID              int64
-	RunID                 int64
-	CallReason            string
-	CallLoc               string
-	Metadata              map[string]any
+	// RawResponse is the raw text content the LLM returned, persisted inline
+	// (not via the gzip-archived OutputBody) so a failed/truncated/malformed
+	// response is queryable directly off llm_usage_event without needing to
+	// fetch the archive. Only meaningful when ErrorMessage is non-empty.
+	RawResponse       string
+	ProviderRequestID string
+	InputBody         []byte
+	OutputBody        []byte
+	RecordID          int64
+	RunID             int64
+	CallReason        string
+	CallLoc           string
+	Metadata          map[string]any
 }
 
 type UsageCaptureRecord struct {
@@ -79,6 +83,7 @@ type UsageCaptureRecord struct {
 	InputBodyRef          string
 	OutputBodyRef         string
 	ErrorMessage          string
+	RawResponse           string
 	ProviderRequestID     string
 	InputBody             []byte
 	OutputBody            []byte
@@ -111,6 +116,7 @@ func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 		InputBodyRef:          in.InputBodyRef,
 		OutputBodyRef:         in.OutputBodyRef,
 		ErrorMessage:          in.ErrorMessage,
+		RawResponse:           in.RawResponse,
 		ProviderRequestID:     in.ProviderRequestID,
 		InputBody:             in.InputBody,
 		OutputBody:            in.OutputBody,

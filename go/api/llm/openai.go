@@ -23,9 +23,11 @@ type openaiClient struct {
 	logger  ApiTypes.JimoLogger
 }
 
+/*
 func newOpenAIClient(cfg ProviderConfig, baseURL string) *openaiClient {
 	return newOpenAIClientWithLogger(cfg, baseURL, nil)
 }
+*/
 
 func newOpenAIClientWithLogger(cfg ProviderConfig, baseURL string, logger ApiTypes.JimoLogger) *openaiClient {
 	return &openaiClient{

@@ -42,10 +42,14 @@ type OpenAIJSONClient struct {
 	ModelName           string
 	ThinkingType        string
 	EmbeddingDimensions int
-	HTTPClient          *http.Client
-	logger              ApiTypes.JimoLogger
-	usageMu             sync.Mutex
-	lastJSONUsage       *Usage
+	// MaxOutputTokens, when > 0, is sent as the request's max_tokens so a
+	// large chunk's response isn't cut off mid-JSON by the provider's own
+	// default cap. Zero omits max_tokens from the request entirely.
+	MaxOutputTokens int
+	HTTPClient      *http.Client
+	logger          ApiTypes.JimoLogger
+	usageMu         sync.Mutex
+	lastJSONUsage   *Usage
 }
 
 type OpenAIJSONClientConfig struct {
@@ -59,6 +63,9 @@ type OpenAIJSONClientConfig struct {
 	TimeoutSec          int
 	ThinkingType        string
 	EmbeddingDimensions int
+	// MaxOutputTokens, when > 0, is sent as the request's max_tokens. See
+	// OpenAIJSONClient.MaxOutputTokens.
+	MaxOutputTokens int
 	// Per-model concurrency and rate budget from .models.toml (ADR 2026061802 DR6).
 	// Zero values mean "use the process-wide env-var default".
 	MaxInflight          int
@@ -158,6 +165,7 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 		ModelName:           model,
 		ThinkingType:        normalizeThinkingType(cfg.ThinkingType),
 		EmbeddingDimensions: cfg.EmbeddingDimensions,
+		MaxOutputTokens:     cfg.MaxOutputTokens,
 		logger:              logger,
 		HTTPClient: &http.Client{
 			Timeout: time.Duration(timeoutSec) * time.Second,
@@ -260,6 +268,9 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	if jsonResponse {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
+	if c.MaxOutputTokens > 0 {
+		body["max_tokens"] = c.MaxOutputTokens
+	}
 
 	bs, err := json.Marshal(body)
 	if err != nil {
@@ -321,9 +332,32 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 		return "", fmt.Errorf("(MID_26050177) failed resolveScopedString, error:%w", err)
 	}
 	providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
+
+	// The provider cut the completion short (hit max_tokens) before the model
+	// finished writing its JSON. The content is real but incomplete, so
+	// returning it as a normal success would let downstream JSON-repair
+	// heuristics (parseLLMJSONMap's scanForBestJSONObject) silently pick some
+	// arbitrary complete-looking fragment out of it and report that as a
+	// schema-validation failure, hiding the real cause (see MID_26092201).
+	if finishReason := parseOpenAIFinishReason(respBody); finishReason == "length" {
+		truncErr := fmt.Errorf("(MID_26092201) llm response truncated (finish_reason=length, max_tokens=%d): %w", c.MaxOutputTokens, ErrLLMResponseTruncated)
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, truncErr)
+		return content, truncErr
+	}
+
 	eventID := c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, content, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, nil)
 	c.setLastJSONUsage(inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, eventID)
 	return content, nil
+}
+
+// parseOpenAIFinishReason returns the first choice's finish_reason (e.g.
+// "stop", "length", "content_filter"), or "" if it can't be determined.
+func parseOpenAIFinishReason(respBody []byte) string {
+	var out oaCompletion
+	if err := json.Unmarshal(respBody, &out); err != nil || len(out.Choices) == 0 {
+		return ""
+	}
+	return out.Choices[0].FinishReason
 }
 
 func (c *OpenAIJSONClient) captureUsage(
@@ -341,8 +375,13 @@ func (c *OpenAIJSONClient) captureUsage(
 	cacheMissTokens int,
 	err error) string {
 	errorMessage := ""
+	rawResponse := ""
 	if err != nil {
 		errorMessage = err.Error()
+		// Only persist the raw content inline on failure; on success it's
+		// already archived via OutputBody, and duplicating it here would
+		// bloat every successful row for no benefit.
+		rawResponse = outputContent
 	}
 	eventID := captureUsageRecord(ctx, Request{}, UsageCaptureInput{
 		UserID:                strings.TrimSpace(in.UserID),
@@ -364,13 +403,13 @@ func (c *OpenAIJSONClient) captureUsage(
 		InputBody:             inputBody,
 		OutputBody:            outputBody,
 		ErrorMessage:          errorMessage,
+		RawResponse:           rawResponse,
 		RecordID:              in.RecordID,
 		RunID:                 in.RunID,
 		CallReason:            strings.TrimSpace(in.CallReason),
 		CallLoc:               strings.TrimSpace(in.CallLoc),
 		Metadata:              in.Metadata,
 	}, c.logger)
-	_ = outputContent
 	return eventID
 }
 

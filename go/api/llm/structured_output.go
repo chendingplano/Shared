@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ExtractStructuredJSON returns validated JSON for the supplied machine-readable
@@ -22,6 +24,12 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 		maxAttempts = 1
 	}
 
+	startedAt := time.Now().UTC()
+	model := strings.TrimSpace(in.ModelName)
+	if model == "" {
+		model = strings.TrimSpace(c.ModelName)
+	}
+
 	originalInput := in.InputText
 	var lastErr error
 	var lastRaw string
@@ -30,6 +38,26 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 		in.InputText = buildStructuredRetryInput(originalInput, contract.Name, attempt, lastErr)
 		content, err := c.extractTextWithFormat(ctx, in, true)
 		if err != nil {
+			// extractTextWithFormat already captured this attempt's usage event
+			// (including raw_response on error) at the transport layer.
+			if errors.Is(err, ErrLLMResponseTruncated) {
+				// Deterministic given the same input and max_tokens -- retrying
+				// without raising max_tokens would just truncate identically
+				// again, burning the retry budget for nothing. Alarm and stop.
+				c.ensureLogger().Error("(MID_26092202) ALARM: llm response truncated before completion; raise max_output_tokens for this model",
+					"model_name", model,
+					"call_reason", in.CallReason,
+					"call_loc", in.CallLoc,
+					"record_id", in.RecordID,
+					"run_id", in.RunID,
+					"max_output_tokens", c.MaxOutputTokens,
+					"raw_response", content)
+				return nil, &StructuredOutputError{
+					Kind: ErrStructuredOutputTruncated,
+					Err:  err,
+					Raw:  content,
+				}
+			}
 			return nil, &StructuredOutputError{
 				Kind: ErrStructuredOutputProvider,
 				Err:  err,
@@ -47,11 +75,13 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 			if attempt < maxAttempts {
 				continue
 			}
-			return nil, &StructuredOutputError{
+			exhaustedErr := &StructuredOutputError{
 				Kind: ErrStructuredOutputRetriesExhausted,
 				Err:  lastErr,
 				Raw:  lastRaw,
 			}
+			c.captureUsage(ctx, in, model, startedAt, nil, nil, "", lastRaw, 0, 0, 0, 0, exhaustedErr)
+			return nil, exhaustedErr
 		}
 
 		if err := validateStructuredJSON(contract, parsed); err != nil {
@@ -59,11 +89,13 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 			if attempt < maxAttempts {
 				continue
 			}
-			return nil, &StructuredOutputError{
+			exhaustedErr := &StructuredOutputError{
 				Kind: ErrStructuredOutputRetriesExhausted,
 				Err:  lastErr,
 				Raw:  lastRaw,
 			}
+			c.captureUsage(ctx, in, model, startedAt, nil, nil, "", lastRaw, 0, 0, 0, 0, exhaustedErr)
+			return nil, exhaustedErr
 		}
 
 		return &StructuredOutputResult{
@@ -72,11 +104,13 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 		}, nil
 	}
 
-	return nil, &StructuredOutputError{
+	exhaustedErr := &StructuredOutputError{
 		Kind: ErrStructuredOutputRetriesExhausted,
 		Err:  lastErr,
 		Raw:  lastRaw,
 	}
+	c.captureUsage(ctx, in, model, startedAt, nil, nil, "", lastRaw, 0, 0, 0, 0, exhaustedErr)
+	return nil, exhaustedErr
 }
 
 func buildStructuredRetryInput(originalInput, contractName string, attempt int, lastErr error) string {

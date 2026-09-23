@@ -106,6 +106,10 @@ type LLMModelDef struct {
 	MaxRequestsPerMinute int `toml:"max_requests_per_minute"`
 	MaxTokensPerMinute   int `toml:"max_tokens_per_minute"`
 	TokenReservePerCall  int `toml:"token_reserve_per_call"`
+	// MaxOutputTokens sets the request's max_tokens so a large chunk's model
+	// output isn't cut off mid-JSON by the provider's own default cap. Zero
+	// means "don't send max_tokens; use the provider default".
+	MaxOutputTokens int `toml:"max_output_tokens"`
 }
 
 // LLMModelsFile maps logical model names to model configuration.
