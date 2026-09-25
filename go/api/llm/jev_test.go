@@ -76,19 +76,28 @@ func TestNewJevClientAPIKeyResolution(t *testing.T) {
 }
 
 func TestJevCompleteRequestAndResponse(t *testing.T) {
-	var auth, path string
+	var auth, path, method, contentType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth, path = r.Header.Get("Authorization"), r.URL.Path
+		method, contentType = r.Method, r.Header.Get("Content-Type")
 		var body struct {
-			Model     string       `json:"model"`
-			State     string       `json:"state"`
-			Questions JevQuestions `json:"questions"`
+			Model     string `json:"model"`
+			State     string `json:"state"`
+			Questions map[string]struct {
+				Type         string            `json:"type"`
+				Instructions string            `json:"instructions"`
+				Criteria     map[string]string `json:"criteria"`
+			} `json:"questions"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
 		if body.Model != "model-x" || body.State != "last state" || len(body.Questions) != 1 {
 			t.Errorf("body = %+v", body)
+		}
+		q, ok := body.Questions["question-1"]
+		if !ok || q.Type != "choice" || q.Instructions != "Choose one" || q.Criteria["opt-a"] != "Option A" {
+			t.Errorf("question wire = %+v, present=%v", q, ok)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"answers":{"a":1},"usage":{"input_tokens":7,"output_tokens":3}}`)
@@ -98,12 +107,15 @@ func TestJevCompleteRequestAndResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := c.Complete(context.Background(), Request{Model: "model-x", Messages: []Message{{Role: RoleUser, Content: "earlier"}, {Role: RoleUser, Content: "last state"}}, JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}})
+	resp, err := c.Complete(context.Background(), Request{Model: "model-x", Messages: []Message{{Role: RoleUser, Content: "earlier"}, {Role: RoleUser, Content: "last state"}}, JevQuestions: JevQuestions{"question-1": {Type: "choice", Instructions: "Choose one", Criteria: map[string]string{"opt-a": "Option A"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if path != "/v1/systemone" || auth != "Bearer secret" {
 		t.Fatalf("path=%q auth=%q", path, auth)
+	}
+	if method != http.MethodPost || contentType != "application/json" {
+		t.Fatalf("method=%q content-type=%q", method, contentType)
 	}
 	if resp.Content != `{"a":1}` || resp.Usage == nil || resp.Usage.InputTokens != 7 || resp.Usage.OutputTokens != 3 {
 		t.Fatalf("response = %+v", resp)
