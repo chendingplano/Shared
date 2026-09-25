@@ -117,6 +117,12 @@ func estimateEmbeddingTokens(inputs []string) int {
 	return total
 }
 
+// EstimateEmbeddingTokens exposes the conservative token estimate used by the
+// embedding rate limiter for callers that need a fallback when providers omit usage.
+func EstimateEmbeddingTokens(input string) int {
+	return estimateEmbeddingTokensForText(input)
+}
+
 func estimateEmbeddingTokensForText(input string) int {
 	input = strings.TrimSpace(input)
 	if input == "" {

@@ -45,11 +45,12 @@ type OpenAIJSONClient struct {
 	// MaxOutputTokens, when > 0, is sent as the request's max_tokens so a
 	// large chunk's response isn't cut off mid-JSON by the provider's own
 	// default cap. Zero omits max_tokens from the request entirely.
-	MaxOutputTokens int
-	HTTPClient      *http.Client
-	logger          ApiTypes.JimoLogger
-	usageMu         sync.Mutex
-	lastJSONUsage   *Usage
+	MaxOutputTokens    int
+	HTTPClient         *http.Client
+	logger             ApiTypes.JimoLogger
+	usageMu            sync.Mutex
+	lastJSONUsage      *Usage
+	lastEmbeddingUsage *Usage
 }
 
 type OpenAIJSONClientConfig struct {
@@ -100,6 +101,29 @@ func (c *OpenAIJSONClient) setLastJSONUsage(inputTokens, outputTokens, cacheHitT
 		PromptCacheMissTokens: cacheMissTokens,
 		EventID:               eventID,
 	}
+	c.usageMu.Unlock()
+}
+
+// LastEmbeddingUsage returns token usage reported by the most recent Embed call.
+func (c *OpenAIJSONClient) LastEmbeddingUsage() *Usage {
+	if c == nil {
+		return nil
+	}
+	c.usageMu.Lock()
+	defer c.usageMu.Unlock()
+	if c.lastEmbeddingUsage == nil {
+		return nil
+	}
+	usage := *c.lastEmbeddingUsage
+	return &usage
+}
+
+func (c *OpenAIJSONClient) setLastEmbeddingUsage(inputTokens int) {
+	if c == nil {
+		return
+	}
+	c.usageMu.Lock()
+	c.lastEmbeddingUsage = &Usage{InputTokens: inputTokens, TotalTokens: inputTokens}
 	c.usageMu.Unlock()
 }
 
@@ -949,11 +973,13 @@ func (c *OpenAIJSONClient) embedRequest(
 			errors.New("(MID_26050163) embedding response has no data"))
 		return nil, errors.New("(MID_26050163) embedding response has no data")
 	}
+	inputTokens := parseEmbeddingUsageInputTokens(payload.Usage)
+	c.setLastEmbeddingUsage(inputTokens)
 	out := make([][]float64, 0, len(payload.Data))
 	for _, item := range payload.Data {
 		out = append(out, item.Embedding)
 	}
-	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, parseEmbeddingUsageInputTokens(payload.Usage), identity, nil)
+	c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody, inputTokens, identity, nil)
 	return out, nil
 }
 

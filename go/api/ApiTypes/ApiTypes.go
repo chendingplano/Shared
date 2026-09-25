@@ -99,6 +99,7 @@ type LLMModelDef struct {
 	ModelName    string `toml:"model_name"`
 	ModelType    string `toml:"model_type"`
 	Dimension    int    `toml:"dimension"`
+	MaxChars     int    `toml:"max_chars"`
 	APIKey       string `toml:"api_key"`
 	BaseURL      string `toml:"base_url"`
 	TimeoutSec   int    `toml:"timeout_sec"`
