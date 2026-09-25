@@ -139,3 +139,63 @@ func TestJevErrorBodyTruncatedAndDoesNotExposeRequest(t *testing.T) {
 		t.Fatalf("request leaked in error: %v", err)
 	}
 }
+
+type jevRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f jevRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type jevErrorReader struct{}
+
+func (jevErrorReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+func (jevErrorReader) Close() error             { return nil }
+
+func TestJevProviderErrorsWrapTransportAndReadFailures(t *testing.T) {
+	for name, client := range map[string]*http.Client{
+		"transport": {Transport: jevRoundTripper(func(*http.Request) (*http.Response, error) { return nil, errors.New("dial failed") })},
+		"read": {Transport: jevRoundTripper(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 502, Body: jevErrorReader{}}, nil
+		})},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, _ := NewClient(ProviderConfig{ID: ProviderJev, APIKey: "hidden-key", BaseURL: "http://example.test", HTTPClient: client}, nil)
+			_, err := c.Complete(context.Background(), Request{Model: "m", Messages: []Message{{Role: RoleUser, Content: "private state"}}, JevQuestions: JevQuestions{"id": {Type: "noul"}}})
+			var pe *ProviderError
+			if !errors.As(err, &pe) {
+				t.Fatalf("expected ProviderError, got %v", err)
+			}
+			if strings.Contains(err.Error(), "private state") || strings.Contains(err.Error(), "hidden-key") {
+				t.Fatalf("request leaked: %v", err)
+			}
+			if name == "read" && pe.HTTPStatus != 502 {
+				t.Fatalf("status = %d", pe.HTTPStatus)
+			}
+		})
+	}
+}
+
+func TestJevMalformedResponseIsProviderError(t *testing.T) {
+	for _, body := range []string{"not-json", `{"answers":[]}`} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); io.WriteString(w, body) }))
+		c, _ := NewClient(ProviderConfig{ID: ProviderJev, APIKey: "key", BaseURL: srv.URL, HTTPClient: srv.Client()}, nil)
+		_, err := c.Complete(context.Background(), Request{Model: "m", Messages: []Message{{Role: RoleUser, Content: "private"}}, JevQuestions: JevQuestions{"id": {Type: "noul"}}})
+		srv.Close()
+		var pe *ProviderError
+		if !errors.As(err, &pe) {
+			t.Fatalf("body %q: expected ProviderError, got %v", body, err)
+		}
+		if pe.HTTPStatus != 200 || pe.Body != body {
+			t.Fatalf("ProviderError = %+v", pe)
+		}
+		if strings.Contains(err.Error(), "private") {
+			t.Fatalf("request leaked: %v", err)
+		}
+	}
+}
+
+func TestJevStreamUnsupported(t *testing.T) {
+	c, _ := NewClient(ProviderConfig{ID: ProviderJev, APIKey: "key"}, nil)
+	err := c.Stream(context.Background(), Request{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "streaming is not supported") {
+		t.Fatalf("Stream error = %v", err)
+	}
+}

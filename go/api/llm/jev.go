@@ -101,18 +101,15 @@ func (c *jevClient) Complete(ctx context.Context, req Request) (*Response, error
 	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("jev: request failed: %w", err)
+		return nil, &ProviderError{Provider: ProviderJev, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("jev: read response: %w", err)
+		return nil, jevProviderError(req.Model, resp.StatusCode, payload, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if len(payload) > 512 {
-			payload = payload[:512]
-		}
-		return nil, &ProviderError{Provider: ProviderJev, Model: req.Model, HTTPStatus: resp.StatusCode, Body: string(payload)}
+		return nil, jevProviderError(req.Model, resp.StatusCode, payload, nil)
 	}
 	var decoded struct {
 		Answers json.RawMessage `json:"answers"`
@@ -122,21 +119,28 @@ func (c *jevClient) Complete(ctx context.Context, req Request) (*Response, error
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, fmt.Errorf("jev: decode response: %w", err)
+		return nil, jevProviderError(req.Model, resp.StatusCode, payload, err)
 	}
 	trimmed := bytes.TrimSpace(decoded.Answers)
 	if len(trimmed) == 0 || trimmed[0] != '{' || !json.Valid(trimmed) {
-		return nil, fmt.Errorf("jev: response answers must be a JSON object")
+		return nil, jevProviderError(req.Model, resp.StatusCode, payload, fmt.Errorf("response answers must be a JSON object"))
 	}
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, trimmed); err != nil {
-		return nil, fmt.Errorf("jev: malformed answers: %w", err)
+		return nil, jevProviderError(req.Model, resp.StatusCode, payload, err)
 	}
 	out := &Response{Content: compact.String(), Raw: json.RawMessage(payload)}
 	if decoded.Usage != nil {
 		out.Usage = &Usage{InputTokens: decoded.Usage.InputTokens, OutputTokens: decoded.Usage.OutputTokens}
 	}
 	return out, nil
+}
+
+func jevProviderError(model string, status int, body []byte, err error) *ProviderError {
+	if len(body) > 512 {
+		body = body[:512]
+	}
+	return &ProviderError{Provider: ProviderJev, Model: model, HTTPStatus: status, Body: string(body), Err: err}
 }
 
 func lastUserMessageIndex(messages []Message) int {
