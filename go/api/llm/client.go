@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -49,6 +51,9 @@ func (e *ProviderError) Unwrap() error { return e.Err }
 // Complete / Stream methods return ErrAdapterNotImplemented — this keeps the
 // factory exhaustive so later slices are purely additive.
 func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
+	if cfg.ID == ProviderJev && cfg.APIKey == "" {
+		cfg.APIKey = strings.TrimSpace(os.Getenv("JEV_AI_API_KEY"))
+	}
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("%w (provider=%s)", ErrMissingAPIKey, cfg.ID)
 	}
@@ -67,6 +72,8 @@ func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 		return newAnthropicClient(cfg, logger), nil
 	case ProviderGemini:
 		return &notImplementedClient{provider: ProviderGemini}, nil
+	case ProviderJev:
+		return newJevClient(cfg), nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedProvider, cfg.ID)
 	}

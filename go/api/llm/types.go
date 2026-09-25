@@ -33,6 +33,7 @@ const (
 	ProviderAnthropic        ProviderID = "anthropic"
 	ProviderGemini           ProviderID = "gemini"
 	ProviderOpenAICompatible ProviderID = "openai_compatible"
+	ProviderJev              ProviderID = "jev"
 )
 
 // ProviderConfig is the input to NewClient.
@@ -104,22 +105,23 @@ type Usage struct {
 
 // Request describes one inference call.
 type Request struct {
-	UserID      string
-	Model       string
-	PromptName  string
-	RecordID    int64
-	RunID       int64
-	CallReason  string
-	CallLoc     string
-	Metadata    map[string]any
-	Messages    []Message
-	Capture     *RequestCapture
-	Temperature *float64
-	MaxTokens   *int
-	TopP        *float64
-	Stream      bool
-	Tools       []ToolDef
-	ToolChoice  string
+	UserID       string
+	Model        string
+	PromptName   string
+	RecordID     int64
+	RunID        int64
+	CallReason   string
+	CallLoc      string
+	Metadata     map[string]any
+	Messages     []Message
+	Capture      *RequestCapture
+	Temperature  *float64
+	MaxTokens    *int
+	TopP         *float64
+	Stream       bool
+	Tools        []ToolDef
+	ToolChoice   string
+	JevQuestions JevQuestions
 }
 
 // Response is the result of a non-streaming call.
