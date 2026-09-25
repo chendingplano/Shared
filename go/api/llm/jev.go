@@ -15,18 +15,20 @@ const jevDefaultBaseURL = "https://jev-ai.pro/api"
 // JevQuestion describes one Jev system-one question. Criteria is a map[string]string
 // for choice questions and an ordered []string for score questions.
 type JevQuestion struct {
-	Type     string `json:"type"`
-	Criteria any    `json:"-"`
+	Type         string `json:"type"`
+	Instructions string `json:"instructions"`
+	Criteria     any    `json:"-"`
 }
 
-type JevQuestions []JevQuestion
+type JevQuestions map[string]JevQuestion
 
 func (q JevQuestion) MarshalJSON() ([]byte, error) {
 	type wire struct {
-		Type     string `json:"type"`
-		Criteria any    `json:"criteria,omitempty"`
+		Type         string `json:"type"`
+		Instructions string `json:"instructions"`
+		Criteria     any    `json:"criteria,omitempty"`
 	}
-	v := wire{Type: q.Type}
+	v := wire{Type: q.Type, Instructions: q.Instructions}
 	switch q.Type {
 	case "noul":
 		if q.Criteria != nil {

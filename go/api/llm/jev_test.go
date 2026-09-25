@@ -14,15 +14,15 @@ import (
 
 func TestJevQuestionsWireCriteria(t *testing.T) {
 	q := JevQuestions{
-		{Type: "noul"},
-		{Type: "choice", Criteria: map[string]string{"a": "Alpha"}},
-		{Type: "score", Criteria: []string{"Low", "High"}},
+		"q1": {Type: "noul", Instructions: "Answer yes or no"},
+		"q2": {Type: "choice", Instructions: "Select one", Criteria: map[string]string{"a": "Alpha"}},
+		"q3": {Type: "score", Instructions: "Rate this", Criteria: []string{"Low", "High"}},
 	}
 	got, err := json.Marshal(q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `[{"type":"noul"},{"type":"choice","criteria":{"a":"Alpha"}},{"type":"score","criteria":["Low","High"]}]`
+	want := `{"q1":{"type":"noul","instructions":"Answer yes or no"},"q2":{"type":"choice","instructions":"Select one","criteria":{"a":"Alpha"}},"q3":{"type":"score","instructions":"Rate this","criteria":["Low","High"]}}`
 	if string(got) != want {
 		t.Fatalf("wire = %s, want %s", got, want)
 	}
@@ -98,7 +98,7 @@ func TestJevCompleteRequestAndResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := c.Complete(context.Background(), Request{Model: "model-x", Messages: []Message{{Role: RoleUser, Content: "earlier"}, {Role: RoleUser, Content: "last state"}}, JevQuestions: JevQuestions{{Type: "noul"}}})
+	resp, err := c.Complete(context.Background(), Request{Model: "model-x", Messages: []Message{{Role: RoleUser, Content: "earlier"}, {Role: RoleUser, Content: "last state"}}, JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestJevCompleteRequestAndResponse(t *testing.T) {
 
 func TestJevCompleteValidationAndErrors(t *testing.T) {
 	c, _ := NewClient(ProviderConfig{ID: ProviderJev, APIKey: "key", BaseURL: "http://example.invalid"}, nil)
-	for _, req := range []Request{{Messages: []Message{{Role: RoleUser, Content: "x"}}}, {JevQuestions: JevQuestions{{Type: "noul"}}}, {JevQuestions: JevQuestions{{Type: "noul"}}, Messages: []Message{{Role: RoleUser, Content: "  "}}}, {JevQuestions: JevQuestions{{Type: "noul"}}, Messages: []Message{{Role: RoleUser, Content: "x", Parts: []ContentPart{{Type: "text"}}}}}} {
+	for _, req := range []Request{{Messages: []Message{{Role: RoleUser, Content: "x"}}}, {JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}}, {JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}, Messages: []Message{{Role: RoleUser, Content: "  "}}}, {JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}, Messages: []Message{{Role: RoleUser, Content: "x", Parts: []ContentPart{{Type: "text"}}}}}} {
 		if _, err := c.Complete(context.Background(), req); err == nil {
 			t.Errorf("Complete(%+v) succeeded", req)
 		}
@@ -127,7 +127,7 @@ func TestJevErrorBodyTruncatedAndDoesNotExposeRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 	c, _ := NewClient(ProviderConfig{ID: ProviderJev, APIKey: "key", BaseURL: srv.URL, HTTPClient: srv.Client()}, nil)
-	_, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: secret}}, JevQuestions: JevQuestions{{Type: "noul"}}})
+	_, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: secret}}, JevQuestions: JevQuestions{"id": {Type: "noul", Instructions: "Do it"}}})
 	var pe *ProviderError
 	if !errors.As(err, &pe) {
 		t.Fatalf("error = %v", err)
