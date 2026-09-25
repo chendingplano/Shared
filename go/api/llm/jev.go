@@ -23,9 +23,9 @@ type JevQuestion struct {
 
 // JevQuestions is a set of Jev questions keyed by question ID. For example:
 //
-//     JevQuestions{"urgent": {
-//         Type: "noul", Instructions: "Does this message need urgent support?",
-//     }}
+//	JevQuestions{"urgent": {
+//	    Type: "noul", Instructions: "Does this message need urgent support?",
+//	}}
 //
 // Set Request.JevQuestions when using ProviderJev. Configure the server key in
 // JEV_AI_API_KEY; NewClient reads it when ProviderConfig.APIKey is empty.
@@ -110,7 +110,7 @@ func (c *jevClient) Complete(ctx context.Context, req Request) (*Response, error
 	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, &ProviderError{Provider: ProviderJev, Model: req.Model, Err: err}
+		return nil, &ProviderError{Provider: ProviderJevCompatible, Model: req.Model, Err: err}
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(resp.Body)
@@ -149,7 +149,7 @@ func jevProviderError(model string, status int, body []byte, err error) *Provide
 	if len(body) > 512 {
 		body = body[:512]
 	}
-	return &ProviderError{Provider: ProviderJev, Model: model, HTTPStatus: status, Body: string(body), Err: err}
+	return &ProviderError{Provider: ProviderJevCompatible, Model: model, HTTPStatus: status, Body: string(body), Err: err}
 }
 
 func lastUserMessageIndex(messages []Message) int {

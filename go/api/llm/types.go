@@ -34,7 +34,9 @@ const (
 	ProviderAnthropic        ProviderID = "anthropic"
 	ProviderGemini           ProviderID = "gemini"
 	ProviderOpenAICompatible ProviderID = "openai_compatible"
-	ProviderJev              ProviderID = "jev"
+	ProviderJevCompatible    ProviderID = "jev_compatible"
+	// ProviderJev is retained as a source-compatible alias.
+	ProviderJev ProviderID = ProviderJevCompatible
 )
 
 // ProviderConfig is the input to NewClient.
@@ -106,22 +108,22 @@ type Usage struct {
 
 // Request describes one inference call.
 type Request struct {
-	UserID       string
-	Model        string
-	PromptName   string
-	RecordID     int64
-	RunID        int64
-	CallReason   string
-	CallLoc      string
-	Metadata     map[string]any
-	Messages     []Message
-	Capture      *RequestCapture
-	Temperature  *float64
-	MaxTokens    *int
-	TopP         *float64
-	Stream       bool
-	Tools        []ToolDef
-	ToolChoice   string
+	UserID      string
+	Model       string
+	PromptName  string
+	RecordID    int64
+	RunID       int64
+	CallReason  string
+	CallLoc     string
+	Metadata    map[string]any
+	Messages    []Message
+	Capture     *RequestCapture
+	Temperature *float64
+	MaxTokens   *int
+	TopP        *float64
+	Stream      bool
+	Tools       []ToolDef
+	ToolChoice  string
 	// JevQuestions supplies Jev's typed decisions, keyed by question ID. Jev
 	// takes the last user message's Content as state; it does not use chat history.
 	JevQuestions JevQuestions

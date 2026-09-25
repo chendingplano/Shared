@@ -33,12 +33,13 @@ func TestNewClientAcceptsKnownProviders(t *testing.T) {
 		ProviderOpenAICompatible,
 		ProviderAnthropic,
 		ProviderGemini,
+		ProviderJevCompatible,
 	}
 
 	logger := loggerutil.CreateDefaultLogger("MID-20260708-04")
 	for _, p := range cases {
 		cfg := ProviderConfig{ID: p, APIKey: "sk-TESTVALUE1234"}
-		if p == ProviderOpenAICompatible {
+		if p == ProviderOpenAICompatible || p == ProviderJevCompatible {
 			cfg.BaseURL = "http://localhost:11434"
 		}
 		c, err := NewClient(cfg, logger)
@@ -48,6 +49,21 @@ func TestNewClientAcceptsKnownProviders(t *testing.T) {
 		if c == nil {
 			t.Fatalf("%s: got nil client without error", p)
 		}
+	}
+}
+
+func TestJevCompatibleAPIKeyFallbackIsOfficialHostOnly(t *testing.T) {
+	t.Setenv("JEV_AI_API_KEY", "official-secret")
+	client, err := NewClient(ProviderConfig{ID: ProviderJevCompatible, BaseURL: "https://jev-ai.pro/api"}, nil)
+	if err != nil {
+		t.Fatalf("official Jev host: %v", err)
+	}
+	if got := client.(*jevClient).cfg.APIKey; got != "official-secret" {
+		t.Fatalf("official key = %q, want environment key", got)
+	}
+
+	if _, err := NewClient(ProviderConfig{ID: ProviderJevCompatible, BaseURL: "https://other.example/api"}, nil); !errors.Is(err, ErrMissingAPIKey) {
+		t.Fatalf("compatible endpoint without key error = %v, want ErrMissingAPIKey", err)
 	}
 }
 

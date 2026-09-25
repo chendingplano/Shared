@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -51,7 +52,7 @@ func (e *ProviderError) Unwrap() error { return e.Err }
 // Complete / Stream methods return ErrAdapterNotImplemented — this keeps the
 // factory exhaustive so later slices are purely additive.
 func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
-	if cfg.ID == ProviderJev && cfg.APIKey == "" {
+	if cfg.ID == ProviderJevCompatible && cfg.APIKey == "" && jevKeyAllowed(cfg.BaseURL) {
 		cfg.APIKey = strings.TrimSpace(os.Getenv("JEV_AI_API_KEY"))
 	}
 	if cfg.APIKey == "" {
@@ -72,11 +73,23 @@ func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 		return newAnthropicClient(cfg, logger), nil
 	case ProviderGemini:
 		return &notImplementedClient{provider: ProviderGemini}, nil
-	case ProviderJev:
+	case ProviderJevCompatible:
 		return newJevClient(cfg), nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedProvider, cfg.ID)
 	}
+}
+
+func jevKeyAllowed(baseURL string) bool {
+	if strings.TrimSpace(baseURL) == "" {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	return host == "jev-ai.pro" || strings.HasSuffix(host, ".jev-ai.pro")
 }
 
 // notImplementedClient is the placeholder for adapters reserved for later

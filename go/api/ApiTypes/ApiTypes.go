@@ -86,6 +86,7 @@ var CommonConfig CommonConfigDef
 // [deepseek-v4-flash]
 // host = "cloud"
 // model_name = "deepseek-v4-flash"
+// model_type = "decision-model"
 // api_key = "sk-..."
 // base_url = "https://api.openai.com"
 // timeout_sec = 100
@@ -96,6 +97,7 @@ var CommonConfig CommonConfigDef
 type LLMModelDef struct {
 	Host         string `toml:"host"`
 	ModelName    string `toml:"model_name"`
+	ModelType    string `toml:"model_type"`
 	APIKey       string `toml:"api_key"`
 	BaseURL      string `toml:"base_url"`
 	TimeoutSec   int    `toml:"timeout_sec"`
