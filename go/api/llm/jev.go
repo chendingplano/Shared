@@ -12,14 +12,23 @@ import (
 
 const jevDefaultBaseURL = "https://jev-ai.pro/api"
 
-// JevQuestion describes one Jev system-one question. Criteria is a map[string]string
-// for choice questions and an ordered []string for score questions.
+// JevQuestion describes one Jev system-one question. Type is "noul", "choice",
+// or "score". Criteria must be nil for "noul", a nonempty map[string]string
+// for "choice", or a nonempty ordered []string for "score".
 type JevQuestion struct {
 	Type         string `json:"type"`
 	Instructions string `json:"instructions"`
 	Criteria     any    `json:"-"`
 }
 
+// JevQuestions is a set of Jev questions keyed by question ID. For example:
+//
+//     JevQuestions{"urgent": {
+//         Type: "noul", Instructions: "Does this message need urgent support?",
+//     }}
+//
+// Set Request.JevQuestions when using ProviderJev. Configure the server key in
+// JEV_AI_API_KEY; NewClient reads it when ProviderConfig.APIKey is empty.
 type JevQuestions map[string]JevQuestion
 
 func (q JevQuestion) MarshalJSON() ([]byte, error) {

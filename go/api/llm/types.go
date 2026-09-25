@@ -1,8 +1,9 @@
-// Package llm provides a provider-agnostic client for calling large language
-// model APIs (OpenAI, Anthropic, Gemini, and OpenAI-compatible endpoints such
-// as Ollama or DeepSeek). Each adapter speaks the provider's REST API
-// directly using net/http + encoding/json; no heavy vendor SDKs are pulled
-// into the shared library.
+// Package llm provides a provider-agnostic client for calling language model
+// APIs (OpenAI, Anthropic, Gemini, Jev, and OpenAI-compatible endpoints such
+// as Ollama or DeepSeek). Jev is a structured decision API; callers supply
+// typed questions on Request.JevQuestions, and it does not support streaming.
+// Each adapter speaks the provider's REST API directly using net/http and
+// encoding/json; no heavy vendor SDKs are pulled into the shared library.
 //
 // A typical caller looks like:
 //
@@ -121,6 +122,8 @@ type Request struct {
 	Stream       bool
 	Tools        []ToolDef
 	ToolChoice   string
+	// JevQuestions supplies Jev's typed decisions, keyed by question ID. Jev
+	// takes the last user message's Content as state; it does not use chat history.
 	JevQuestions JevQuestions
 }
 
