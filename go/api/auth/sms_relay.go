@@ -97,12 +97,15 @@ func HandleSMSCourierRelay(c echo.Context) error {
 		})
 	}
 
-	if err := sendAliyunSMS(logger, bareNumber, req.Code); err != nil {
-		logger.Error("aliyun sms send failed", "to", phone, "error", err)
+	sendResult, err := sendAliyunSMS(logger, bareNumber, req.Code)
+	if err != nil {
+		logger.Error("aliyun sms send failed", "to", phone, "request_id", sendResult.RequestID, "error", err)
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": "failed to send sms"})
 	}
 
-	logger.Info("sms code dispatched", "to", phone)
+	// biz_id is the key for Aliyun QuerySendDetails (carrier delivery status);
+	// request_id is what Aliyun support asks for.
+	logger.Info("sms code dispatched", "to", phone, "biz_id", sendResult.BizID, "request_id", sendResult.RequestID)
 	return c.NoContent(http.StatusOK)
 }
 
@@ -130,19 +133,28 @@ func loadAliyunSMSConfig() (aliyunSMSConfig, error) {
 	return cfg, nil
 }
 
+// aliyunSendResult carries the SendSms response IDs needed to trace a message
+// after the fact. Either field may be empty when the call failed before Aliyun
+// answered.
+type aliyunSendResult struct {
+	BizID     string
+	RequestID string
+}
+
 // sendAliyunSMS calls Aliyun Dysmsapi's SendSms RPC action directly (no SDK
 // dependency), mirroring the bzton reference's AliyunSmsUtils.java mechanics
 // in Go, with credentials sourced only from environment variables.
-func sendAliyunSMS(logger ApiTypes.JimoLogger, phone string, code string) error {
+func sendAliyunSMS(logger ApiTypes.JimoLogger, phone string, code string) (aliyunSendResult, error) {
+	var sendResult aliyunSendResult
 	cfg, err := loadAliyunSMSConfig()
 	if err != nil {
 		logger.Error("aliyun sms config missing", "error", err)
-		return err
+		return sendResult, err
 	}
 
 	templateParam, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
-		return fmt.Errorf("failed to marshal template param: %w", err)
+		return sendResult, fmt.Errorf("failed to marshal template param: %w", err)
 	}
 
 	params := map[string]string{
@@ -169,33 +181,36 @@ func sendAliyunSMS(logger ApiTypes.JimoLogger, phone string, code string) error 
 
 	req, err := http.NewRequest(http.MethodPost, "https://dysmsapi.aliyuncs.com/", strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Errorf("failed to build aliyun request: %w", err)
+		return sendResult, fmt.Errorf("failed to build aliyun request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("aliyun request failed: %w", err)
+		return sendResult, fmt.Errorf("aliyun request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {
-		return fmt.Errorf("failed to read aliyun response: %w", err)
+		return sendResult, fmt.Errorf("failed to read aliyun response: %w", err)
 	}
 
 	var result struct {
-		Code    string `json:"Code"`
-		Message string `json:"Message"`
+		Code      string `json:"Code"`
+		Message   string `json:"Message"`
+		BizID     string `json:"BizId"`
+		RequestID string `json:"RequestId"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("failed to parse aliyun response: %w (body: %s)", err, string(body))
+		return sendResult, fmt.Errorf("failed to parse aliyun response: %w (body: %s)", err, string(body))
 	}
+	sendResult = aliyunSendResult{BizID: result.BizID, RequestID: result.RequestID}
 	if result.Code != "OK" {
-		return fmt.Errorf("aliyun rejected sms send: %s - %s", result.Code, result.Message)
+		return sendResult, fmt.Errorf("aliyun rejected sms send: %s - %s", result.Code, result.Message)
 	}
-	return nil
+	return sendResult, nil
 }
 
 func aliyunNonce() string {
