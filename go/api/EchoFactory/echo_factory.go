@@ -422,7 +422,9 @@ func (e *echoContext) GetUserInfoByAppToken(token_name string, token string) (*A
 }
 
 func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool) {
-	if e.user_info != nil {
+	// The cached user is the signed-in one: reuse it only when it is the person asked for,
+	// or an admin looking up someone else gets their own record back.
+	if e.user_info != nil && strings.EqualFold(e.user_info.Email, email) {
 		return e.user_info, true
 	}
 
@@ -463,12 +465,16 @@ func (e *echoContext) GetUserInfoByEmail(email string) (*ApiTypes.UserInfo, bool
 		return nil, false
 	}
 
-	e.user_info = user_info
-	return e.user_info, true
+	// Login flows rely on the first lookup becoming the request's user; never replace a signed-in one.
+	if e.user_info == nil {
+		e.user_info = user_info
+	}
+	return user_info, true
 }
 
 func (e *echoContext) GetUserInfoByUserID(user_id string) (*ApiTypes.UserInfo, bool) {
-	if e.user_info != nil {
+	// Same as GetUserInfoByEmail: the cached signed-in user only answers for their own ID.
+	if e.user_info != nil && e.user_info.UserId == user_id {
 		return e.user_info, true
 	}
 
