@@ -23,6 +23,7 @@ interface KratosIdentity {
 	id: string;
 	traits: {
 		email: string;
+		phone?: string;
 		name?: { first?: string; last?: string };
 	};
 	metadata_public?: {

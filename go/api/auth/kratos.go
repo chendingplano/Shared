@@ -699,6 +699,7 @@ func HandleAuthMeKratos(c echo.Context) error {
 				"id": identity.Id,
 				"traits": map[string]interface{}{
 					"email": info.Email,
+					"phone": info.Phone,
 					"name": map[string]interface{}{
 						"first": info.FirstName,
 						"last":  info.LastName,
