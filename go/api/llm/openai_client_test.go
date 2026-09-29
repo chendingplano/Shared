@@ -330,6 +330,46 @@ func TestExtractJSON_OmitsThinkingWhenUnset(t *testing.T) {
 	}
 }
 
+func TestExtractJSON_Temperature(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		omit bool
+	}{
+		{name: "default sends temperature 0", omit: false},
+		{name: "omit_temperature leaves it out", omit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &OpenAIJSONClient{
+				BaseURL:         "https://api.openai.com",
+				APIKey:          "test-key",
+				ModelName:       "gpt-6-luna",
+				OmitTemperature: tc.omit,
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Fatalf("decode request body: %v", err)
+					}
+					temp, ok := body["temperature"]
+					if tc.omit && ok {
+						t.Fatalf("expected no temperature, got %v", temp)
+					}
+					if !tc.omit && (!ok || temp != float64(0)) {
+						t.Fatalf("expected temperature 0, got %v (present=%v)", temp, ok)
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"status\":\"ok\"}"}}]}`)),
+					}, nil
+				})},
+			}
+			if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{PromptText: "prompt", InputText: "text"}); err != nil {
+				t.Fatalf("ExtractJSON error: %v", err)
+			}
+		})
+	}
+}
+
 func TestBuildChatCompletionsEndpoint(t *testing.T) {
 	tests := []struct {
 		name string

@@ -114,6 +114,11 @@ type LLMModelDef struct {
 	// output isn't cut off mid-JSON by the provider's own default cap. Zero
 	// means "don't send max_tokens; use the provider default".
 	MaxOutputTokens int `toml:"max_output_tokens"`
+	// OmitTemperature leaves "temperature" out of chat requests. Set it for
+	// models that reject any non-default temperature (OpenAI reasoning models,
+	// e.g. gpt-6-luna: "'temperature' does not support 0"). False (default)
+	// keeps sending temperature 0.
+	OmitTemperature bool `toml:"omit_temperature"`
 }
 
 // LLMModelsFile maps logical model names to model configuration.

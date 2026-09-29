@@ -45,7 +45,10 @@ type OpenAIJSONClient struct {
 	// MaxOutputTokens, when > 0, is sent as the request's max_tokens so a
 	// large chunk's response isn't cut off mid-JSON by the provider's own
 	// default cap. Zero omits max_tokens from the request entirely.
-	MaxOutputTokens    int
+	MaxOutputTokens int
+	// OmitTemperature, when true, leaves "temperature" out of chat requests
+	// (for models that only accept the default). False sends temperature 0.
+	OmitTemperature    bool
 	HTTPClient         *http.Client
 	logger             ApiTypes.JimoLogger
 	usageMu            sync.Mutex
@@ -67,6 +70,9 @@ type OpenAIJSONClientConfig struct {
 	// MaxOutputTokens, when > 0, is sent as the request's max_tokens. See
 	// OpenAIJSONClient.MaxOutputTokens.
 	MaxOutputTokens int
+	// OmitTemperature, when true, leaves "temperature" out of chat requests.
+	// See OpenAIJSONClient.OmitTemperature.
+	OmitTemperature bool
 	// Per-model concurrency and rate budget from .models.toml (ADR 2026061802 DR6).
 	// Zero values mean "use the process-wide env-var default".
 	MaxInflight          int
@@ -190,6 +196,7 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 		ThinkingType:        normalizeThinkingType(cfg.ThinkingType),
 		EmbeddingDimensions: cfg.EmbeddingDimensions,
 		MaxOutputTokens:     cfg.MaxOutputTokens,
+		OmitTemperature:     cfg.OmitTemperature,
 		logger:              logger,
 		HTTPClient: &http.Client{
 			Timeout: time.Duration(timeoutSec) * time.Second,
@@ -273,9 +280,11 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	defer permit.Release()
 
 	body := map[string]any{
-		"model":       model,
-		"messages":    buildMessages(prompt, in.InputText, in.DocumentFirst),
-		"temperature": 0,
+		"model":    model,
+		"messages": buildMessages(prompt, in.InputText, in.DocumentFirst),
+	}
+	if !c.OmitTemperature {
+		body["temperature"] = 0
 	}
 	// c.logger.Info("llm-call", "body", body)
 
