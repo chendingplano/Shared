@@ -56,3 +56,35 @@ func TestPiGatewayDelegatesRunAndCapturesUser(t *testing.T) {
 		t.Fatalf("capture metadata = %#v", captured.Metadata)
 	}
 }
+
+func TestPiGatewaySendsKnowledgeOnlyWhenSet(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		knowledge any
+		want      bool
+	}{
+		{"absent", nil, false},
+		{"present", map[string]any{"defaultStoreId": "7"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var payload map[string]json.RawMessage
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				_, _ = w.Write([]byte("{\"type\":\"done\"}\n"))
+			}))
+			defer server.Close()
+			body, err := NewPiGatewayClient(server.URL, "private-secret-private-secret", server.Client()).Start(context.Background(), PiGatewayRun{RunID: "run-1", ConversationID: "conversation-1", UserID: "user-1", Message: "hello", Capability: "capability", Profile: map[string]string{"slug": "help"}, History: []any{}, Knowledge: tc.knowledge})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.ReadAll(body)
+			_ = body.Close()
+			if _, ok := payload["knowledge"]; ok != tc.want {
+				t.Fatalf("knowledge present=%v, want %v: %s", ok, tc.want, payload["knowledge"])
+			}
+		})
+	}
+}

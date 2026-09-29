@@ -19,7 +19,10 @@ type PiGatewayRun struct {
 	RunID, ConversationID, UserID, Message, Capability string
 	Profile                                            any
 	History                                            any
-	Capture                                            *RequestCapture
+	// Knowledge is optional run-scoped knowledge context. Leave it nil when the
+	// run has none; it is then omitted from the gateway request.
+	Knowledge any
+	Capture   *RequestCapture
 }
 
 type piGatewayWireRun struct {
@@ -30,6 +33,7 @@ type piGatewayWireRun struct {
 	Capability     string `json:"capability"`
 	Profile        any    `json:"profile"`
 	History        any    `json:"history"`
+	Knowledge      any    `json:"knowledge,omitempty"`
 }
 
 // piGatewayCaptureInput deliberately excludes Capability, which is a bearer
@@ -41,6 +45,7 @@ type piGatewayCaptureInput struct {
 	Message        string `json:"message"`
 	Profile        any    `json:"profile"`
 	History        any    `json:"history"`
+	Knowledge      any    `json:"knowledge,omitempty"`
 }
 type PiGatewayClient struct {
 	baseURL *url.URL
@@ -76,8 +81,8 @@ func (g *PiGatewayClient) endpoint(path string) string {
 }
 func (g *PiGatewayClient) Start(ctx context.Context, run PiGatewayRun) (body io.ReadCloser, err error) {
 	started := time.Now()
-	raw, marshalErr := json.Marshal(piGatewayWireRun{RunID: run.RunID, ConversationID: run.ConversationID, UserID: run.UserID, Message: run.Message, Capability: run.Capability, Profile: run.Profile, History: run.History})
-	captureInput, _ := json.Marshal(piGatewayCaptureInput{RunID: run.RunID, ConversationID: run.ConversationID, UserID: run.UserID, Message: run.Message, Profile: run.Profile, History: run.History})
+	raw, marshalErr := json.Marshal(piGatewayWireRun{RunID: run.RunID, ConversationID: run.ConversationID, UserID: run.UserID, Message: run.Message, Capability: run.Capability, Profile: run.Profile, History: run.History, Knowledge: run.Knowledge})
+	captureInput, _ := json.Marshal(piGatewayCaptureInput{RunID: run.RunID, ConversationID: run.ConversationID, UserID: run.UserID, Message: run.Message, Profile: run.Profile, History: run.History, Knowledge: run.Knowledge})
 	defer func() {
 		captureUsageRecord(ctx, Request{UserID: run.UserID, Capture: run.Capture}, UsageCaptureInput{UserID: run.UserID, Provider: ProviderOpenAICompatible, BaseURL: gatewayBaseURL(g), ModelName: "pi_gateway", PromptName: "pi_gateway_run", CallReason: "pi_gateway_run", CallLoc: "LLM_GATE_001", RequestStartedAt: started, RequestFinishedAt: time.Now(), InputBody: captureInput, ErrorMessage: errorString(err), Metadata: map[string]any{"capture_semantics": "start_request_audit"}}, loggerutil.CreateDefaultLogger("20260920-202"))
 	}()
