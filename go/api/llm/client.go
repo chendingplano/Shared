@@ -55,7 +55,7 @@ func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 	if cfg.ID == ProviderJevCompatible && cfg.APIKey == "" && jevKeyAllowed(cfg.BaseURL) {
 		cfg.APIKey = strings.TrimSpace(os.Getenv("JEV_AI_API_KEY"))
 	}
-	if cfg.APIKey == "" {
+	if cfg.APIKey == "" && cfg.ID != ProviderJevEmulated {
 		return nil, fmt.Errorf("%w (provider=%s)", ErrMissingAPIKey, cfg.ID)
 	}
 	if cfg.HTTPClient == nil {
@@ -75,6 +75,11 @@ func NewClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (Client, error) {
 		return &notImplementedClient{provider: ProviderGemini}, nil
 	case ProviderJevCompatible:
 		return newJevClient(cfg), nil
+	case ProviderJevEmulated:
+		if cfg.BaseURL == "" {
+			return nil, fmt.Errorf("%w (provider=%s)", ErrMissingBaseURL, cfg.ID)
+		}
+		return newJevEmulatedClient(cfg, logger)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedProvider, cfg.ID)
 	}

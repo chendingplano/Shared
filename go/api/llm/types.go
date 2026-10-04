@@ -2,6 +2,8 @@
 // APIs (OpenAI, Anthropic, Gemini, Jev, and OpenAI-compatible endpoints such
 // as Ollama or DeepSeek). Jev is a structured decision API; callers supply
 // typed questions on Request.JevQuestions, and it does not support streaming.
+// ProviderJevEmulated answers the same questions with any OpenAI-compatible
+// chat model by reading token logprobs, so no Jev account is required.
 // Each adapter speaks the provider's REST API directly using net/http and
 // encoding/json; no heavy vendor SDKs are pulled into the shared library.
 //
@@ -35,6 +37,10 @@ const (
 	ProviderGemini           ProviderID = "gemini"
 	ProviderOpenAICompatible ProviderID = "openai_compatible"
 	ProviderJevCompatible    ProviderID = "jev_compatible"
+	// ProviderJevEmulated answers Jev questions with any OpenAI-compatible chat
+	// model by reading its option-letter logprobs (see jev_emulated.go).
+	// BaseURL is required; APIKey may be empty for local servers.
+	ProviderJevEmulated ProviderID = "jev_emulated"
 	// ProviderJev is retained as a source-compatible alias.
 	ProviderJev ProviderID = ProviderJevCompatible
 )
