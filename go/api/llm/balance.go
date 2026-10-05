@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/chendingplano/shared/go/api/loggerutil"
 )
 
 type Balance struct {
@@ -24,7 +27,28 @@ type DeepSeekBalanceClient struct{ HTTPClient *http.Client }
 func NewDeepSeekBalanceClient(client *http.Client) *DeepSeekBalanceClient {
 	return &DeepSeekBalanceClient{HTTPClient: client}
 }
-func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey string, _ *RequestCapture) (BalanceResult, error) {
+
+// Fetch records each balance read through the same usage sink as model calls,
+// including failed reads. Balance reads consume no model tokens.
+func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey string, capture *RequestCapture) (result BalanceResult, err error) {
+	started := time.Now()
+	var raw []byte
+	defer func() {
+		in := UsageCaptureInput{
+			Provider: ProviderID("deepseek"), BaseURL: baseURL, APIKey: apiKey,
+			PromptName: "provider_balance", CallReason: "provider_balance", CallLoc: "LLM_BALANCE_001",
+			RequestStartedAt: started, RequestFinishedAt: time.Now(),
+			OutputBody: raw, ErrorMessage: errorString(err),
+		}
+		if capture != nil {
+			in.AccountID, in.ProfileID = capture.AccountID, capture.ProfileID
+			in.InputBodyRef, in.OutputBodyRef = capture.InputBodyRef, capture.OutputBodyRef
+		}
+		if err != nil {
+			in.RawResponse = string(raw)
+		}
+		captureUsageRecord(ctx, Request{Capture: capture}, in, loggerutil.CreateDefaultLogger("20261027-367"))
+	}()
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		baseURL = "https://api.deepseek.com"
@@ -43,7 +67,7 @@ func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey strin
 		return BalanceResult{}, err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return BalanceResult{}, err
 	}
@@ -62,7 +86,7 @@ func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey strin
 	if len(decoded.BalanceInfos) == 0 {
 		return BalanceResult{}, errors.New("deepseek balance response missing balance_infos")
 	}
-	result := BalanceResult{RawPayload: raw}
+	result = BalanceResult{RawPayload: raw}
 	for _, info := range decoded.BalanceInfos {
 		amount, err := strconv.ParseFloat(strings.TrimSpace(info.TotalBalance), 64)
 		if err != nil {
