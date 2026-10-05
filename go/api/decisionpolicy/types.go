@@ -13,7 +13,7 @@
 // The tables live in the Postgres "shared" schema and are created by the goose
 // migration *_create_shared_decision_policies.sql in each adopting app's
 // shared_migrations/ directory. Spec:
-// shared/openspec/changes/add-decision-policy-store/ (or openspec/specs/decision-policy-store once archived).
+// shared/openspec/specs/decision-policy-store/spec.md.
 package decisionpolicy
 
 import (
