@@ -179,6 +179,9 @@ func TestJevEmulatedErrors(t *testing.T) {
 	if _, err := NewClient(ProviderConfig{ID: ProviderJevEmulated, BaseURL: "http://x", Extra: map[string]string{"top_logprobs": "0"}}, nil); err == nil {
 		t.Fatal("expected error for top_logprobs=0")
 	}
+	if _, err := NewClient(ProviderConfig{ID: ProviderJevEmulated, BaseURL: "http://x", Extra: map[string]string{"thinking": "off"}}, nil); err == nil {
+		t.Fatal("expected error for thinking=off")
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"A"}}]}`))
 	}))
@@ -195,6 +198,30 @@ func TestJevEmulatedErrors(t *testing.T) {
 		req.JevQuestions = JevQuestions{"q": q}
 		if _, err := client.Complete(context.Background(), req); err == nil {
 			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestJevEmulatedThinking(t *testing.T) {
+	srv, bodies := fakeLogprobServer(t, func(string) map[string]float64 { return map[string]float64{"A": 0.6, "B": 0.4} })
+	q := JevQuestions{"q": {Type: "noul", Instructions: "Q?"}}
+	for _, tc := range []struct {
+		extra map[string]string
+		want  any
+	}{
+		{nil, nil},
+		{map[string]string{"thinking": " Disabled "}, map[string]any{"type": "disabled"}},
+	} {
+		client, err := NewClient(ProviderConfig{ID: ProviderJevEmulated, BaseURL: srv.URL, Extra: tc.extra}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "s"}}, JevQuestions: q}); err != nil {
+			t.Fatal(err)
+		}
+		got := (*bodies)[len(*bodies)-1]["thinking"]
+		if (tc.want == nil) != (got == nil) || (tc.want != nil && got.(map[string]any)["type"] != "disabled") {
+			t.Errorf("extra %v: thinking = %v, want %v", tc.extra, got, tc.want)
 		}
 	}
 }

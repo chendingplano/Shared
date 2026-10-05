@@ -80,6 +80,9 @@ type jevOption struct {
 //	concurrency       questions evaluated at once (default 4)
 //	temperature       sent as-is (default "0"); "omit" leaves it out
 //	reasoning_effort  sent as-is when set, e.g. "none" for llama.cpp thinking models
+//	thinking          "enabled" or "disabled", sent as {"thinking":{"type":…}};
+//	                  DeepSeek V4 needs "disabled", otherwise its one output
+//	                  token goes to reasoning and no logprobs come back
 type jevEmulatedClient struct {
 	cfg         ProviderConfig
 	endpoint    string
@@ -87,6 +90,7 @@ type jevEmulatedClient struct {
 	concurrency int
 	temperature *float64
 	reasoning   string
+	thinking    string
 	logger      ApiTypes.JimoLogger
 }
 
@@ -109,6 +113,11 @@ func newJevEmulatedClient(cfg ProviderConfig, logger ApiTypes.JimoLogger) (*jevE
 				return nil, fmt.Errorf("jev_emulated: Extra[%q] must be a positive integer, got %q", name, v)
 			}
 			*dst = n
+		}
+	}
+	if v := strings.TrimSpace(cfg.Extra["thinking"]); v != "" {
+		if c.thinking = normalizeThinkingType(v); c.thinking == "" {
+			return nil, fmt.Errorf("jev_emulated: Extra[\"thinking\"] must be \"enabled\" or \"disabled\", got %q", v)
 		}
 	}
 	switch v := strings.TrimSpace(cfg.Extra["temperature"]); v {
@@ -355,6 +364,9 @@ func (c *jevEmulatedClient) ask(ctx context.Context, req Request, state string, 
 	}
 	if c.reasoning != "" {
 		body["reasoning_effort"] = c.reasoning
+	}
+	if c.thinking != "" {
+		body["thinking"] = map[string]string{"type": c.thinking}
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
