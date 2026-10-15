@@ -2,6 +2,7 @@ package security
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,62 @@ func TestLoadKeyFromEnv(t *testing.T) {
 			if got[i] != want[i] {
 				t.Fatalf("key byte %d mismatch: got %d want %d", i, got[i], want[i])
 			}
+		}
+	})
+}
+
+func TestLoadKeyFromEnvOrFile(t *testing.T) {
+	varName := "SHARED_TEST_AESGCM_KEY"
+	a := base64.StdEncoding.EncodeToString(mustKey(t))
+	other := mustKey(t)
+	other[0] ^= 0xff
+	b := base64.StdEncoding.EncodeToString(other)
+
+	t.Run("same value in both", func(t *testing.T) {
+		t.Setenv(varName, a)
+		if _, err := LoadKeyFromEnvOrFile(varName, a); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("only in the env file", func(t *testing.T) {
+		t.Setenv(varName, "")
+		got, err := LoadKeyFromEnvOrFile(varName, a)
+		if err != nil || base64.StdEncoding.EncodeToString(got) != a {
+			t.Fatalf("got %v, %v; want the file's key", got, err)
+		}
+	})
+
+	t.Run("only in the environment", func(t *testing.T) {
+		t.Setenv(varName, a)
+		got, err := LoadKeyFromEnvOrFile(varName, "")
+		if err != nil || base64.StdEncoding.EncodeToString(got) != a {
+			t.Fatalf("got %v, %v; want the environment's key", got, err)
+		}
+	})
+
+	t.Run("different values refuse without leaking either", func(t *testing.T) {
+		t.Setenv(varName, a)
+		_, err := LoadKeyFromEnvOrFile(varName, b)
+		if !errors.Is(err, ErrKeySourcesDiffer) {
+			t.Fatalf("got %v, want ErrKeySourcesDiffer", err)
+		}
+		if strings.Contains(err.Error(), a) || strings.Contains(err.Error(), b) {
+			t.Fatalf("error leaks a key: %v", err)
+		}
+	})
+
+	t.Run("missing in both", func(t *testing.T) {
+		t.Setenv(varName, "")
+		if _, err := LoadKeyFromEnvOrFile(varName, ""); !errors.Is(err, ErrEnvVarMissing) {
+			t.Fatalf("got %v, want ErrEnvVarMissing", err)
+		}
+	})
+
+	t.Run("bad file value is still checked", func(t *testing.T) {
+		t.Setenv(varName, "")
+		if _, err := LoadKeyFromEnvOrFile(varName, "!!!not-base64!!!"); !errors.Is(err, ErrEnvVarNotBase64) {
+			t.Fatalf("got %v, want ErrEnvVarNotBase64", err)
 		}
 	})
 }
