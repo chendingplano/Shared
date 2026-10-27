@@ -22,7 +22,12 @@ type BalanceResult struct {
 	Balances   []Balance
 	RawPayload []byte
 }
-type DeepSeekBalanceClient struct{ HTTPClient *http.Client }
+type DeepSeekBalanceClient struct {
+	HTTPClient *http.Client
+	// ModelName attributes balance usage events to a project-selected model.
+	// It does not change the provider's account-level balance request.
+	ModelName string
+}
 
 func NewDeepSeekBalanceClient(client *http.Client) *DeepSeekBalanceClient {
 	return &DeepSeekBalanceClient{HTTPClient: client}
@@ -36,6 +41,7 @@ func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey strin
 	defer func() {
 		in := UsageCaptureInput{
 			Provider: ProviderID("deepseek"), BaseURL: baseURL, APIKey: apiKey,
+			ModelName:  strings.TrimSpace(c.ModelName),
 			PromptName: "provider_balance", CallReason: "provider_balance", CallLoc: "LLM_BALANCE_001",
 			RequestStartedAt: started, RequestFinishedAt: time.Now(),
 			OutputBody: raw, ErrorMessage: errorString(err),

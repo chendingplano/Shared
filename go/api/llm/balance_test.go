@@ -46,7 +46,9 @@ func TestDeepSeekBalanceClientCapturesEveryOutcome(t *testing.T) {
 			}))
 			defer server.Close()
 			sink := &testUsageCaptureSink{}
-			_, err := NewDeepSeekBalanceClient(server.Client()).Fetch(context.Background(), server.URL, "key", &RequestCapture{UserID: "user-1", AccountID: "account-1", Sink: sink})
+			client := NewDeepSeekBalanceClient(server.Client())
+			client.ModelName = "deepseek-flash-processor"
+			_, err := client.Fetch(context.Background(), server.URL, "key", &RequestCapture{UserID: "user-1", AccountID: "account-1", Sink: sink})
 			if (err != nil) != tc.wantError {
 				t.Fatalf("Fetch error = %v, wantError %v", err, tc.wantError)
 			}
@@ -58,7 +60,7 @@ func TestDeepSeekBalanceClientCapturesEveryOutcome(t *testing.T) {
 			if record.AccountID != "account-1" || record.UserID != "user-1" || record.Provider != ProviderID("deepseek") || record.BaseURL != server.URL {
 				t.Fatalf("unexpected attribution: %+v", record)
 			}
-			if record.TotalTokens != 0 || record.ModelName != "" || record.CallReason != "provider_balance" || record.PromptName != "provider_balance" || record.CallLoc == "" {
+			if record.TotalTokens != 0 || record.ModelName != "deepseek-flash-processor" || record.CallReason != "provider_balance" || record.PromptName != "provider_balance" || record.CallLoc == "" {
 				t.Fatalf("unexpected balance operation: %+v", record)
 			}
 			if record.RequestStartedAt.IsZero() || record.RequestFinishedAt.Before(record.RequestStartedAt) || string(record.OutputBody) != tc.body {
