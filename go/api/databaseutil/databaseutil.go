@@ -199,6 +199,7 @@ func StrPtr(s string) *string {
 }
 
 func CloseDatabase(config ApiTypes.CommonConfigDef) {
+	closeNamedPostgresPools()
 	if config.MySQLConf.ProjectDBHandle != nil {
 		config.MySQLConf.ProjectDBHandle.Close()
 	}
