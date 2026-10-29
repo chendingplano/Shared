@@ -96,6 +96,9 @@ func RegisterRoutes(e *echo.Echo) {
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 
 	// Icon service
+	e.GET("/shared_api/v1/icons/search", RequestHandlers.HandleSearchIconLibrary)
+	e.GET("/shared_api/v1/icons/by-name/:name/svg", RequestHandlers.HandleGetIconLibrarySVG)
+	e.POST("/shared_api/v1/icons/library", RequestHandlers.HandleAddIconLibraryIcon)
 	e.GET("/shared_api/v1/icons", RequestHandlers.HandleListIcons)
 	e.GET("/shared_api/v1/icons/categories", RequestHandlers.HandleGetCategories)
 	e.GET("/shared_api/v1/icons/:id", RequestHandlers.HandleGetIcon)

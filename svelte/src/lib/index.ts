@@ -10,7 +10,9 @@ export {
 } from './utils/auth';
 
 export { default as EmailVerifyPage } from './components/EmailVerifyPage.svelte';
-export { IconGrid, IconPicker, IconManager } from './components/icons';
+export { IconGrid, IconPicker, IconManager, Icon, IconSearchPicker } from './components/icons';
+export { searchIcons, getIconSvg } from './stores/iconLibrary';
+export type { LibraryIcon } from './stores/iconLibrary';
 export { appAuthStore } from './stores/auth.svelte';
 export { db_store } from './stores/dbstore';
 export { iconStore } from './stores/iconStore';
