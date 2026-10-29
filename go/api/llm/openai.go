@@ -204,6 +204,9 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 	if err != nil {
 		return nil, err
 	}
+	if err := waitForRequestGate(ctx, chatRequestGateCall(req, c.captureProvider(), c.baseURL, c.cfg.APIKey, c.cfg.ProfileName)); err != nil {
+		return nil, err
+	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
 		captureUsageRecord(ctx, req, UsageCaptureInput{
@@ -373,6 +376,9 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 		return err
 	}
 	httpReq.Header.Set("Accept", "text/event-stream")
+	if err := waitForRequestGate(ctx, chatRequestGateCall(req, c.captureProvider(), c.baseURL, c.cfg.APIKey, c.cfg.ProfileName)); err != nil {
+		return err
+	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
 		captureUsageRecord(ctx, req, UsageCaptureInput{

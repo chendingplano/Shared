@@ -270,10 +270,12 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 	// 	"model", model,
 	// 	"estimated_tokens", estimateChatRequestTokensForModel(model, prompt, in.InputText))
 
-	if err := waitForLLMRequestRateLimit(ctx, model, prompt, in.InputText); err != nil {
-		return "", fmt.Errorf("(MID_26061820) llm request rate limit wait failed: %w", err)
-	}
-	permit, err := c.acquireModelPermit(ctx, model)
+	permit, err := c.acquireGatedModelPermit(ctx, model, c.chatGateCall(in, model), func() error {
+		if err := waitForLLMRequestRateLimit(ctx, model, prompt, in.InputText); err != nil {
+			return fmt.Errorf("(MID_26061820) llm request rate limit wait failed: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return "", err
 	}
@@ -829,10 +831,15 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	c.ensureLogger().Info("llm-call embed",
 		"model", model,
 		"estimated_tokens", estimateEmbeddingTokens([]string{in.InputText}))
-	if err := waitForEmbeddingRateLimit(ctx, []string{in.InputText}); err != nil {
-		return nil, fmt.Errorf("(MID_26060801) embedding rate limit wait failed: %w", err)
+	identity := embedCallIdentity{
+		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
 	}
-	permit, err := c.acquireModelPermit(ctx, model)
+	permit, err := c.acquireGatedModelPermit(ctx, model, c.embeddingGateCall(model, identity), func() error {
+		if err := waitForEmbeddingRateLimit(ctx, []string{in.InputText}); err != nil {
+			return fmt.Errorf("(MID_26060801) embedding rate limit wait failed: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -845,9 +852,7 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	vecs, err := c.embedRequest(ctx, body, model, startedAt, embedCallIdentity{
-		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
-	})
+	vecs, err := c.embedRequest(ctx, body, model, startedAt, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -885,10 +890,15 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	c.ensureLogger().Info("llm-call batch embed",
 		"model", model,
 		"estimated_tokens", estimateEmbeddingTokens(inputs))
-	if err := waitForEmbeddingRateLimit(ctx, inputs); err != nil {
-		return nil, fmt.Errorf("(MID_26060802) embedding batch rate limit wait failed: %w", err)
+	identity := embedCallIdentity{
+		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
 	}
-	permit, err := c.acquireModelPermit(ctx, model)
+	permit, err := c.acquireGatedModelPermit(ctx, model, c.embeddingGateCall(model, identity), func() error {
+		if err := waitForEmbeddingRateLimit(ctx, inputs); err != nil {
+			return fmt.Errorf("(MID_26060802) embedding batch rate limit wait failed: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -901,9 +911,7 @@ func (c *OpenAIJSONClient) EmbedBatch(ctx context.Context, in EmbedBatchInput) (
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
 	}
-	return c.embedRequest(ctx, body, model, startedAt, embedCallIdentity{
-		UserID: in.UserID, RecordID: in.RecordID, RunID: in.RunID, CallReason: in.CallReason, CallLoc: in.CallLoc,
-	})
+	return c.embedRequest(ctx, body, model, startedAt, identity)
 }
 
 func resolveEmbeddingDimensions(clientDimensions int, requestDimensions int) int {
@@ -1071,6 +1079,64 @@ func (c *OpenAIJSONClient) acquireModelPermit(ctx context.Context, modelName str
 		return &acquiredModelPermit{}, nil
 	}
 	return permit, nil
+}
+
+// acquireGatedModelPermit passes ctx's request gate, then waitRateLimit and
+// the model permit. If the gate closed while the call waited for its permit,
+// the permit is released and the call goes back to the gate, so a held call
+// never sits on a permit that other callers need.
+func (c *OpenAIJSONClient) acquireGatedModelPermit(ctx context.Context, modelName string, call RequestGateCall, waitRateLimit func() error) (modelPermit, error) {
+	for {
+		if err := waitForRequestGate(ctx, call); err != nil {
+			return nil, err
+		}
+		if err := waitRateLimit(); err != nil {
+			return nil, err
+		}
+		permit, err := c.acquireModelPermit(ctx, modelName)
+		if err != nil {
+			return nil, err
+		}
+		if requestGateOpen(ctx) {
+			return permit, nil
+		}
+		permit.Release()
+	}
+}
+
+// usageIdentity is the client part of a usage event's identity for model.
+func (c *OpenAIJSONClient) usageIdentity(model string) UsageCaptureInput {
+	return UsageCaptureInput{
+		AccountID:   strings.TrimSpace(c.AccountID),
+		ProfileID:   strings.TrimSpace(c.ProfileID),
+		ProfileName: strings.TrimSpace(c.ProfileName),
+		Provider:    normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
+		BaseURL:     strings.TrimSpace(c.BaseURL),
+		APIKey:      strings.TrimSpace(c.APIKey),
+		ModelName:   strings.TrimSpace(model),
+	}
+}
+
+func (c *OpenAIJSONClient) chatGateCall(in JSONExtractionInput, model string) RequestGateCall {
+	usage := c.usageIdentity(model)
+	usage.UserID = strings.TrimSpace(in.UserID)
+	usage.PromptName = strings.TrimSpace(in.PromptName)
+	usage.RecordID = in.RecordID
+	usage.RunID = in.RunID
+	usage.CallReason = strings.TrimSpace(in.CallReason)
+	usage.CallLoc = strings.TrimSpace(in.CallLoc)
+	return RequestGateCall{Kind: RequestGateCallChat, Usage: usage}
+}
+
+func (c *OpenAIJSONClient) embeddingGateCall(model string, identity embedCallIdentity) RequestGateCall {
+	usage := c.usageIdentity(model)
+	usage.UserID = strings.TrimSpace(identity.UserID)
+	usage.PromptName = "embedding_no_prompt"
+	usage.RecordID = identity.RecordID
+	usage.RunID = identity.RunID
+	usage.CallReason = identity.CallReason
+	usage.CallLoc = identity.CallLoc
+	return RequestGateCall{Kind: RequestGateCallEmbedding, Usage: usage}
 }
 
 /*

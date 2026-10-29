@@ -253,6 +253,9 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (*Response,
 	if err != nil {
 		return nil, err
 	}
+	if err := waitForRequestGate(ctx, chatRequestGateCall(req, c.cfg.ID, c.baseURL, c.cfg.APIKey, c.cfg.ProfileName)); err != nil {
+		return nil, err
+	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
 		captureUsageRecord(ctx, req, UsageCaptureInput{
@@ -404,6 +407,9 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on StreamHand
 	}
 	httpReq, err := c.newHTTPRequest(ctx, payload, true)
 	if err != nil {
+		return err
+	}
+	if err := waitForRequestGate(ctx, chatRequestGateCall(req, c.cfg.ID, c.baseURL, c.cfg.APIKey, c.cfg.ProfileName)); err != nil {
 		return err
 	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)

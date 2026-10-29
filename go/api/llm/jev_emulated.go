@@ -411,6 +411,9 @@ func (c *jevEmulatedClient) ask(ctx context.Context, req Request, state string, 
 	if c.cfg.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	}
+	if err := waitForRequestGate(ctx, chatRequestGateCall(req, normalizeOpenAIJSONProvider("", c.cfg.BaseURL), c.cfg.BaseURL, c.cfg.APIKey, c.cfg.ProfileName)); err != nil {
+		return nil, nil, err
+	}
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
 		capture(nil, nil, "", err.Error())

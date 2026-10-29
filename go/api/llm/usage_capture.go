@@ -61,6 +61,9 @@ type UsageCaptureInput struct {
 	CallReason        string
 	CallLoc           string
 	Metadata          map[string]any
+	// EventKind is "" (stored as "request") for a provider request, or a
+	// lifecycle kind such as "llm_hold" that usage aggregates do not count.
+	EventKind string
 }
 
 type UsageCaptureRecord struct {
@@ -92,6 +95,7 @@ type UsageCaptureRecord struct {
 	CallReason            string
 	CallLoc               string
 	Metadata              map[string]any
+	EventKind             string
 }
 
 func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
@@ -125,6 +129,7 @@ func NewUsageCaptureRecord(in UsageCaptureInput) UsageCaptureRecord {
 		CallReason:            in.CallReason,
 		CallLoc:               in.CallLoc,
 		Metadata:              in.Metadata,
+		EventKind:             in.EventKind,
 	}
 }
 
