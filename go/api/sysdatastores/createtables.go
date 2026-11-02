@@ -21,6 +21,7 @@ func CreateSysTables(logger ApiTypes.JimoLogger) error {
 	CreatePromptStoreTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNamePromptStore)
 	CreateResourcesTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
 	CreateTableManagerTable(logger)
+	CreateAlertLogTable(logger, db, database_type)
 	CreateIconsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameResources)
 	ipdb.CreateTables(logger)
 

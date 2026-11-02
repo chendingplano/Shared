@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"strconv"
@@ -33,6 +34,7 @@ type JSONExtractionInput struct {
 }
 
 type OpenAIJSONClient struct {
+	Host                string
 	BaseURL             string
 	APIKey              string
 	AccountID           string
@@ -57,6 +59,7 @@ type OpenAIJSONClient struct {
 }
 
 type OpenAIJSONClientConfig struct {
+	Host                string
 	ModelName           string
 	APIKey              string
 	BaseURL             string
@@ -186,6 +189,7 @@ func NewOpenAIJSONClientFromConfig(cfg OpenAIJSONClientConfig, logger ApiTypes.J
 	}
 
 	return &OpenAIJSONClient{
+		Host:                strings.TrimSpace(cfg.Host),
 		BaseURL:             baseURL,
 		APIKey:              apiKey,
 		AccountID:           strings.TrimSpace(cfg.AccountID),
@@ -418,6 +422,13 @@ func (c *OpenAIJSONClient) captureUsage(
 		// bloat every successful row for no benefit.
 		rawResponse = outputContent
 	}
+	metadata := maps.Clone(in.Metadata)
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	if strings.TrimSpace(c.Host) != "" {
+		metadata["host"] = strings.TrimSpace(c.Host)
+	}
 	eventID := captureUsageRecord(ctx, Request{}, UsageCaptureInput{
 		UserID:                strings.TrimSpace(in.UserID),
 		AccountID:             strings.TrimSpace(c.AccountID),
@@ -443,7 +454,7 @@ func (c *OpenAIJSONClient) captureUsage(
 		RunID:                 in.RunID,
 		CallReason:            strings.TrimSpace(in.CallReason),
 		CallLoc:               strings.TrimSpace(in.CallLoc),
-		Metadata:              in.Metadata,
+		Metadata:              metadata,
 	}, c.logger)
 	return eventID
 }
@@ -845,9 +856,11 @@ func (c *OpenAIJSONClient) Embed(ctx context.Context, in EmbedInput) ([]float64,
 	}
 	defer permit.Release()
 
+	// Always send input as a list: some OpenAI-compatible embedding servers
+	// (e.g. the production bge-m3 endpoint) reject a bare string with 422.
 	body := map[string]any{
 		"model": model,
-		"input": in.InputText,
+		"input": []string{in.InputText},
 	}
 	if dims := resolveEmbeddingDimensions(c.EmbeddingDimensions, in.Dimensions); dims > 0 {
 		body["dimensions"] = dims
@@ -1013,6 +1026,10 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 	if err != nil {
 		errorMessage = err.Error()
 	}
+	metadata := map[string]any{}
+	if strings.TrimSpace(c.Host) != "" {
+		metadata["host"] = strings.TrimSpace(c.Host)
+	}
 	captureUsageRecord(ctx, Request{}, UsageCaptureInput{
 		UserID:            strings.TrimSpace(identity.UserID),
 		AccountID:         strings.TrimSpace(c.AccountID),
@@ -1030,6 +1047,7 @@ func (c *OpenAIJSONClient) captureEmbeddingUsage(
 		InputBody:         inputBody,
 		OutputBody:        outputBody,
 		ErrorMessage:      errorMessage,
+		Metadata:          metadata,
 		RecordID:          identity.RecordID,
 		RunID:             identity.RunID,
 		CallReason:        identity.CallReason,

@@ -46,6 +46,9 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	}
 
 	stores.InitSharedStores(ApiTypes.DBType, db)
+	if ApiTypes.DBType == ApiTypes.PgName {
+		sysdatastores.StartAlertLogWriter(db)
+	}
 	sysdatastores.InitActivityLogCache(
 		ApiTypes.DBType,
 		ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog,

@@ -3,9 +3,11 @@ package ApiTypes
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -98,6 +100,10 @@ type LLMModelDef struct {
 	Host         string `toml:"host"`
 	ModelName    string `toml:"model_name"`
 	ModelType    string `toml:"model_type"`
+	// DecisionModelType is mandatory when ModelType is "decision-model" and must be
+	// "native" (a real decision-model service such as Jev) or "emulated" (a chat
+	// model answering decision questions through its logprobs). Ignored otherwise.
+	DecisionModelType string `toml:"decision_model_type"`
 	Dimension    int    `toml:"dimension"`
 	MaxChars     int    `toml:"max_chars"`
 	APIKey       string `toml:"api_key"`
@@ -119,6 +125,26 @@ type LLMModelDef struct {
 	// e.g. gpt-6-luna: "'temperature' does not support 0"). False (default)
 	// keeps sending temperature 0.
 	OmitTemperature bool `toml:"omit_temperature"`
+}
+
+// Valid LLMModelDef.DecisionModelType values.
+const (
+	DecisionModelNative   = "native"
+	DecisionModelEmulated = "emulated"
+)
+
+// CheckDecisionModelType reports an error when a "decision-model" entry has a missing
+// or invalid decision_model_type. It is nil for every other model type.
+func (d LLMModelDef) CheckDecisionModelType() error {
+	if strings.TrimSpace(d.ModelType) != "decision-model" {
+		return nil
+	}
+	switch strings.TrimSpace(d.DecisionModelType) {
+	case DecisionModelNative, DecisionModelEmulated:
+		return nil
+	}
+	return fmt.Errorf("model_type %q requires decision_model_type %q or %q, got %q",
+		d.ModelType, DecisionModelNative, DecisionModelEmulated, d.DecisionModelType)
 }
 
 // LLMModelsFile maps logical model names to model configuration.

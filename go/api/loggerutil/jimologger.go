@@ -91,6 +91,7 @@ type JimoLoggerImpl struct {
 	trace       string
 	currentFile string
 	call_depth  int
+	loc         string
 }
 
 func CreateDefaultLogger(loc string) ApiTypes.JimoLogger {
@@ -150,6 +151,7 @@ func createLogger(
 		ctx:        ctx,
 		cancel:     cancelFunc,
 		call_depth: 2,
+		loc:        loc,
 		logger:     getLogger(loggerType),
 		reqID:      generateRequestID("e")}
 }
@@ -295,6 +297,7 @@ func (l *JimoLoggerImpl) Warn(message string, args ...any) {
 	call_flow := GetCallStack(10, true)
 	msg := fmt.Sprintf("[req=%s] %s%s", l.reqID, message, call_flow)
 	l.logger.Warn(msg, args...)
+	l.emitAlert("WARN", message, call_flow, args)
 }
 
 // Error logs an error message with context, location, and additional key-value pairs
@@ -302,6 +305,7 @@ func (l *JimoLoggerImpl) Error(message string, args ...any) {
 	call_flow := GetCallStack(10, true)
 	msg := fmt.Sprintf("[req=%s] %s%s", l.reqID, message, call_flow)
 	l.logger.Error(msg, args...)
+	l.emitAlert("ERROR", message, call_flow, args)
 }
 
 func (l *JimoLoggerImpl) Trace(msg string) {

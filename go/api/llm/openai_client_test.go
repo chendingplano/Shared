@@ -738,7 +738,7 @@ func TestEmbed_CapturesUsageRecordWithLookupHints(t *testing.T) {
 	if got.InputTokens != 6 || got.OutputTokens != 0 || got.TotalTokens != 6 {
 		t.Fatalf("unexpected tokens: %+v", got)
 	}
-	if !strings.Contains(string(got.InputBody), `"input":"test input"`) {
+	if !strings.Contains(string(got.InputBody), `"input":["test input"]`) {
 		t.Fatalf("expected serialized request body, got %q", string(got.InputBody))
 	}
 	if !strings.Contains(string(got.OutputBody), `"prompt_tokens":6`) {
