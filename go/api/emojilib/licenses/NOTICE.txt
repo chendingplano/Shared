@@ -1,0 +1,5 @@
+Emoji artwork: Twemoji, https://github.com/jdecked/twemoji, licensed under Creative Commons Attribution 4.0 International, https://creativecommons.org/licenses/by/4.0/. The SVG files are modified by sanitization and XML reserialization. Original graphics license: TWEMOJI-GRAPHICS-CC-BY-4.0.txt.
+
+Unicode metadata: Unicode CLDR, https://github.com/unicode-org/cldr. CLDR data is licensed under Unicode License V3; see UNICODE-CLDR.txt. Some Chinese names and descriptions were edited for clarity and search relevance.
+
+Twemoji code license: TWEMOJI-CODE-MIT.txt.

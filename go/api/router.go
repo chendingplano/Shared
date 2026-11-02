@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
 	"os"
+	"time"
 
+	"github.com/chendingplano/shared/go/api/ApiTypes"
 	"github.com/chendingplano/shared/go/api/RequestHandlers"
 	"github.com/chendingplano/shared/go/api/auth"
+	"github.com/chendingplano/shared/go/api/emojilib"
 	"github.com/chendingplano/shared/go/api/loggerutil"
 	"github.com/labstack/echo/v4"
 )
@@ -95,6 +99,18 @@ func RegisterRoutes(e *echo.Echo) {
 	// Shared API
 	e.POST("/shared_api/v1/jimo_req", RequestHandlers.HandleJimoRequestEcho)
 
+	// Emoji service
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := emojilib.Ready(ctx, ApiTypes.SharedDBHandle); err != nil {
+		logger.Warn("Emoji BM25 search unavailable at startup", "error", err)
+	}
+	cancel()
+	e.GET("/shared_api/v1/emojis/search", RequestHandlers.HandleSearchEmojiLibrary)
+	e.GET("/shared_api/v1/emojis/categories", RequestHandlers.HandleEmojiCategories)
+	e.GET("/shared_api/v1/emojis/readiness", RequestHandlers.HandleEmojiReadiness)
+	e.GET("/shared_api/v1/emojis/notices/:name", RequestHandlers.HandleEmojiNotice)
+	e.GET("/shared_api/v1/emojis/by-id/:id", RequestHandlers.HandleGetEmoji)
+	e.GET("/shared_api/v1/emojis/by-id/:id/svg", RequestHandlers.HandleEmojiSVG)
 	// Icon service
 	e.GET("/shared_api/v1/icons/search", RequestHandlers.HandleSearchIconLibrary)
 	e.GET("/shared_api/v1/icons/by-name/:name/svg", RequestHandlers.HandleGetIconLibrarySVG)

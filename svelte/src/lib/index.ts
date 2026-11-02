@@ -57,3 +57,6 @@ export type {
 	IconListResponse
 } from './types/IconTypes';
 export { AllowedMimeTypes, isAllowedMimeType } from './types/IconTypes';
+export { default as Emoji } from './components/emoji/Emoji.svelte';
+export { default as EmojiSearchPicker } from './components/emoji/EmojiSearchPicker.svelte';
+export * from './stores/emojiLibrary';
