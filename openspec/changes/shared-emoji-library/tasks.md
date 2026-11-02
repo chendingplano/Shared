@@ -16,7 +16,7 @@
 
 ## 3. Store and serve the local library
 
-- [ ] 3.1 Add a new guarded goose migration in ChenWeb/shared_migrations for shared.emoji_library with uniqueness/nonblank constraints and BM25 index; wire shared startup migration/readiness using the centralized pool and a single DDL source. ChenWeb migration and readiness are implemented; independently deployed consumers still need the shared migration wiring.
+- [x] 3.1 Add a guarded goose migration for shared.emoji_library with uniqueness/nonblank constraints and BM25 index; the shared migration runner includes the embedded migration for independent consumers when pg_search is available and rejects conflicting project copies.
 - [x] 3.2 Implement atomic idempotent import with content revisions; verify unchanged imports, failed transactions and historical sequence preservation.
 - [x] 3.3 Implement emojilib BM25 text search, paginated category browse, exact Unicode lookup and metadata/category retrieval. Test reachability beyond the first 200 browse entries, real relevance for `celebration`/`庆祝`, descriptions and filters, plus explicit unavailable behavior without BM25.
 - [x] 3.4 Add local read-only search, metadata, category and SVG endpoints with bounded parameters, shared response envelopes, logging, 404 handling and content-based conditional caching.

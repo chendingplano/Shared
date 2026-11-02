@@ -223,6 +223,18 @@ func RunSharedMigrations(ctx context.Context,
 		}
 		cfg.MigrationsFS = os.DirFS(cfg.MigrationsDir)
 	}
+	// Keep applications without ParadeDB able to start. Where pg_search is
+	// available, every consumer receives the same embedded emoji migration.
+	var emojiSearchAvailable bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='pg_search')`).Scan(&emojiSearchAvailable); err == nil && emojiSearchAvailable {
+		merged, err := withEmojiMigration(cfg.MigrationsFS)
+		if err != nil {
+			return fmt.Errorf("prepare shared emoji migration: %w", err)
+		}
+		cfg.MigrationsFS = merged
+	} else {
+		cfg.MigrationsFS = withoutEmojiMigration(cfg.MigrationsFS)
+	}
 
 	// Prefer SharedTableName already set in CommonConfig. Fall back to env var.
 	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.SharedTableName) != "" {

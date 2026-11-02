@@ -76,3 +76,15 @@ func TestMixedSymbolQueryContinuesToBM25(t *testing.T) {
 		t.Fatalf("mixed query skipped BM25: %v", err)
 	}
 }
+
+func TestImportRequiresSourceProvenance(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	e := emojibuild.Emoji{ID: "1f389", Unicode: "🎉", NameEN: "party popper", NameZH: "拉炮", CategoryID: "activities", CategoryEN: "activities", CategoryZH: "活动", KeywordsEN: "party", KeywordsZH: "庆祝", DescriptionEN: "party popper", DescriptionZH: "拉炮", SVG: `<svg/>`}
+	if err := Import(context.Background(), db, []emojibuild.Emoji{e}, Source{}); err == nil {
+		t.Fatal("accepted missing source versions")
+	}
+}
