@@ -14,7 +14,6 @@ func CreateSysTables(logger ApiTypes.JimoLogger) error {
 	database_type := ApiTypes.DBType
 
 	CreateLoginSessionsTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameLoginSessions)
-	CreateIDMgrTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameIDMgr)
 	CreateActivityLogTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameActivityLog)
 	CreateSessionLogTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog)
 	CreateEmailStoreTable(logger, db, database_type, ApiTypes.LibConfig.SystemTableNames.TableNameEmailStore)

@@ -22,13 +22,6 @@ type RequestInfo struct {
 	OriginalHost   string `json:"original_host"`
 }
 
-type IDRecordDef struct {
-	CrtLogId    int64  `json:"crt_log_id"`
-	NumLogIds   int    `json:"num_log_ids"`
-	IdBlockSize int    `json:"id_block_size"`
-	IdDesc      string `json:"id_desc"`
-}
-
 type ContextKey string
 
 const CallFlowKey ContextKey = "jimo_call_flow"
@@ -152,12 +145,9 @@ func (d LLMModelDef) CheckDecisionModelType() error {
 type LLMModelsFile map[string]LLMModelDef
 
 type LibConfigDef struct {
-	IDStartValue       int  `mapstructure:"id_start_value"`
-	IDIncValue         int  `mapstructure:"id_inc_value"`
 	AllowDynamicTables bool `mapstructure:"allow_dynamic_tables"`
 
 	SystemTableNames SystemTableNames  `mapstructure:"system_table_names"`
-	SystemIDs        SystemIDs         `mapstructure:"system_ids"`
 	IconServiceConf  IconServiceConfig `mapstructure:"icon_service"`
 }
 
@@ -166,7 +156,6 @@ type SystemTableNames struct {
 	TableNameLoginSessions   string `mapstructure:"table_name_login_sessions"`
 	TableNameSessionLog      string `mapstructure:"table_name_session_log"`
 	TableNameActivityLog     string `mapstructure:"table_name_activity_log"`
-	TableNameIDMgr           string `mapstructure:"table_name_id_mgr"`
 	TableNameEmailStore      string `mapstructure:"table_name_email_store"`
 	TableNamePromptStore     string `mapstructure:"table_name_prompt_store"`
 	TableNameResources       string `mapstructure:"table_name_resources"`
@@ -175,11 +164,6 @@ type SystemTableNames struct {
 	TableNameAutoTestResults string `mapstructure:"table_name_auto_test_results"`
 	TableNameAutoTestLogs    string `mapstructure:"table_name_auto_test_logs"`
 	TableNameDBMigrations    string `mapstructure:"table_name_goose"`
-}
-
-type SystemIDs struct {
-	ActivityLogID string `mapstructure:"activity_log_id"`
-	PromptStoreID string `mapstructure:"prompt_store_id"`
 }
 
 type IconServiceConfig struct {
@@ -200,19 +184,6 @@ func GetActivityLogTableName() string {
 
 func GetSessionsTableName() string {
 	return LibConfig.SystemTableNames.TableNameLoginSessions
-}
-
-func GetIDMgrTableName() string {
-	return LibConfig.SystemTableNames.TableNameIDMgr
-}
-
-type IDMgrDef struct {
-	IDName    string `json:"id_name"`
-	CrtValue  int64  `json:"crt_value"`
-	IDDesc    string `json:"id_desc"`
-	CallerLoc string `json:"caller_loc"`
-	UpdatedAt string `json:"updated_at"`
-	CreatedAt string `json:"created_at"`
 }
 
 type ActivityLogDef struct {

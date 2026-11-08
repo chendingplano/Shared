@@ -58,10 +58,10 @@ func (v emojiHidden) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func (v emojiOverlay) Open(name string) (fs.File, error) {
-	if name == emojiMigrationName {
+	if embedded, ok := v.embedded[name]; ok {
 		data, err := fs.ReadFile(v.source, name)
-		if err == nil && !bytes.Equal(data, emojiMigration) {
-			return nil, fmt.Errorf("shared emoji migration conflicts with embedded migration")
+		if err == nil && !bytes.Equal(data, embedded.Data) {
+			return nil, fmt.Errorf("shared migration %s conflicts with embedded migration", name)
 		}
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
@@ -78,21 +78,22 @@ func (v emojiOverlay) ReadDir(name string) ([]fs.DirEntry, error) {
 	if name != "." {
 		return entries, err
 	}
-	found := false
+	found := make(map[string]bool)
 	for _, entry := range entries {
-		if entry.Name() == emojiMigrationName {
-			found = true
-			file, e := v.Open(emojiMigrationName)
+		if _, ok := v.embedded[entry.Name()]; ok {
+			found[entry.Name()] = true
+			file, e := v.Open(entry.Name())
 			if e != nil {
 				return nil, e
 			}
 			file.Close()
-			break
 		}
 	}
-	if !found {
-		extra, _ := fs.ReadDir(v.embedded, ".")
-		entries = append(entries, extra...)
+	extra, _ := fs.ReadDir(v.embedded, ".")
+	for _, entry := range extra {
+		if !found[entry.Name()] {
+			entries = append(entries, entry)
+		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	return entries, nil

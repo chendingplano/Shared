@@ -112,7 +112,10 @@ type Usage struct {
 	EventIDs []string
 }
 
-// Request describes one inference call.
+// Request describes one inference call. RunID correlates an application
+// execution: allocate it once from idmanager's "llm_run_id" sequence and reuse
+// it for all calls, retries and tool turns. It is separate from the execution
+// table's primary key. Zero means unavailable; allocation belongs to the caller.
 type Request struct {
 	UserID      string
 	Model       string

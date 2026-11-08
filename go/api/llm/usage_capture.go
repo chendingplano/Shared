@@ -29,6 +29,10 @@ type RequestCapture struct {
 	Sink          UsageCaptureSink
 }
 
+// UsageCaptureInput carries caller-provided attribution. RunID is the execution
+// ID allocated from the "llm_run_id" sequence, shared across parallel calls,
+// embeddings, fallbacks and retries. Keep 0 for an execution if allocation fails;
+// the capture sink decides how to persist an unavailable ID.
 type UsageCaptureInput struct {
 	UserID                string
 	AccountID             string

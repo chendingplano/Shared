@@ -235,6 +235,13 @@ func RunSharedMigrations(ctx context.Context,
 	} else {
 		cfg.MigrationsFS = withoutEmojiMigration(cfg.MigrationsFS)
 	}
+	if ApiTypes.DBType == ApiTypes.PgName {
+		merged, err := withIDManagerMigration(cfg.MigrationsFS)
+		if err != nil {
+			return fmt.Errorf("prepare shared ID manager migration: %w", err)
+		}
+		cfg.MigrationsFS = merged
+	}
 
 	// Prefer SharedTableName already set in CommonConfig. Fall back to env var.
 	if strings.TrimSpace(ApiTypes.CommonConfig.MigrationConfig.SharedTableName) != "" {

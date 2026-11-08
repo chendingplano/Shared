@@ -21,9 +21,6 @@ type ActivityLogCache struct {
 	db                             *sql.DB                   // Database connection
 	db_type                        string
 	table_name                     string
-	id_name                        string
-	crt_log_id                     int64
-	num_log_ids                    int
 	activity_log_insert_fieldnames string
 	done                           chan struct{}  // Signals shutdown
 	wg                             sync.WaitGroup // Tracks background goroutine
@@ -105,11 +102,6 @@ func StopActivityLogCache() {
 	activity_log_singleton.StopActivityLogCache()
 }
 
-// Public API
-func NextActivityLogID() int64 {
-	return activity_log_singleton.nextLogID()
-}
-
 // AddActivityLog adds an activity log record to the cache.
 // This is a non-blocking public API call. Records are added to the cache
 // and flushed to the database in the background.
@@ -138,9 +130,6 @@ func newActivityLogCache(db_type string,
 		db_type:                        db_type,
 		table_name:                     table_name,
 		done:                           make(chan struct{}),
-		crt_log_id:                     -1,
-		num_log_ids:                    0,
-		id_name:                        "activity_log_id",
 		logger:                         logger,
 		activity_log_insert_fieldnames: "log_id, activity_name, activity_type, app_name, module_name, activity_msg, activity_notes, caller_loc",
 	}
@@ -156,28 +145,7 @@ func (c *ActivityLogCache) start() {
 }
 
 func (c *ActivityLogCache) nextLogID() int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.num_log_ids <= 0 {
-		// Need to fetch a new block of IDs
-		block_size := 1000
-
-		start_id, err := NextIDBlock(c.id_name, block_size)
-		if err != nil {
-			c.logger.Error("failed to get next ID block for activity_log_id", "error", err)
-			return -1
-		}
-		c.crt_log_id = start_id - 1
-		c.num_log_ids = block_size
-		c.logger.Info("Fetched new activity_log_id block",
-			"start_id", start_id,
-			"size", block_size)
-	}
-	id := c.crt_log_id
-	c.crt_log_id++
-	c.num_log_ids--
-	return id
+	return NextActivityLogID()
 }
 
 // flushLoop runs indefinitely, flushing cached records to DB every 10 seconds

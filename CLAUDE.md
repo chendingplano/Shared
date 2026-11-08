@@ -220,8 +220,6 @@ System-level data stores for users, sessions, etc.
 The shared library reads configuration from `libconfig.toml`:
 
 ```toml
-id_start_value = 10000
-id_inc_value = 1000
 allow_dynamic_tables = true
 
 [system_table_names]
@@ -230,9 +228,6 @@ table_name_login_sessions = "login_sessions"
 table_name_activity_log = "activity_log"
 # ... more tables
 
-[system_ids]
-activity_log_id = "IDs for activity log"
-# ... more ID definitions
 ```
 
 **Loading config:**
@@ -240,6 +235,26 @@ activity_log_id = "IDs for activity log"
 // Config is loaded automatically into ApiTypes.LibConfig
 tableName := ApiTypes.LibConfig.SystemTableNames.TableNameUsers
 ```
+
+### ID allocation (`api/idmanager`)
+
+Use `idmanager.New(ApiTypes.SharedDBHandle, requester)` with the existing pool,
+then `Provision(ctx, Sequence{...})` for application sequences and `Next` or
+`Generate` to allocate IDs. Share a manager across callers. The `global` sequence
+is provisioned by the embedded shared Goose migration; unknown names fail.
+Failure returns 0 (or an empty range) and an error. Reserved cache tails are lost
+on restart. IDs are unique within one sequence and database when reuse is disabled.
+
+`shared.id_mgr` has a fixed name and is defined only by shared migrations.
+Run shared migrations before `libmanager.InitLib`, which provisions
+`activity_log_id` with batches of 1000. `NextActivityLogID()` keeps its call
+signature and returns 0 on failure. The old ID settings and Go `InMemStore`
+have been removed. Deploy new activity-log writers together with the migration;
+old binaries query the removed `crt_value` column.
+
+See `KnowledgeStore/doc-repo/modules/module-shared-id-manager.md` for the API
+and `KnowledgeStore/doc-repo/devdocs/202611/2026110801-devdoc-shared-id-manager.md`
+for migration and deployment details.
 
 ### Database Support
 

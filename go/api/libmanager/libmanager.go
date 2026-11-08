@@ -3,6 +3,7 @@ package libmanager
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 
 	"github.com/chendingplano/shared/go/api/ApiTypes"
@@ -44,6 +45,11 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 		logger.Error("shared db is not set")
 		os.Exit(1)
 	}
+	host, _ := os.Hostname()
+	if err := sysdatastores.InitActivityLogIDs(ctx, db, fmt.Sprintf("%s@%s:%d", os.Args[0], host, os.Getpid())); err != nil {
+		logger.Error("Failed provisioning activity-log IDs", "error", err)
+		os.Exit(1)
+	}
 
 	stores.InitSharedStores(ApiTypes.DBType, db)
 	if ApiTypes.DBType == ApiTypes.PgName {
@@ -57,15 +63,6 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 	// 1. InitKratosClient
 	auth.InitKratosClient()
 
-	// 2. Upsert the activity_log id record
-	rc := EchoFactory.NewRCAsAdmin("SHD_LMG_089")
-	defer rc.Close()
-	err := sysdatastores.UpsertActivityLogIDDef(rc)
-	if err != nil {
-		logger.Error("Failed upsert the system id record", "error", err)
-		os.Exit(1)
-	}
-
 	// 3. Init SessionLog
 	sysdatastores.InitSessionLogCache(ApiTypes.DBType, ApiTypes.LibConfig.SystemTableNames.TableNameSessionLog, db)
 
@@ -74,7 +71,6 @@ func InitLib(ctx context.Context, config_path string, loc string) {
 }
 
 func ExitLib() {
-	stores.StopInMemStore()
 	sysdatastores.StopActivityLogCache()
 	sysdatastores.StopSessionLogCache()
 	// loggerutil.CloseFileLogging()
