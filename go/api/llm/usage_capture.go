@@ -22,6 +22,7 @@ var DefaultUsageCaptureSink UsageCaptureSink
 
 type RequestCapture struct {
 	UserID        string
+	RunID         int64
 	AccountID     string
 	ProfileID     string
 	InputBodyRef  string

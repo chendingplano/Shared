@@ -48,6 +48,7 @@ func (c *DeepSeekBalanceClient) Fetch(ctx context.Context, baseURL, apiKey strin
 		}
 		if capture != nil {
 			in.AccountID, in.ProfileID = capture.AccountID, capture.ProfileID
+			in.RunID = capture.RunID
 			in.InputBodyRef, in.OutputBodyRef = capture.InputBodyRef, capture.OutputBodyRef
 		}
 		if err != nil {
