@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -38,6 +39,7 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 		in.InputText = buildStructuredRetryInput(originalInput, contract.Name, attempt, lastErr)
 		content, err := c.extractTextWithFormat(ctx, in, true)
 		if err != nil {
+			c.logStructuredOutputAttemptFailure(in, contract, model, attempt, maxAttempts, "provider", content, err)
 			// extractTextWithFormat already captured this attempt's usage event
 			// (including raw_response on error) at the transport layer.
 			if errors.Is(err, ErrLLMResponseTruncated) {
@@ -72,6 +74,7 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 				Err:  err,
 				Raw:  content,
 			}
+			c.logStructuredOutputAttemptFailure(in, contract, model, attempt, maxAttempts, "parse", content, err)
 			if attempt < maxAttempts {
 				continue
 			}
@@ -86,6 +89,7 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 
 		if err := validateStructuredJSON(contract, parsed); err != nil {
 			lastErr = err
+			c.logStructuredOutputAttemptFailure(in, contract, model, attempt, maxAttempts, "schema_validation", content, err)
 			if attempt < maxAttempts {
 				continue
 			}
@@ -111,6 +115,37 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 	}
 	c.captureUsage(ctx, in, model, startedAt, nil, nil, "", lastRaw, 0, 0, 0, 0, exhaustedErr)
 	return nil, exhaustedErr
+}
+
+// Log at the attempt boundary, before retrying or returning an error. Error()
+// deliberately summarizes StructuredOutputError and does not include its Raw
+// field, so logging only a wrapped error loses the values needed to diagnose a
+// schema failure. Never log client credentials, request headers, or arbitrary
+// caller metadata here.
+func (c *OpenAIJSONClient) logStructuredOutputAttemptFailure(in JSONExtractionInput, contract StructuredOutputContract, model string, attempt, maxAttempts int, stage, raw string, err error) {
+	fields := []any{
+		"record_id", in.RecordID,
+		"run_id", in.RunID,
+		"model_name", model,
+		"provider", normalizeOpenAIJSONProvider(c.Provider, c.BaseURL),
+		"profile_name", c.ProfileName,
+		"prompt_name", in.PromptName,
+		"contract_name", contract.Name,
+		"schema_sha256", fmt.Sprintf("%x", sha256.Sum256(contract.Schema)),
+		"call_reason", in.CallReason,
+		"call_loc", in.CallLoc,
+		"attempt", attempt,
+		"max_attempts", maxAttempts,
+		"failure_stage", stage,
+		"error", err,
+		"raw_response", raw,
+	}
+	for _, key := range []string{"chunk_index", "chunk_total", "source_line_start", "source_line_end"} {
+		if value, ok := in.Metadata[key]; ok {
+			fields = append(fields, key, value)
+		}
+	}
+	c.ensureLogger().Warn("structured output attempt failed", fields...)
 }
 
 func buildStructuredRetryInput(originalInput, contractName string, attempt int, lastErr error) string {
