@@ -537,6 +537,8 @@ func PreviewMessages(in JSONExtractionInput) []map[string]string {
 
 func normalizeThinkingType(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "enable":
+		return "enabled"
 	case "enabled", "disabled":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
