@@ -235,7 +235,7 @@ func captureUsageRecord(
 	defer cancel()
 	eventID, err := sink.Capture(captureCtx, NewUsageCaptureRecord(in))
 	if err != nil {
-		logger.Error("llm usage capture failed",
+		logger.Error("llm usage capture failed (ChenWeb#12)",
 			"error", err,
 			"provider", string(in.Provider),
 			"model", in.ModelName,
