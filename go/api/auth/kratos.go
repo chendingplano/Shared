@@ -107,6 +107,12 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 		"path", c.Request().URL.Path,
 		"cookie_names", cookieNamesPresent(cookies))
 
+	// Reuse a recent successful lookup for the same credentials (see kratos_session_cache.go).
+	cacheKey := sessionCacheKey(cookies, c.Request().Header.Get("X-Session-Token"))
+	if cached := getCachedSession(cacheKey); cached != nil {
+		return cached, nil
+	}
+
 	// --- Attempt 1: browser-flow cookies only (no X-Session-Token) ---
 	if cookies != "" {
 		req := k.client.FrontendAPI.ToSession(ctx).Cookie(cookies)
@@ -120,6 +126,7 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 				"path", c.Request().URL.Path,
 				"email", email,
 				"session_id", session.Id)
+			putCachedSession(cacheKey, session)
 			return session, nil
 		}
 		// 403 means session exists but needs AAL2 — surface that immediately
@@ -151,6 +158,7 @@ func (k *KratosClient) ValidateSession(c echo.Context) (*ory.Session, error) {
 				"path", c.Request().URL.Path,
 				"email", email,
 				"session_id", session.Id)
+			putCachedSession(cacheKey, session)
 			return session, nil
 		}
 		if resp != nil && resp.StatusCode == http.StatusForbidden {
@@ -735,6 +743,10 @@ func HandleLogoutKratos(c echo.Context) error {
 
 	// Always clear local cookies, regardless of what happens below.
 	defer clearSessionCookies(c)
+
+	// Drop the cached session for these credentials. Deferred so that the
+	// ValidateSession call below, which may re-cache it, runs before eviction.
+	defer evictCachedSession(sessionCacheKey(c.Request().Header.Get("Cookie"), c.Request().Header.Get("X-Session-Token")))
 
 	// Capture the identity ID before we attempt logout. This lets us fall
 	// back to the Admin API if the browser logout flow fails.
@@ -1788,6 +1800,12 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 	cookies := req.Header.Get("Cookie")
 	sessionToken := req.Header.Get("X-Session-Token")
 	ctx := context.Background()
+
+	// Reuse a recent successful lookup for the same credentials (see kratos_session_cache.go).
+	cacheKey := sessionCacheKey(cookies, sessionToken)
+	if cached := getCachedSession(cacheKey); cached != nil {
+		return buildUserInfoFromKratosSession(logger, cached)
+	}
 	// logger.Info("IsAuthenticatedKratosFromRC: incoming cookie names",
 	// 	"path", req.URL.Path,
 	// 	"cookie_names", cookieNamesPresent(cookies))
@@ -1807,6 +1825,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 			// 	"path", req.URL.Path,
 			// 	"email", email,
 			// 	"session_id", session.Id)
+			putCachedSession(cacheKey, session)
 			return buildUserInfoFromKratosSession(logger, session)
 		}
 		logger.Debug("Kratos cookie-based session validation failed (RC), falling back to session token", "error", err)
@@ -1843,6 +1862,7 @@ func IsAuthenticatedKratosFromRC(rc ApiTypes.RequestContext) (*ApiTypes.UserInfo
 				"session_id", session.Id)
 		}
 	*/
+	putCachedSession(cacheKey, session)
 	return buildUserInfoFromKratosSession(logger, session)
 }
 
