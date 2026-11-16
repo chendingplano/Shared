@@ -713,7 +713,6 @@ func extractBalancedObject(s string, start int) (string, int, bool) {
 // than leaf nodes (e.g. {"name":"x","confidence":0.9}). Falls back to the
 // first valid parseable map if no rich object is found.
 func scanForBestJSONObject(s string) (map[string]any, bool) {
-	var firstValid map[string]any
 	for i := 0; i < len(s); i++ {
 		if s[i] != '{' {
 			continue
@@ -727,16 +726,15 @@ func scanForBestJSONObject(s string) (map[string]any, bool) {
 			i = end
 			continue
 		}
-		if firstValid == nil {
-			firstValid = m
-		}
+		// Only objects that carry nested collections are salvaged. A flat
+		// object salvaged from a broken outer envelope is one leaf of that
+		// envelope (for example the first product of a truncated
+		// {"v":2,"p":[...]} response), and returning it silently replaces the
+		// whole response with the wrong shape.
 		if hasNestedCollections(m) {
 			return m, true
 		}
 		i = end
-	}
-	if firstValid != nil {
-		return firstValid, true
 	}
 	return nil, false
 }
