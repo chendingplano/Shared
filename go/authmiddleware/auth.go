@@ -73,7 +73,7 @@ func AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil || user_info == nil {
 			clientIP, clientIPSource := ApiUtils.ResolveRequestIP(c.Request())
 			if IsHTMLRequest(c) {
-				logger.Warn("auth failed, redirect",
+				logger.Info("auth failed, redirect",
 					"error", err,
 					"path", path,
 					"ip", clientIP,
