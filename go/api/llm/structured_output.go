@@ -87,9 +87,17 @@ func (c *OpenAIJSONClient) ExtractStructuredJSON(
 			return nil, exhaustedErr
 		}
 
-		if err := validateStructuredJSON(contract, parsed); err != nil {
+		stage := "schema_validation"
+		err = validateStructuredJSON(contract, parsed)
+		if err == nil && contract.CheckParsed != nil {
+			if checkErr := contract.CheckParsed(parsed); checkErr != nil {
+				stage = "check"
+				err = &StructuredOutputError{Kind: ErrStructuredOutputCheckFailed, Err: checkErr, Raw: content}
+			}
+		}
+		if err != nil {
 			lastErr = err
-			c.logStructuredOutputAttemptFailure(in, contract, model, attempt, maxAttempts, "schema_validation", content, err)
+			c.logStructuredOutputAttemptFailure(in, contract, model, attempt, maxAttempts, stage, content, err)
 			if attempt < maxAttempts {
 				continue
 			}
