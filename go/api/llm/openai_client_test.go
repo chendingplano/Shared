@@ -813,11 +813,39 @@ func TestEmbed_CapturesProviderErrorBody(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("captured records = %d, want 1", len(records))
 	}
-	if records[0].ErrorMessage == "" {
-		t.Fatalf("expected error message on captured record: %+v", records[0])
+	if !strings.Contains(records[0].ErrorMessage, "status 401") || !strings.Contains(records[0].ErrorMessage, "bad embedding key") {
+		t.Fatalf("error message must carry status and provider body, got %q", records[0].ErrorMessage)
 	}
 	if !strings.Contains(string(records[0].OutputBody), "bad embedding key") {
 		t.Fatalf("expected raw provider error body, got %q", string(records[0].OutputBody))
+	}
+}
+
+// A captured usage row whose error_message said only "status 403" hid the
+// provider's reason (an exhausted free-tier quota) from anyone reading
+// llm_usage_event; the reason was only in the process log.
+func TestExtractText_CapturesProviderErrorBodyInErrorMessage(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"message":"Free quota exhausted.","code":"AllocationQuota.FreeTierOnly"}}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{BaseURL: srv.URL, APIKey: "test-key", ModelName: "chat-model", HTTPClient: srv.Client()}
+	withDefaultUsageCaptureSink(sink, func() {
+		if _, err := client.ExtractText(context.Background(), JSONExtractionInput{PromptText: "prompt"}); err == nil {
+			t.Fatalf("expected ExtractText error")
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if msg := records[0].ErrorMessage; !strings.Contains(msg, "status 403") || !strings.Contains(msg, "AllocationQuota.FreeTierOnly") {
+		t.Fatalf("error message must carry status and provider body, got %q", msg)
 	}
 }
 

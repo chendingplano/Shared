@@ -360,8 +360,9 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
-		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, fmt.Errorf("status %d", resp.StatusCode))
-		return "", fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		statusErr := fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, statusErr)
+		return "", statusErr
 	}
 
 	content, err := parseOpenAIContent(respBody)
@@ -984,11 +985,12 @@ func (c *OpenAIJSONClient) embedRequest(
 		return nil, fmt.Errorf("(MID_26052902) failed reading embedding response body: %w", readErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		statusErr := fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 		c.captureEmbeddingUsage(ctx, modelName, startedAt, bs, respBody,
 			parseEmbeddingInputTokens(respBody),
 			identity,
-			fmt.Errorf("status %d", resp.StatusCode))
-		return nil, fmt.Errorf("(MID_26050147) embedding request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+			statusErr)
+		return nil, statusErr
 	}
 
 	var payload embeddingResponsePayload
