@@ -174,6 +174,11 @@ type StructuredOutputContract struct {
 	AllowRepair       bool
 	MaxRetries        int
 	DisallowExtraKeys bool
+	// CheckParsed, when set, runs after the schema passes and checks what a
+	// schema cannot, such as evidence spans against the lines the call sent.
+	// A non-nil error is retried like a schema failure, with the error text in
+	// the retry input. It must not modify parsed.
+	CheckParsed func(parsed map[string]any) error
 }
 
 // Validate ensures the contract has the minimum fields required to enforce a

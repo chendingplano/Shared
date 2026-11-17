@@ -10,6 +10,9 @@ var (
 	ErrStructuredOutputProvider         = errors.New("structured output provider failure")
 	ErrStructuredOutputParse            = errors.New("structured output parse failure")
 	ErrStructuredOutputSchemaValidation = errors.New("structured output schema validation failure")
+	// ErrStructuredOutputCheckFailed marks a schema-valid response rejected by
+	// the contract's CheckParsed.
+	ErrStructuredOutputCheckFailed      = errors.New("structured output check failure")
 	ErrStructuredOutputRetriesExhausted = errors.New("structured output retries exhausted")
 	// ErrStructuredOutputTruncated marks a response cut off by the provider
 	// before it finished (finish_reason=length). Distinct from
