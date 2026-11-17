@@ -34,13 +34,20 @@ func RepairLLMJSON(raw string) (string, bool) {
 		candidates = append(candidates, rebuilt)
 	}
 
+	// Every candidate is tried as-is before any is given the inner-quote
+	// repair. That repair escapes stray quotes, so on a broken span array whose
+	// quotes happen to pair up it returns valid JSON holding a corrupted span
+	// ("3474,\"3475"), which would win over the correct rebuilt candidate.
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" && json.Valid([]byte(candidate)) {
+			return candidate, true
+		}
+	}
 	for _, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" {
 			continue
-		}
-		if json.Valid([]byte(candidate)) {
-			return candidate, true
 		}
 		if repaired, ok := repairUnescapedInnerQuotes(candidate); ok && json.Valid([]byte(repaired)) {
 			return repaired, true
@@ -120,17 +127,21 @@ func looksLikeStringTerminator(s string, idx int) bool {
 }
 
 // numericArrayBody matches a flat array whose body holds only digits, commas,
-// hyphens, whitespace and quote characters. Arrays containing any other
-// character (text values, nesting) never match.
-var numericArrayBody = regexp.MustCompile(`\[([0-9,"\-\s]*"[0-9,"\-\s]*)\]`)
+// hyphens, whitespace, quote characters and the '#', 'h', 'r' of table
+// header/row refs. Arrays containing any other character (text values,
+// nesting) never match.
+var numericArrayBody = regexp.MustCompile(`\[([0-9,"\-\s#hr]*"[0-9,"\-\s#hr]*)\]`)
 
-var numericSpanToken = regexp.MustCompile(`^\d+(?:-\d+)?$`)
+// numericSpanToken is a line number, an inclusive range N-M, or a table
+// header/row ref N#hK / N#rK.
+var numericSpanToken = regexp.MustCompile(`^\d+(?:-\d+|#[hr]\d+)?$`)
 
 // rebuildBrokenNumericArrays repairs line-span arrays the model emitted with
-// unbalanced quotes (`[492,"493,"494,"495,"496","497,505]`). Only arrays that
-// are not already valid JSON are touched. Quotes are discarded, then each
-// token is re-emitted: plain integers bare, `N-M` ranges as strings. If any
-// token is not a line number or range, that array is left alone. Returns false
+// unbalanced quotes (`[492,"493,"494,"495,"496","497,505]`,
+// `[151,"153,"158#r1","158#r2"]`, `[330#r1","330#r2"]`). Only arrays that are
+// not already valid JSON are touched. Quotes are discarded, then each token is
+// re-emitted: plain integers bare, `N-M` ranges and `N#rK` / `N#hK` refs as
+// strings. If any token is not a span, that array is left alone. Returns false
 // when nothing changed.
 func rebuildBrokenNumericArrays(s string) (string, bool) {
 	changed := false
@@ -148,7 +159,7 @@ func rebuildBrokenNumericArrays(s string) (string, bool) {
 			if !numericSpanToken.MatchString(tok) {
 				return arr
 			}
-			if strings.Contains(tok, "-") {
+			if strings.ContainsAny(tok, "-#") {
 				tok = `"` + tok + `"`
 			}
 			parts = append(parts, tok)
