@@ -360,7 +360,7 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		providerRequestID, inputTokens, outputTokens, cacheHitTokens, cacheMissTokens := parseOpenAIUsageMetadata(respBody)
-		statusErr := fmt.Errorf("(MID_26050141) openai request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		statusErr := fmt.Errorf("(MID_26050141) openai request failed with status %d, model=%s: %s", resp.StatusCode, model, strings.TrimSpace(string(respBody)))
 		c.captureUsage(ctx, in, model, startedAt, bs, respBody, providerRequestID, "", inputTokens, outputTokens, cacheHitTokens, cacheMissTokens, statusErr)
 		return "", statusErr
 	}

@@ -908,8 +908,14 @@ func TestExtractText_CapturesProviderErrorBodyInErrorMessage(t *testing.T) {
 
 	client := &OpenAIJSONClient{BaseURL: srv.URL, APIKey: "test-key", ModelName: "chat-model", HTTPClient: srv.Client()}
 	withDefaultUsageCaptureSink(sink, func() {
-		if _, err := client.ExtractText(context.Background(), JSONExtractionInput{PromptText: "prompt"}); err == nil {
+		_, err := client.ExtractText(context.Background(), JSONExtractionInput{PromptText: "prompt"})
+		if err == nil {
 			t.Fatalf("expected ExtractText error")
+		}
+		// A quota error is per model; without the name the reader cannot tell
+		// whether the primary or the fallback model was refused.
+		if !strings.Contains(err.Error(), "model=chat-model") {
+			t.Fatalf("provider error must name the model, got %q", err)
 		}
 	})
 
