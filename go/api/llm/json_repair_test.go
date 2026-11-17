@@ -85,6 +85,62 @@ func TestRepairLLMJSONRebuildsUnbalancedSpanArrays(t *testing.T) {
 	}
 }
 
+// Products span arrays may hold table row and header refs (N#rK, N#hK). The
+// shapes below are the prod responses logged on 2026-11-16 (ChenWeb#17),
+// records 377, 383 and 384, model deepseek-v4-flash.
+func TestRepairLLMJSONRebuildsUnbalancedSpanArraysWithRowRefs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			// Without the rebuild, the inner-quote repair turned this into
+			// the valid JSON string "153,\"158#r1", which then failed schema
+			// validation.
+			name:  "missing close quote before a row ref (record 384)",
+			input: `{"v":2,"p":[{"n":"热泵","s":[151,"153,"158#r1","158#r2"],"o":"m"}]}`,
+			want:  `{"v":2,"p":[{"n":"热泵","s":[151,153,"158#r1","158#r2"],"o":"m"}]}`,
+		},
+		{
+			name:  "missing open quote on the first row ref (record 377)",
+			input: `{"v":2,"p":[{"n":"盘管式机房空调","s":[330#r1","330#r2","330#r6],"o":"m"}]}`,
+			want:  `{"v":2,"p":[{"n":"盘管式机房空调","s":["330#r1","330#r2","330#r6"],"o":"m"}]}`,
+		},
+		{
+			name:  "header ref",
+			input: `{"s":[12#h1","13]}`,
+			want:  `{"s":["12#h1",13]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := RepairLLMJSON(tt.input)
+			if !ok {
+				t.Fatalf("RepairLLMJSON(%s) returned ok=false", tt.input)
+			}
+			if got != tt.want {
+				t.Fatalf("got %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+// When the stray quotes happen to pair up, the inner-quote repair alone yields
+// valid JSON with a corrupted span ("3474,\"3475"). The span rebuild must win
+// over it (record 383, ChenWeb#17).
+func TestRepairLLMJSONPrefersSpanRebuildOverInnerQuoteRepair(t *testing.T) {
+	input := `{"v":2,"p":[{"n":"管道","s":[3468,"3469","3470","3474,"3475"],"o":"c"}]}`
+	want := `{"v":2,"p":[{"n":"管道","s":[3468,3469,3470,3474,3475],"o":"c"}]}`
+	got, ok := RepairLLMJSON(input)
+	if !ok {
+		t.Fatalf("RepairLLMJSON returned ok=false")
+	}
+	if got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
 func TestRepairLLMJSONLeavesValidAndTextArraysAlone(t *testing.T) {
 	if got, ok := rebuildBrokenNumericArrays(`{"s":["1","2"],"x":[1,2]}`); ok {
 		t.Fatalf("valid arrays rewritten: %s", got)
