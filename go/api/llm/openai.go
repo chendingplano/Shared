@@ -98,6 +98,38 @@ type oaUsage struct {
 	Total                 int `json:"total_tokens"`
 	PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
 	PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
+	PromptTokensDetails   *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+}
+
+// cacheTokens returns the prompt-cache hit and miss counts. DeepSeek reports both directly.
+// Qwen (DashScope) and other OpenAI-style providers report only the cached part of
+// prompt_tokens in prompt_tokens_details.cached_tokens; the rest of the prompt is the miss.
+// A response with neither reports no cache information, so both stay 0.
+func (u *oaUsage) cacheTokens() (hit, miss int) {
+	if u == nil {
+		return 0, 0
+	}
+	if u.PromptCacheHitTokens > 0 || u.PromptCacheMissTokens > 0 || u.PromptTokensDetails == nil {
+		return u.PromptCacheHitTokens, u.PromptCacheMissTokens
+	}
+	hit = u.PromptTokensDetails.CachedTokens
+	return hit, max(u.Prompt-hit, 0)
+}
+
+func (u *oaUsage) toUsage() *Usage {
+	if u == nil {
+		return nil
+	}
+	hit, miss := u.cacheTokens()
+	return &Usage{
+		InputTokens:           u.Prompt,
+		OutputTokens:          u.Completion,
+		TotalTokens:           u.Total,
+		PromptCacheHitTokens:  hit,
+		PromptCacheMissTokens: miss,
+	}
 }
 
 type oaStreamFrame struct {
@@ -322,15 +354,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request) (*Response, er
 			})
 		}
 	}
-	if parsed.Usage != nil {
-		out.Usage = &Usage{
-			InputTokens:           parsed.Usage.Prompt,
-			OutputTokens:          parsed.Usage.Completion,
-			TotalTokens:           parsed.Usage.Total,
-			PromptCacheHitTokens:  parsed.Usage.PromptCacheHitTokens,
-			PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
-		}
-	}
+	out.Usage = parsed.Usage.toUsage()
 	eventID := captureUsageRecord(ctx, req, UsageCaptureInput{
 		AccountID:             captureAccountID(req),
 		ProfileID:             captureProfileID(req),
@@ -589,13 +613,7 @@ func (c *openaiClient) Stream(ctx context.Context, req Request, on StreamHandler
 			}
 		}
 		if frame.Usage != nil {
-			lastUsage = &Usage{
-				InputTokens:           frame.Usage.Prompt,
-				OutputTokens:          frame.Usage.Completion,
-				TotalTokens:           frame.Usage.Total,
-				PromptCacheHitTokens:  frame.Usage.PromptCacheHitTokens,
-				PromptCacheMissTokens: frame.Usage.PromptCacheMissTokens,
-			}
+			lastUsage = frame.Usage.toUsage()
 		}
 	}
 

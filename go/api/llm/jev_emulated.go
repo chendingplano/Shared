@@ -448,16 +448,7 @@ func (c *jevEmulatedClient) ask(ctx context.Context, req Request, state string, 
 		capture(raw, nil, "", err.Error())
 		return nil, nil, &ProviderError{Provider: ProviderJevEmulated, Model: req.Model, HTTPStatus: resp.StatusCode, Body: truncate(string(raw), 512), Err: err}
 	}
-	var usage *Usage
-	if parsed.Usage != nil {
-		usage = &Usage{
-			InputTokens:           parsed.Usage.Prompt,
-			OutputTokens:          parsed.Usage.Completion,
-			TotalTokens:           parsed.Usage.Total,
-			PromptCacheHitTokens:  parsed.Usage.PromptCacheHitTokens,
-			PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
-		}
-	}
+	usage := parsed.Usage.toUsage()
 	if len(parsed.Choices) == 0 || parsed.Choices[0].Logprobs == nil || len(parsed.Choices[0].Logprobs.Content) == 0 {
 		err := fmt.Errorf("response has no logprobs; the backend or model must support logprobs/top_logprobs")
 		capture(raw, usage, parsed.ID, err.Error())

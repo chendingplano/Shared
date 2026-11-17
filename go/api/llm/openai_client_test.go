@@ -628,6 +628,79 @@ func TestExtractJSON_CapturesDeepSeekPromptCacheTokens(t *testing.T) {
 	}
 }
 
+// Qwen (DashScope compatible mode) and other OpenAI-style providers report the cached part of
+// prompt_tokens in prompt_tokens_details.cached_tokens; the usage example is from DashScope's
+// context-cache documentation.
+func TestExtractJSON_CapturesPromptTokensDetailsCachedTokens(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-qwen",
+			"choices":[{"message":{"content":"{\"ok\":true}"}}],
+			"usage":{
+				"prompt_tokens":3019,
+				"completion_tokens":104,
+				"total_tokens":3123,
+				"prompt_tokens_details":{"cached_tokens":2048}
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{
+		BaseURL:    srv.URL,
+		APIKey:     "test-key",
+		ModelName:  "qwen-test",
+		Provider:   ProviderID("qwen"),
+		HTTPClient: srv.Client(),
+	}
+
+	withDefaultUsageCaptureSink(sink, func() {
+		if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{
+			PromptName: "prompt-test",
+			PromptText: "prompt",
+			InputText:  "text",
+		}); err != nil {
+			t.Fatalf("ExtractJSON error: %v", err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 {
+		t.Fatalf("captured records = %d, want 1", len(records))
+	}
+	if got := records[0]; got.PromptCacheHitTokens != 2048 || got.PromptCacheMissTokens != 971 {
+		t.Fatalf("captured cache hit/miss = %d/%d, want 2048/971", got.PromptCacheHitTokens, got.PromptCacheMissTokens)
+	}
+	usage := client.LastJSONUsage()
+	if usage == nil || usage.PromptCacheHitTokens != 2048 || usage.PromptCacheMissTokens != 971 {
+		t.Fatalf("LastJSONUsage() = %+v, want cache hit/miss 2048/971", usage)
+	}
+}
+
+// A provider that reports no cache information keeps both counts at zero (unknown), rather than
+// counting the whole prompt as a miss.
+func TestExtractJSON_NoCacheFieldsLeavesCacheTokensZero(t *testing.T) {
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}],"usage":{"prompt_tokens":500,"completion_tokens":5,"total_tokens":505}}`))
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{BaseURL: srv.URL, APIKey: "test-key", ModelName: "local-test", HTTPClient: srv.Client()}
+	withDefaultUsageCaptureSink(sink, func() {
+		if _, err := client.ExtractJSON(context.Background(), JSONExtractionInput{PromptName: "prompt-test", PromptText: "prompt", InputText: "text"}); err != nil {
+			t.Fatalf("ExtractJSON error: %v", err)
+		}
+	})
+	records := sink.Records()
+	if len(records) != 1 || records[0].PromptCacheHitTokens != 0 || records[0].PromptCacheMissTokens != 0 {
+		t.Fatalf("records = %+v, want one record with cache hit/miss 0/0", records)
+	}
+}
+
 func TestExtractJSON_ExposesLastUsageWithDeepSeekPromptCacheTokens(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -469,7 +469,8 @@ func parseOpenAIUsageMetadata(respBody []byte) (providerRequestID string, inputT
 	if out.Usage == nil {
 		return providerRequestID, 0, 0, 0, 0
 	}
-	return providerRequestID, out.Usage.Prompt, out.Usage.Completion, out.Usage.PromptCacheHitTokens, out.Usage.PromptCacheMissTokens
+	cacheHitTokens, cacheMissTokens = out.Usage.cacheTokens()
+	return providerRequestID, out.Usage.Prompt, out.Usage.Completion, cacheHitTokens, cacheMissTokens
 }
 
 func normalizeOpenAIJSONProvider(provider ProviderID, baseURL string) ProviderID {
