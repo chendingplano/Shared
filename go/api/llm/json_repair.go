@@ -24,8 +24,8 @@ func RepairLLMJSON(raw string) (string, bool) {
 	if extracted, ok := extractJSONObject(raw); ok {
 		candidates = append(candidates, extracted)
 	}
-	// Bare inclusive ranges such as [1598-1617] are not JSON; quote them.
-	if quoted, ok := quoteBareSpanRanges(raw); ok {
+	// Bare ranges and table row citations are not JSON string literals (Shared#30).
+	if quoted, ok := quoteBareSpanTokens(raw); ok {
 		candidates = append(candidates, quoted)
 	}
 	// Span arrays with unbalanced quotes, e.g. [492,"493,"494,505], are not
@@ -173,18 +173,14 @@ func rebuildBrokenNumericArrays(s string) (string, bool) {
 	return out, changed
 }
 
-// bareSpanRange matches an inclusive line range written as a bare token inside
-// an array (e.g. `[1598-1617]` or `[143,1598-1617]`). The surrounding brackets
-// or commas are captured so the match can be rewritten as a quoted string.
-var bareSpanRange = regexp.MustCompile(`([\[,]\s*)(\d+)-(\d+)(\s*[\],])`)
+// bareSpanToken matches an unquoted line range or table row citation in an array.
+var bareSpanToken = regexp.MustCompile(`([\[,]\s*)(\d+(?:-\d+|#[hr]\d+))(\s*[\],])`)
 
-// quoteBareSpanRanges rewrites bare N-M range tokens to "N-M" strings. Repeats
-// until stable because adjacent ranges share a separator. Returns false when
-// nothing changed.
-func quoteBareSpanRanges(s string) (string, bool) {
+// quoteBareSpanTokens repeats until stable because adjacent tokens share a separator.
+func quoteBareSpanTokens(s string) (string, bool) {
 	out := s
 	for {
-		next := bareSpanRange.ReplaceAllString(out, `$1"$2-$3"$4`)
+		next := bareSpanToken.ReplaceAllString(out, `$1"$2"$3`)
 		if next == out {
 			break
 		}

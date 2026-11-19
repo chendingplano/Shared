@@ -4,10 +4,10 @@ import "testing"
 
 func TestRepairLLMJSON(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     string
-		wantOK   bool
+		name   string
+		input  string
+		want   string
+		wantOK bool
 	}{
 		{
 			name:   "strips markdown fence",
@@ -53,7 +53,6 @@ func TestRepairLLMJSON(t *testing.T) {
 		})
 	}
 }
-
 
 func TestRepairLLMJSONRebuildsUnbalancedSpanArrays(t *testing.T) {
 	tests := []struct {
@@ -183,5 +182,13 @@ func TestRepairLLMJSONQuotesBareSpanRanges(t *testing.T) {
 				t.Fatalf("got %s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRepairLLMJSONQuotesBareTableRowCitation(t *testing.T) {
+	input := `{"v":2,"p":[{"n":"product","s":[248#r5]},{"n":"other","s":[249,250#h1]}]}`
+	want := `{"v":2,"p":[{"n":"product","s":["248#r5"]},{"n":"other","s":[249,"250#h1"]}]}`
+	if got, ok := RepairLLMJSON(input); !ok || got != want {
+		t.Fatalf("RepairLLMJSON = %q, %t, want %q, true", got, ok, want)
 	}
 }
