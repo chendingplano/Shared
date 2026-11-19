@@ -340,7 +340,8 @@ func (c *OpenAIJSONClient) extractTextWithFormat(ctx context.Context, in JSONExt
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		c.captureUsage(ctx, in, model, startedAt, bs, nil, "", "", 0, 0, 0, 0, readErr)
+		// Keep any bytes received before the read failed in the usage archive (Shared#28).
+		c.captureUsage(ctx, in, model, startedAt, bs, respBody, "", "", 0, 0, 0, 0, readErr)
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("(MID_26053001) caller_context_cancelled: %w", readErr)
 		}

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1223,5 +1224,28 @@ func TestExtractJSON_PerModelTokensPerMinuteOverrideAllowsConfiguredBurst(t *tes
 	}
 	if requestCount != 2 {
 		t.Fatalf("request count=%d, want 2", requestCount)
+	}
+}
+
+func TestExtractTextArchivesPartialResponseOnReadFailure(t *testing.T) {
+	const partial = `{"choices":[`
+	sink := &testUsageCaptureSink{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "500")
+		_, _ = io.WriteString(w, partial)
+	}))
+	defer srv.Close()
+
+	client := &OpenAIJSONClient{BaseURL: srv.URL, APIKey: "test-key", ModelName: "chat-model", HTTPClient: srv.Client()}
+	withDefaultUsageCaptureSink(sink, func() {
+		content, err := client.ExtractText(context.Background(), JSONExtractionInput{UserID: "test-user", PromptText: "prompt"})
+		if !errors.Is(err, io.ErrUnexpectedEOF) || content != "" {
+			t.Fatalf("expected a read failure and no usable response, got %q, %v", content, err)
+		}
+	})
+
+	records := sink.Records()
+	if len(records) != 1 || string(records[0].OutputBody) != partial || records[0].ErrorMessage == "" {
+		t.Fatalf("expected partial response and read error in the usage archive, got %+v", records)
 	}
 }
