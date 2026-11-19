@@ -28,6 +28,17 @@ func TestRepairLLMJSON(t *testing.T) {
 			wantOK: true,
 		},
 		{
+			name:   "preserves LaTeX prime from Runshen alert 21589",
+			input:  `{"v":2,"l":"zh","p":[{"n":"制冷设备制冷量选择","t":"m","x":"制冷(热)量 $(Q_{0}^{\prime})$","s":[495],"lt":"p","q":0.9}],"valid":"\n\u4e2d\\\""}`,
+			want:   `{"v":2,"l":"zh","p":[{"n":"制冷设备制冷量选择","t":"m","x":"制冷(热)量 $(Q_{0}^{\\prime})$","s":[495],"lt":"p","q":0.9}],"valid":"\n\u4e2d\\\""}`,
+			wantOK: true,
+		},
+		{
+			name:   "does not turn incomplete Unicode escapes into text",
+			input:  `{"x":"\u12z4"}`,
+			wantOK: false,
+		},
+		{
 			name:   "extracts object from truncated wrapper",
 			input:  "[{\"title\":\"sample\"}",
 			want:   "{\"title\":\"sample\"}",

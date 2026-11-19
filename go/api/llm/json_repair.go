@@ -34,7 +34,7 @@ func RepairLLMJSON(raw string) (string, bool) {
 		candidates = append(candidates, rebuilt)
 	}
 
-	// Every candidate is tried as-is before any is given the inner-quote
+	// Every candidate is tried as-is before any is given the string
 	// repair. That repair escapes stray quotes, so on a broken span array whose
 	// quotes happen to pair up it returns valid JSON holding a corrupted span
 	// ("3474,\"3475"), which would win over the correct rebuilt candidate.
@@ -49,7 +49,7 @@ func RepairLLMJSON(raw string) (string, bool) {
 		if candidate == "" {
 			continue
 		}
-		if repaired, ok := repairUnescapedInnerQuotes(candidate); ok && json.Valid([]byte(repaired)) {
+		if repaired, ok := repairJSONStringSyntax(candidate); ok && json.Valid([]byte(repaired)) {
 			return repaired, true
 		}
 	}
@@ -57,7 +57,7 @@ func RepairLLMJSON(raw string) (string, bool) {
 	return "", false
 }
 
-func repairUnescapedInnerQuotes(s string) (string, bool) {
+func repairJSONStringSyntax(s string) (string, bool) {
 	if strings.TrimSpace(s) == "" {
 		return "", false
 	}
@@ -78,6 +78,16 @@ func repairUnescapedInnerQuotes(s string) (string, bool) {
 		if inString {
 			switch c {
 			case '\\':
+				// Preserve literal commands such as \prime by escaping the
+				// backslash before a letter that JSON cannot escape (ChenWeb#50).
+				if i+1 < len(s) {
+					next := s[i+1]
+					isLetter := ('a' <= next && next <= 'z') || ('A' <= next && next <= 'Z')
+					if isLetter && !strings.ContainsRune("bfnrtu", rune(next)) {
+						b.WriteByte('\\')
+						changed = true
+					}
+				}
 				b.WriteByte(c)
 				escaped = true
 				continue
